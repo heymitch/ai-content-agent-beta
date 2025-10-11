@@ -475,13 +475,10 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
             final_text = ""
 
-            # Try to connect (safe to call even if already connected)
-            try:
-                await client.connect()
-                print(f"🔌 Connected/verified client for thread {thread_ts[:8]}")
-            except Exception as e:
-                # If already connected or other error, continue
-                print(f"⚠️ Connection note: {e}")
+            # Connect the client (required before first query)
+            print(f"🔌 Connecting client for thread {thread_ts[:8]}...")
+            await client.connect()
+            print(f"✅ Client connected successfully")
 
             # Send the query
             print(f"📨 Sending query to Claude SDK...")
