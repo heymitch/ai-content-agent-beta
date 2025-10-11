@@ -18,6 +18,7 @@ from collections import deque
 
 # Slack integration
 from slack_bot.handler import SlackContentHandler
+from slack_sdk import WebClient
 
 # Load environment variables
 load_dotenv()
@@ -41,6 +42,9 @@ supabase: Client = create_client(
 
 # Initialize Anthropic
 anthropic_client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+# Initialize Slack client
+slack_client = WebClient(token=os.getenv('SLACK_BOT_TOKEN'))
 
 # Optional: Langfuse for observability
 langfuse_enabled = bool(os.getenv('LANGFUSE_PUBLIC_KEY') and os.getenv('LANGFUSE_SECRET_KEY'))
@@ -256,31 +260,17 @@ async def handle_slack_event(request: Request):
     # Helper function to send messages
     def send_slack_message(channel, text, thread_ts=None):
         """Send message to Slack channel"""
-        import requests
-
-        url = 'https://slack.com/api/chat.postMessage'
-        headers = {
-            'Authorization': f"Bearer {os.getenv('SLACK_BOT_TOKEN')}",
-            'Content-Type': 'application/json'
-        }
-
-        payload = {
-            'channel': channel,
-            'text': text
-        }
-
-        if thread_ts:
-            payload['thread_ts'] = thread_ts
-
-        response = requests.post(url, headers=headers, json=payload)
-        result = response.json()
-
-        if not result.get('ok'):
-            print(f"❌ Error sending message: {result.get('error')}")
-        else:
+        try:
+            response = slack_client.chat_postMessage(
+                channel=channel,
+                text=text,
+                thread_ts=thread_ts
+            )
             print(f"✅ Message sent successfully")
-
-        return result
+            return response
+        except Exception as e:
+            print(f"❌ Error sending message: {e}")
+            return {'ok': False, 'error': str(e)}
 
     # Handle app mentions and direct messages
     if event_type in ['app_mention', 'message']:
