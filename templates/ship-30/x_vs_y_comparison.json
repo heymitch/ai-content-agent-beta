@@ -1,0 +1,137 @@
+{
+  "template_id": "ship30_x_vs_y_comparison_v1",
+  "name": "X vs Y Comparison Post",
+  "platform": "linkedin",
+  "description": "Compelling comparison post that contrasts two approaches, strategies, or mindsets while revealing deeper insights about what actually drives success. Takes a clear stance.",
+  "use_when": [
+    "Contrasting two approaches to solving the same problem",
+    "Challenging conventional wisdom with a better method",
+    "Sharing mindset shifts (beginner vs expert, old way vs new way)",
+    "Teaching through comparison rather than direct instruction",
+    "Making a slightly contrarian argument backed by experience"
+  ],
+  "structure": {
+    "hook": {
+      "word_count": [5, 15],
+      "format": "Sharp contrast in under 10 words",
+      "patterns": [
+        "Most [people] think [X]. Successful ones do [Y].",
+        "[X] vs [Y]. The difference is everything.",
+        "I've tried both [X] and [Y]. Here's what works:",
+        "Everyone's obsessed with [X]. But [Y] is what actually matters."
+      ],
+      "tone": "Opinionated but not preachy, confident"
+    },
+    "context": {
+      "word_count": [30, 60],
+      "purpose": "Why this comparison matters to the reader",
+      "requirement": "Brief setup that makes stakes clear"
+    },
+    "x_approach": {
+      "word_count": [40, 70],
+      "format": "Natural paragraph (NOT bullet list)",
+      "structure": "X people focus on [behavior]. They [specific example of what this looks like].",
+      "requirement": "Specific traits and concrete examples"
+    },
+    "y_approach": {
+      "word_count": [40, 70],
+      "format": "Natural paragraph contrasting X",
+      "structure": "Y people do the opposite. They [contrasting behavior] because [reasoning].",
+      "requirement": "Show clear contrast with X approach"
+    },
+    "personal_story": {
+      "sentences": [2, 3],
+      "purpose": "Illustrate the difference with real example",
+      "patterns": [
+        "I learned this when [specific situation]...",
+        "Last month I watched [specific example]...",
+        "A client recently told me [specific story]..."
+      ],
+      "requirement": "Must be specific, not hypothetical"
+    },
+    "key_insight": {
+      "word_count": [30, 60],
+      "purpose": "Explain the deeper 'why' behind which approach works",
+      "patterns": [
+        "The real difference is [fundamental insight]",
+        "What most people miss is [key understanding]",
+        "The problem with X is [limitation]. Y works because [advantage]"
+      ],
+      "requirement": "Take a clear stance - don't say 'both have merit'"
+    },
+    "what_it_requires": {
+      "word_count": [20, 40],
+      "purpose": "Be honest about what the better approach demands",
+      "example": "Y approach requires [specific trait/skill/commitment]"
+    },
+    "practical_takeaway": {
+      "word_count": [20, 40],
+      "purpose": "Broader implication or specific next action",
+      "example": "Start by [specific first step] this week."
+    },
+    "engagement_question": {
+      "sentences": 1,
+      "purpose": "Genuine curiosity about reader's experience",
+      "examples": [
+        "Which approach resonates with you?",
+        "Have you made this shift yet?",
+        "What's your experience been?"
+      ]
+    }
+  },
+  "comparison_patterns": {
+    "mindset_comparison": "Beginners vs Experts | Amateurs vs Pros | Old me vs New me",
+    "strategy_comparison": "Most people vs Top 1% | Traditional vs Modern | Safe vs Bold",
+    "tactical_comparison": "Old way vs New way | Complicated vs Simple | Theory vs Practice"
+  },
+  "quality_criteria": [
+    {
+      "axis": "contrast_clarity",
+      "threshold": 5,
+      "description": "X and Y approaches are clearly distinct and specific"
+    },
+    {
+      "axis": "stance",
+      "threshold": 5,
+      "description": "Takes clear position on which approach is better (no fence-sitting)"
+    },
+    {
+      "axis": "specificity",
+      "threshold": 4,
+      "description": "Uses concrete examples, not abstract concepts"
+    },
+    {
+      "axis": "personal_experience",
+      "threshold": 4,
+      "description": "Includes real story or observation, not hypothetical"
+    },
+    {
+      "axis": "insight_depth",
+      "threshold": 4,
+      "description": "Explains WHY one approach works better, not just WHAT"
+    }
+  ],
+  "tone_requirements": {
+    "opinionated": "Take a clear stance, don't be wishy-washy",
+    "conversational": "Like explaining to a friend over coffee",
+    "confident": "Speak from experience, not theory",
+    "contrarian": "Challenge conventional wisdom (but back it up)",
+    "avoid": [
+      "Preachy or superior tone",
+      "Academic/theoretical language",
+      "'Both approaches have merit' conclusions",
+      "Bullet-pointed trait lists"
+    ]
+  },
+  "forbidden_patterns": [
+    "Don't write bullet-pointed lists - use natural paragraphs",
+    "Don't use template language with [brackets] in output",
+    "Don't give balanced 'both have merit' take - pick a side",
+    "Don't use generic comparisons - need specific examples",
+    "Don't skip the personal story - it sells the insight"
+  ],
+  "examples": [
+    "Most founders focus on growth. Smart ones focus on retention.\n\nGrowth people obsess over acquisition cost, ad spend, viral loops. They celebrate hitting 10K users while ignoring that 80% churned in month one.\n\nRetention people do the opposite. They study why the 20% stayed, then double down on that. Because they know: 100 users who stick around beat 10,000 who bounce.\n\nI learned this after burning $50K on ads that brought 5,000 signups. 94% churned. Felt like a genius until I looked at retention.\n\nThe real difference? Growth is a vanity metric until retention proves you built something people actually want.\n\nWhat's your experience been?"
+  ],
+  "agent_instructions": "Agent should identify X and Y from context (brand positioning, company docs, user topic). DO NOT ask user to fill in X/Y template - infer the comparison from the request. Use brand voice for tone. Pull personal stories from conversation_history or company_documents if available. Take a clear stance based on brand values."
+}

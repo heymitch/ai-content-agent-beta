@@ -1,0 +1,28 @@
+# Core framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# AI/ML libraries
+anthropic>=0.39.0
+claude-agent-sdk>=0.1.0
+openai
+langfuse
+anyio  # Required for Claude Agent SDK
+
+# Database & storage
+supabase
+
+# Integrations
+pyairtable
+tavily-python
+slack-sdk
+
+# Utilities
+requests
+python-dotenv
+inflection
+
+# Document processing (optional - not used in Slack-only)
+pypdf2
+python-docx

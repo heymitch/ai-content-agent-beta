@@ -1,0 +1,94 @@
+{
+  "template_id": "ship30_outline_as_content_v1",
+  "name": "Outline As Content (List)",
+  "platform": "linkedin",
+  "description": "Quick list post to test audience interest before writing long-form. Uses one of the 10 Magical Ways (tips, stats, steps, lessons, benefits, reasons, mistakes, examples, questions, stories) as a numbered list.",
+  "use_when": [
+    "Testing if a topic resonates before investing time in long-form",
+    "Want quick, skimmable content that delivers value fast",
+    "Building social proof through engagement data",
+    "Creating content in 5 minutes instead of 50",
+    "Need to validate topic-audience-subtopic combinations"
+  ],
+  "structure": {
+    "hook": {
+      "char_count": [50, 120],
+      "format": "Number + Type + Topic (e.g., '5 financing mistakes first-time rental investors make:')",
+      "purpose": "Promise specific value in a scannable format",
+      "examples": [
+        "7 steps to buy your first rental property:",
+        "3 stats that prove why founders should write daily:",
+        "5 mistakes SaaS founders make with their first hire:"
+      ]
+    },
+    "list_items": {
+      "count": [3, 7],
+      "format": "Numbered, one clear point per line",
+      "char_per_item": [50, 120],
+      "guidelines": [
+        "Each item = one complete, actionable idea",
+        "Use specific language (not vague)",
+        "Front-load the insight (don't bury the value)",
+        "Parallel structure for scannability"
+      ]
+    },
+    "cta": {
+      "char_count": [30, 80],
+      "format": "Question that invites personal experience",
+      "examples": [
+        "Which one have you seen (or made) before?",
+        "Which one are you working on right now?",
+        "What would you add to this list?"
+      ]
+    }
+  },
+  "magical_ways": {
+    "tips": "X tips for [audience] to [outcome]",
+    "stats": "X stats that prove [claim]",
+    "steps": "X steps to [outcome]",
+    "lessons": "X lessons I learned from [experience]",
+    "benefits": "X benefits of [action/approach]",
+    "reasons": "X reasons why [audience] should [action]",
+    "mistakes": "X mistakes [audience] make with [topic]",
+    "examples": "X examples of [people] who [outcome]",
+    "questions": "X questions to ask before [decision]",
+    "stories": "X stories that changed how I [behavior]"
+  },
+  "quality_criteria": [
+    {
+      "axis": "specificity",
+      "threshold": 5,
+      "description": "Each list item is concrete and specific, not vague"
+    },
+    {
+      "axis": "scannability",
+      "threshold": 5,
+      "description": "Can extract all value by skimming list in 15 seconds"
+    },
+    {
+      "axis": "promise_delivery",
+      "threshold": 5,
+      "description": "Hook promises X items, body delivers exactly X items"
+    },
+    {
+      "axis": "actionability",
+      "threshold": 4,
+      "description": "Reader can apply insights immediately"
+    },
+    {
+      "axis": "engagement_hook",
+      "threshold": 4,
+      "description": "CTA invites genuine sharing/discussion"
+    }
+  ],
+  "forbidden_patterns": [
+    "Don't write paragraphs - this is a LIST format",
+    "Don't deliver fewer items than promised in hook",
+    "Don't use vague items like 'be authentic' or 'work hard'",
+    "Don't skip the engagement question at the end"
+  ],
+  "examples": [
+    "5 financing mistakes that kill first-time rental deals:\n\n1. Not getting pre-approved before house hunting\n2. Using personal credit cards for down payments\n3. Ignoring the 1% rule completely\n4. Skipping the property inspection to save money\n5. Not calculating all carrying costs upfront\n\nWhich one have you seen (or made) before?"
+  ],
+  "agent_instructions": "Use company_documents and brand voice to determine: 1) Which 'magical way' fits the topic (mistakes? tips? steps?), 2) What specific audience archetype to target, 3) What sub-topic variation to explore. DO NOT ask user for these - infer from context and brand positioning."
+}

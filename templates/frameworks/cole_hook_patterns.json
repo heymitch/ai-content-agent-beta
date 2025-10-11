@@ -1,0 +1,135 @@
+{
+  "framework_id": "cole_hook_patterns_v1",
+  "name": "Cole's High-Performing Hook Patterns",
+  "creator": "Cole",
+  "platforms": ["LinkedIn", "Twitter", "Email"],
+  "description": "7 proven hook formulas that consistently stop scroll and drive engagement",
+
+  "hook_types": [
+    {
+      "name": "Bold Outcome Hook",
+      "format": "I [specific action] and [surprising result]",
+      "examples": [
+        "I wrote 100 LinkedIn posts in 30 days and got 50K followers.",
+        "I deleted my calendar and 3x'd my productivity.",
+        "I quit my $200K job to write full-time. Best decision ever."
+      ],
+      "when_to_use": "When you have a counterintuitive result to share",
+      "engagement_multiplier": "2.5x baseline"
+    },
+    {
+      "name": "Contrarian Question",
+      "format": "What if [conventional wisdom] is wrong?",
+      "examples": [
+        "What if posting daily is killing your growth?",
+        "What if you don't need 10K followers to make $100K?",
+        "What if the best writers don't write every day?"
+      ],
+      "when_to_use": "Challenging industry assumptions",
+      "engagement_multiplier": "2.1x baseline"
+    },
+    {
+      "name": "Specific Number Hook",
+      "format": "X [metric] → Y [outcome] in Z [timeframe]",
+      "examples": [
+        "0 followers → 15K in 6 months. Here's the system:",
+        "$0 → $50K MRR in 9 months. The playbook:",
+        "100 posts → 1M impressions. What I learned:"
+      ],
+      "when_to_use": "When you have concrete before/after data",
+      "engagement_multiplier": "3.0x baseline"
+    },
+    {
+      "name": "Mistake Admission",
+      "format": "I [mistake] for [time]. Here's what I learned:",
+      "examples": [
+        "I ghostwrote for free for 6 months. Biggest mistake of my career.",
+        "I built the wrong product for 2 years. Here's what I'd do differently:",
+        "I ignored my email list for 3 years. Cost me $500K."
+      ],
+      "when_to_use": "Teaching through vulnerability",
+      "engagement_multiplier": "2.8x baseline"
+    },
+    {
+      "name": "Pattern Interrupt",
+      "format": "Everyone does X. I do Y instead.",
+      "examples": [
+        "Everyone focuses on growth. I focus on retention.",
+        "Most creators batch content. I write in real-time.",
+        "People say 'be consistent.' I say 'be strategic.'"
+      ],
+      "when_to_use": "Positioning yourself as different/better",
+      "engagement_multiplier": "2.3x baseline"
+    },
+    {
+      "name": "Tease Framework",
+      "format": "The [number]-step framework that [outcome]",
+      "examples": [
+        "The 3-step framework that got me 100K followers:",
+        "The email template that converts at 40%:",
+        "The pricing strategy that 5x'd my revenue:"
+      ],
+      "when_to_use": "When teaching a system or process",
+      "engagement_multiplier": "2.4x baseline"
+    },
+    {
+      "name": "Urgent Observation",
+      "format": "In [timeframe], [trend] will [change]. Here's how to prepare:",
+      "examples": [
+        "In 6 months, AI will replace 80% of content writers. Here's how to stay relevant:",
+        "By 2025, organic reach will be dead. Build your email list now.",
+        "This pricing model is dying. Switch before it's too late."
+      ],
+      "when_to_use": "Creating urgency around industry shifts",
+      "engagement_multiplier": "2.2x baseline"
+    }
+  ],
+
+  "hook_principles": [
+    "Specificity beats vagueness (use numbers, names, timef rames)",
+    "Stakes matter (money, time, reputation)",
+    "Curiosity gap (tease what's coming without giving it away)",
+    "First 8 words determine if people keep reading",
+    "Personal > theoretical (your story > general advice)"
+  ],
+
+  "strategic_insights": [
+    "Bold Outcome Hooks work best on LinkedIn (professional results)",
+    "Contrarian Questions perform well on Twitter (debate culture)",
+    "Specific Number Hooks are universal (concrete = credible)",
+    "Mistake Admission builds trust faster than success stories",
+    "Pattern Interrupt positions you as thought leader",
+    "First sentence should be <15 words for mobile readability",
+    "Test hooks with GPTZero - aim for 80%+ human score"
+  ],
+
+  "testing_framework": {
+    "step_1": "Write 3 variations of your hook using different patterns",
+    "step_2": "Pick the one with most specificity + stakes",
+    "step_3": "Cut it down by 30% (remove fluff)",
+    "step_4": "Read it out loud (if it sounds unnatural, rewrite)",
+    "step_5": "Check: Does it create curiosity without clickbait?"
+  },
+
+  "common_mistakes": [
+    "Making hook too long (>20 words)",
+    "Being vague ('I learned something important about business')",
+    "No stakes ('I tried a thing and it worked okay')",
+    "Giving away the punchline in the hook",
+    "Using jargon or corporate speak"
+  ],
+
+  "pro_tips": [
+    "Use power words: 'killed', 'destroyed', '10x'd', 'obliterated'",
+    "Add time pressure: 'in 30 days', 'overnight', 'by next week'",
+    "Include a number: '7 ways', '$100K', '3 mistakes'",
+    "Name drop when relevant: 'Stripe uses this', 'from Y Combinator'",
+    "Break grammar rules if it sounds better"
+  ],
+
+  "success_metrics": {
+    "average_stop_scroll_rate": "65% (vs 20% baseline)",
+    "click_through_to_read_more": "45% (vs 15% baseline)",
+    "based_on": "1000+ posts analyzed, 50M+ impressions"
+  }
+}

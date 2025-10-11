@@ -1,0 +1,71 @@
+{
+  "template_id": "twitter_hot_take_v1",
+  "name": "Hot Take",
+  "platform": "twitter",
+  "description": "Bold, contrarian single tweet that challenges conventional wisdom with a provocative stance",
+  "use_when": [
+    "Challenging industry conventional wisdom",
+    "Making a provocative statement that sparks debate",
+    "Positioning yourself as contrarian thinker",
+    "Starting a conversation with a strong opinion"
+  ],
+  "structure": {
+    "format": "single_post",
+    "char_limit": 280,
+    "components": {
+      "stance": {
+        "char_count": [100, 150],
+        "purpose": "The controversial claim stated directly",
+        "examples": [
+          "Hot take: Most 'authentic' LinkedIn posts are just performative vulnerability.",
+          "Unpopular opinion: Your newsletter doesn't need 10K subscribers to make $100K/year."
+        ]
+      },
+      "reason": {
+        "char_count": [80, 130],
+        "purpose": "The one-sentence WHY that makes it credible",
+        "guidelines": [
+          "Use concrete example or stat if possible",
+          "Make it punchy, not preachy"
+        ]
+      }
+    },
+    "patterns": [
+      "Hot take: [claim]. [reason].",
+      "Unpopular opinion: [claim] because [reason].",
+      "[Claim]. Nobody wants to hear this but [reason]."
+    ]
+  },
+  "quality_criteria": [
+    {
+      "axis": "boldness",
+      "threshold": 4,
+      "description": "Actually provocative, not safe contrarianism"
+    },
+    {
+      "axis": "credibility",
+      "threshold": 4,
+      "description": "Reason makes the take defensible"
+    },
+    {
+      "axis": "brevity",
+      "threshold": 5,
+      "description": "Under 280 chars, punchy delivery"
+    },
+    {
+      "axis": "engagement",
+      "threshold": 4,
+      "description": "Will spark replies/debate"
+    }
+  ],
+  "forbidden_patterns": [
+    "Don't be contrarian just for engagement - need genuine insight",
+    "Avoid 'let that sink in' or 'read that again'",
+    "Don't make it so hot it's undefendable",
+    "No virtue signaling disguised as hot take"
+  ],
+  "examples": [
+    "Hot take: Your 'comprehensive guide' blog posts aren't ranking because Google prioritizes experience over word count now.",
+    "Unpopular opinion: Most founders should delete their Twitter and focus on one platform. Multi-platform is a growth killer."
+  ]
+}

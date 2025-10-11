@@ -1,0 +1,136 @@
+{
+  "template_id": "ship30_long_form_expansion_v1",
+  "name": "Long-Form Post (Expanded Outline)",
+  "platform": "linkedin",
+  "description": "Expand a proven outline into a deep-dive long-form LinkedIn post with hook, introduction (PAS format), main points as complete sections, and CTA. Use after testing outline version.",
+  "use_when": [
+    "Outline version got strong engagement and you want to go deeper",
+    "Topic requires tactical depth that a list can't deliver",
+    "Teaching a framework or process step-by-step",
+    "Sharing a story with multiple lessons",
+    "Establishing thought leadership with comprehensive insights"
+  ],
+  "structure": {
+    "hook": {
+      "char_count": [150, 200],
+      "format": "First 200 characters visible before 'See more' button",
+      "purpose": "Stop scroll + create cliffhanger that demands the click",
+      "hook_types": [
+        "Strong declarative statement",
+        "Thought-provoking question",
+        "Controversial opinion",
+        "Weird stat or data point",
+        "Meaningful moment in time"
+      ],
+      "requirements": [
+        "Must end with cliffhanger (tease 'the one mistake' or 'what happened next')",
+        "Use specific numbers/names/details (not vague)",
+        "Create curiosity gap reader needs to close"
+      ],
+      "examples": [
+        "I just watched a new investor lose a $200K deal because of this one critical financing mistake:",
+        "Most founders think posting daily is the secret. I posted daily for 90 days and lost money. Here's what actually worked:"
+      ]
+    },
+    "introduction": {
+      "word_count": [75, 125],
+      "format": "Problem-Agitate-Solve (PAS)",
+      "sections": {
+        "problem": {
+          "purpose": "Identify the specific problem reader faces",
+          "example": "Most first-time rental investors focus on finding the perfect property but completely ignore the financing piece."
+        },
+        "agitate": {
+          "purpose": "Make the cost of inaction clear and urgent",
+          "example": "These mistakes cost thousands of dollars and months of wasted time—some kill deals that would have been profitable for decades."
+        },
+        "solve": {
+          "purpose": "Promise the solution you're about to deliver",
+          "example": "Today, I'm sharing the 5 most common financing mistakes and exactly how to avoid each one."
+        }
+      }
+    },
+    "main_points": {
+      "count": [3, 7],
+      "structure_per_point": {
+        "header": {
+          "format": "Complete sentence with identifier (Mistake #1: / 1/ / Step 1:)",
+          "char_count": [40, 100],
+          "purpose": "Deliver 80% of section value in header alone",
+          "requirement": "Skimmable - reader gets insight without reading body"
+        },
+        "opening_line": {
+          "char_count": [50, 100],
+          "purpose": "Hook reader into THIS specific section",
+          "guideline": "Use any of the 5 hook types (stat, story, question, etc.)"
+        },
+        "tactical_content": {
+          "items": [3, 5],
+          "format": "Actionable information using 10 magical ways (tips, reasons, steps, etc.)",
+          "requirement": "Concrete and specific, not theoretical"
+        },
+        "conclusion": {
+          "sentences": 1,
+          "purpose": "One-sentence insight, benefit, or takeaway",
+          "example": "Skip this step and you'll waste months on properties you can never close."
+        }
+      },
+      "depth_vs_breadth": {
+        "fewer_sections": "More depth per section (300-500 words each)",
+        "more_sections": "Quicker, skimmable answers (100-200 words each)"
+      }
+    },
+    "cta": {
+      "word_count": [30, 75],
+      "format": "Question that invites engagement OR guides to content library",
+      "placement": "In post body (no links) OR in first comment (if link required)",
+      "examples": [
+        "Which of these mistakes have you made? (asking for a friend)",
+        "What would you add to this list?",
+        "Want the full financing checklist? Link in comments."
+      ],
+      "forbidden": [
+        "Do NOT put opt-in/website links in post body (LinkedIn penalizes)",
+        "If link needed, say 'Link in comments' and add as first comment"
+      ]
+    }
+  },
+  "quality_criteria": [
+    {
+      "axis": "hook",
+      "threshold": 4,
+      "description": "First 200 chars stop scroll + create cliffhanger"
+    },
+    {
+      "axis": "promise_delivery",
+      "threshold": 5,
+      "description": "Introduction promises X sections, body delivers exactly X"
+    },
+    {
+      "axis": "header_value",
+      "threshold": 5,
+      "description": "Reader can skim headers and get 80% of value"
+    },
+    {
+      "axis": "tactical_depth",
+      "threshold": 4,
+      "description": "Each section has 3-5 actionable insights"
+    },
+    {
+      "axis": "scannability",
+      "threshold": 4,
+      "description": "Short paragraphs, clear structure, easy to skim"
+    }
+  ],
+  "forbidden_patterns": [
+    "Don't bury the lede - deliver hook promise in headers",
+    "Don't write long paragraphs (max 3-4 lines per paragraph)",
+    "Don't promise 5 sections and deliver 3 or 7",
+    "Don't put links in post body (comment instead)",
+    "Don't skip the PAS introduction - it sells the read"
+  ],
+  "examples": [
+    "Hook: 'I just watched a new investor lose a $200K deal because of this one critical financing mistake:'\n\nIntro (PAS): Problem → Agitate → Solve\n\nMistake #1: Not getting pre-approved\n[Opening hook for this section]\n[3-5 tactical points]\n[One-sentence conclusion]\n\nMistake #2: Using credit cards for down payment\n[Continue pattern...]\n\nCTA: Which mistake have you made?"
+  ],
+  "agent_instructions": "This template is for EXPANDING a proven outline that already got engagement. Agent should: 1) Reference the outline that performed well, 2) Expand each list item into a full section with hook/tactics/conclusion, 3) Use brand voice and company_documents for tactical depth, 4) Apply PAS format to introduction. DO NOT ask user for outline - pull from content_examples table if mentioned or infer structure from topic."
+}

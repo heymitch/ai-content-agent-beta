@@ -1,0 +1,88 @@
+{
+  "template_id": "linkedin_framework_v1",
+  "name": "Framework Post",
+  "platform": "linkedin",
+  "description": "Post that teaches a repeatable process or framework using numbered steps with concrete examples",
+  "use_when": [
+    "Teaching a system, process, or framework",
+    "Sharing a methodology that worked for you",
+    "Breaking down complex topics into simple steps",
+    "Establishing thought leadership with tactical value"
+  ],
+  "structure": {
+    "hook": {
+      "word_count": [15, 30],
+      "format": "Bold declarative statement or surprising result",
+      "examples": [
+        "I used this 3-step framework to write 100 LinkedIn posts in 30 days.",
+        "Most founders overcomplicate content. Here's the system I use:"
+      ]
+    },
+    "context": {
+      "word_count": [30, 50],
+      "purpose": "Why this framework matters - the problem it solves"
+    },
+    "framework": {
+      "word_count": [150, 200],
+      "format": "Numbered list (3-5 steps) with mini-explanations",
+      "guidelines": [
+        "Each step = 1-2 sentences max",
+        "Include specific examples for each step",
+        "Make it copy-paste actionable"
+      ]
+    },
+    "proof": {
+      "word_count": [40, 60],
+      "purpose": "Results from using this framework",
+      "examples": [
+        "Used this to go from 500 to 15K followers in 6 months",
+        "3 clients implemented this - avg 40% engagement increase"
+      ]
+    },
+    "cta": {
+      "word_count": [15, 25],
+      "format": "Question or invitation to engage",
+      "examples": [
+        "What's your content creation process?",
+        "Try this and let me know how it goes."
+      ]
+    }
+  },
+  "quality_criteria": [
+    {
+      "axis": "hook",
+      "threshold": 4,
+      "description": "Stops scroll, bold claim or result"
+    },
+    {
+      "axis": "clarity",
+      "threshold": 5,
+      "description": "Framework is instantly understandable"
+    },
+    {
+      "axis": "tactical_depth",
+      "threshold": 4,
+      "description": "Actionable steps with examples"
+    },
+    {
+      "axis": "proof",
+      "threshold": 4,
+      "description": "Results that validate the framework"
+    },
+    {
+      "axis": "voice",
+      "threshold": 4,
+      "description": "Conversational, confident, not preachy"
+    }
+  ],
+  "forbidden_patterns": [
+    "Don't make framework too complex (max 5 steps)",
+    "Avoid vague steps like 'be authentic' - need specifics",
+    "Don't skip proof - show results",
+    "No fluff - get to framework fast"
+  ],
+  "examples": [
+    "The 4-step framework I use to validate SaaS ideas in 48 hours",
+    "How I write viral LinkedIn posts: 1) Hook with result 2) Share framework 3) Add proof 4) Soft CTA"
+  ]
+}

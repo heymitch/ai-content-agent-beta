@@ -1,0 +1,89 @@
+{
+  "template_id": "value_email_v1",
+  "name": "VALUE Email",
+  "platform": "email",
+  "description": "Educational email that teaches a specific tactic or framework with tactical depth and soft CTA",
+  "use_when": [
+    "Teaching a specific tool, tactic, or framework",
+    "Building authority without hard selling",
+    "Delivering tactical value that readers can implement immediately",
+    "Nurturing leads with educational content"
+  ],
+  "structure": {
+    "subject_line": {
+      "format": "How to [specific outcome] with [specific tool/tactic]",
+      "char_limit": [30, 50],
+      "examples": [
+        "How to write 10 LinkedIn posts in 30 minutes",
+        "How I got 50K newsletter subscribers with 3 tactics"
+      ]
+    },
+    "body": {
+      "sections": [
+        {
+          "name": "hook",
+          "word_count": [50, 75],
+          "purpose": "Personal story or surprising stat that proves why this matters"
+        },
+        {
+          "name": "framework",
+          "word_count": [150, 200],
+          "purpose": "The specific tactic/framework with 3-5 concrete steps",
+          "guidelines": [
+            "Use numbered lists or bullet points",
+            "Include specific examples for each step",
+            "Add screenshots or visual references if helpful"
+          ]
+        },
+        {
+          "name": "proof",
+          "word_count": [75, 100],
+          "purpose": "Show results - your own or case studies"
+        },
+        {
+          "name": "cta",
+          "word_count": [50, 75],
+          "purpose": "Soft CTA - try the tactic, reply with questions, or explore product",
+          "tone": "Casual, helpful, no pressure"
+        }
+      ]
+    }
+  },
+  "quality_criteria": [
+    {
+      "axis": "tactical_depth",
+      "threshold": 4,
+      "description": "Actionable steps reader can implement today"
+    },
+    {
+      "axis": "proof",
+      "threshold": 4,
+      "description": "Concrete examples or results"
+    },
+    {
+      "axis": "clarity",
+      "threshold": 4,
+      "description": "Clear structure, scannable formatting"
+    },
+    {
+      "axis": "voice",
+      "threshold": 4,
+      "description": "Conversational, not corporate"
+    },
+    {
+      "axis": "cta_softness",
+      "threshold": 4,
+      "description": "Helpful suggestion, not aggressive pitch"
+    }
+  ],
+  "forbidden_patterns": [
+    "Don't bury the lede - get to the tactic quickly",
+    "No fluff intros like 'In today's digital landscape...'",
+    "Avoid hard selling - focus on teaching",
+    "Don't use corporate jargon"
+  ],
+  "examples": [
+    "Email about using ChatGPT prompts for content ideation (5 specific prompts included)",
+    "Email teaching the 'Hook-Context-Proof-CTA' framework with before/after examples"
+  ]
+}
