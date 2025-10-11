@@ -418,27 +418,25 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         print("🚀 Claude Agent SDK initialized with 7 tools (including workflow delegation)")
 
-    def _get_or_create_session(self, thread_ts: str) -> ClaudeSDKClient:
-        """Get existing session for thread or create new one"""
-        if thread_ts not in self._thread_sessions:
-            # CRITICAL: Prevent Claude SDK from loading ANY external configs
-            import os
-            os.environ['CLAUDE_HOME'] = '/tmp/empty_claude_home'  # Point to empty dir
+    def _get_session_options(self, thread_ts: str) -> ClaudeAgentOptions:
+        """Get options for this thread session"""
+        # CRITICAL: Prevent Claude SDK from loading ANY external configs
+        import os
+        os.environ['CLAUDE_HOME'] = '/tmp/empty_claude_home'  # Point to empty dir
 
-            # Configure options for this thread with EXPLICIT CMO system prompt
-            options = ClaudeAgentOptions(
-                mcp_servers={"tools": self.mcp_server},
-                allowed_tools=["mcp__tools__*"],
-                system_prompt=self.system_prompt,  # FORCE our CMO prompt, not Claude Code's
-                model="claude-sonnet-4-5-20250929",  # Claude Sonnet 4.5 - latest
-                permission_mode="bypassPermissions",
-                continue_conversation=True  # KEY: Maintain context across messages
-            )
-            self._thread_sessions[thread_ts] = ClaudeSDKClient(options=options)
-            print(f"✨ Created new session for thread {thread_ts[:8]} with CMO identity")
-            print(f"🎭 System prompt starts with: {self.system_prompt[:100]}...")
+        # Configure options for this thread with EXPLICIT CMO system prompt
+        options = ClaudeAgentOptions(
+            mcp_servers={"tools": self.mcp_server},
+            allowed_tools=["mcp__tools__*"],
+            system_prompt=self.system_prompt,  # FORCE our CMO prompt, not Claude Code's
+            model="claude-sonnet-4-5-20250929",  # Claude Sonnet 4.5 - latest
+            permission_mode="bypassPermissions",
+            continue_conversation=True  # KEY: Maintain context across messages
+        )
+        print(f"✨ Creating session options for thread {thread_ts[:8]} with CMO identity")
+        print(f"🎭 System prompt starts with: {self.system_prompt[:100]}...")
 
-        return self._thread_sessions[thread_ts]
+        return options
 
     async def handle_conversation(
         self,
@@ -470,42 +468,40 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         try:
             print(f"🤖 Claude Agent SDK processing for thread {thread_ts[:8]}...")
 
-            # Get or create session for this thread (maintains conversation history)
-            client = self._get_or_create_session(thread_ts)
+            # Get options for this session
+            options = self._get_session_options(thread_ts)
 
             final_text = ""
 
-            # Connect the client (required before first query)
-            print(f"🔌 Connecting client for thread {thread_ts[:8]}...")
-            await client.connect()
-            print(f"✅ Client connected successfully")
+            # Use async with context manager (proper SDK pattern)
+            print(f"🔌 Creating new Claude SDK client session...")
+            async with ClaudeSDKClient(options=options) as client:
+                # Send the query
+                print(f"📨 Sending query to Claude SDK...")
+                await client.query(contextualized_message)
 
-            # Send the query
-            print(f"📨 Sending query to Claude SDK...")
-            await client.query(contextualized_message)
+                # Collect ONLY the latest response (memory stays intact in session)
+                latest_response = ""
+                print(f"⏳ Waiting for Claude SDK response...")
+                async for msg in client.receive_response():
+                    # Each message REPLACES the previous (we only want the final response)
+                    # The SDK maintains full conversation history internally
+                    print(f"📩 Received message type: {type(msg)}")
+                    if hasattr(msg, 'content'):
+                        if isinstance(msg.content, list):
+                            for block in msg.content:
+                                if isinstance(block, dict) and block.get('type') == 'text':
+                                    latest_response = block.get('text', '')
+                                elif hasattr(block, 'text'):
+                                    latest_response = block.text
+                        elif hasattr(msg.content, 'text'):
+                            latest_response = msg.content.text
+                        else:
+                            latest_response = str(msg.content)
+                    elif hasattr(msg, 'text'):
+                        latest_response = msg.text
 
-            # Collect ONLY the latest response (memory stays intact in session)
-            latest_response = ""
-            print(f"⏳ Waiting for Claude SDK response...")
-            async for msg in client.receive_response():
-                # Each message REPLACES the previous (we only want the final response)
-                # The SDK maintains full conversation history internally
-                print(f"📩 Received message type: {type(msg)}")
-                if hasattr(msg, 'content'):
-                    if isinstance(msg.content, list):
-                        for block in msg.content:
-                            if isinstance(block, dict) and block.get('type') == 'text':
-                                latest_response = block.get('text', '')
-                            elif hasattr(block, 'text'):
-                                latest_response = block.text
-                    elif hasattr(msg.content, 'text'):
-                        latest_response = msg.content.text
-                    else:
-                        latest_response = str(msg.content)
-                elif hasattr(msg, 'text'):
-                    latest_response = msg.text
-
-            final_text = latest_response  # Only use the latest response
+                final_text = latest_response  # Only use the latest response
 
             # Format for Slack
             final_text = self._format_for_slack(final_text)
