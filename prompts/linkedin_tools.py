@@ -700,6 +700,15 @@ HUMAN VOICE PATTERNS (critical for authenticity):
 - Use ellipses for trailing thought: "at the end of the day…", "So..."
 - Intentional repetition is OK: "definitely" twice, "doubling down" 3 times
 
+WRITING CLARITY (Flesch Reading Ease 70+):
+- Keep sentences SHORT: 10-20 words average (occasionally longer is OK)
+- Use SIMPLE conjunctions: 'and', 'but', 'so' (NOT 'moreover', 'however', 'furthermore')
+- Use EVERYDAY words: replace abstractions with concrete language
+- Prefer ACTIVE voice: "I tested 5 tools" not "5 tools were tested by me"
+- But DON'T force active if it sounds unnatural
+- Break complex ideas into multiple short sentences
+- PRESERVE all details when simplifying (don't drop examples/numbers/names)
+
 Output JSON:
 {{
   "post_text": "...",
@@ -840,7 +849,23 @@ CRITICAL RULES:
    - ❌ DO NOT water down to vague language
    - ❌ DO NOT make it more formal (contractions → full words)
 
-3. **APPLY FIXES BY SEVERITY**:
+3. **WHEN REWRITING/SIMPLIFYING**:
+   MANDATORY: Preserve ALL details from the original text
+   - Don't drop examples, names, numbers, or specifics when simplifying
+   - Ensure seamless transitions between sentences
+
+   SIMPLIFICATION APPROACH:
+   - Break complex sentences into shorter ones (10-20 words average)
+   - Use simple conjunctions: 'and', 'but', 'so' (not 'moreover', 'however', 'furthermore')
+   - Use everyday vocabulary (replace abstractions with concrete words)
+   - Prefer active voice: "The cat chased the mouse" not "The mouse was chased by the cat"
+   - But DON'T force active voice if it sounds unnatural
+
+   GOAL: Flesch Reading Ease score of 70+ (8th grade level)
+   - Shorter sentences + common words = more accessible
+   - But maintain all original meaning and specifics
+
+4. **APPLY FIXES BY SEVERITY**:
    - Severity "high" → Must fix (raises score significantly)
    - Severity "medium" → Fix if it doesn't hurt specificity
    - Severity "low" → Skip unless obviously wrong
