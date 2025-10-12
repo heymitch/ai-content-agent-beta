@@ -10,6 +10,7 @@ from claude_agent_sdk import (
     tool,
     create_sdk_mcp_server
 )
+from claude_agent_sdk.transports.api import APITransport
 import os
 import json
 import asyncio
@@ -398,7 +399,13 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final script with timin
                 continue_conversation=not self.isolated_mode  # False in test mode, True in prod
             )
 
-            self.sessions[session_id] = ClaudeSDKClient(options=options)
+            # Use API transport for server environments (Replit, production)
+            transport = APITransport(api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+            self.sessions[session_id] = ClaudeSDKClient(
+                options=options,
+                transport=transport
+            )
             mode_str = " (isolated test mode)" if self.isolated_mode else ""
             print(f"📝 Created YouTube session: {session_id}{mode_str}")
 
