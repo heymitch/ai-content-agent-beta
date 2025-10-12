@@ -8,7 +8,6 @@ from claude_agent_sdk import (
     tool,
     create_sdk_mcp_server
 )
-from claude_agent_sdk.transports.api import APITransport
 import os
 from typing import Dict, Optional, Any
 import json
@@ -439,14 +438,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 continue_conversation=True  # KEY: Maintain context across messages
             )
 
-            # Use API transport for server environments (Replit, production)
-            # This avoids needing the claude CLI installed
-            transport = APITransport(api_key=os.getenv('ANTHROPIC_API_KEY'))
-
-            self._thread_sessions[thread_ts] = ClaudeSDKClient(
-                options=options,
-                transport=transport
-            )
+            self._thread_sessions[thread_ts] = ClaudeSDKClient(options=options)
             print(f"✨ Created new session for thread {thread_ts[:8]} with CMO identity")
             print(f"🎭 System prompt starts with: {self.system_prompt[:100]}...")
 
