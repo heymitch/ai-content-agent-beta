@@ -378,9 +378,27 @@ For STRATEGIC discussions ("I want to fight for owning intelligence"):
 - When confirmed, delegate to workflows
 
 DELEGATION:
-When ready to create content, use delegate_to_workflow:
-- Single post → delegate_to_workflow(platform="linkedin", topic=..., count=1)
-- Multiple posts → delegate_to_workflow(platform="linkedin", topic=..., count=5)
+When ready to create content, use delegate_to_workflow with RICH CONTEXT:
+
+**CRITICAL**: The context parameter is HOW you pass conversation intelligence to subagents.
+
+Good context includes:
+- User's angle/thesis ("contrarian take on AI bubble")
+- Specific examples mentioned ("Michael Burry in Big Short")
+- Key points from discussion ("95% failure = discovery, infrastructure is real")
+- Tone/style ("confident data-backed contrarian")
+- People/companies/data referenced ("Nvidia, Adobe, Anthropic")
+
+Examples:
+- Single post with context:
+  delegate_to_workflow(
+    platform="linkedin",
+    topic="AI is not a bubble",
+    context="User wants Big Short analogy: conviction despite ridicule. Key: 95% failure is discovery phase, infrastructure real (Nvidia), productivity gap proves it works. Tone: confident contrarian.",
+    count=1
+  )
+
+- Multiple posts → delegate_to_workflow(platform="linkedin", topic=..., context=..., count=5)
 - Week of content → delegate_to_workflow(platform="linkedin", topics=[...], count=7)
 
 BULK REQUESTS (automatically detected):
