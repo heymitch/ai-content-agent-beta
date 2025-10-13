@@ -1,0 +1,33 @@
+{
+  "name": "ai-content-agent-template",
+  "version": "2.0.0",
+  "description": "Production-ready AI content agent template with Claude SDK",
+  "private": true,
+  "scripts": {
+    "prestart": "node scripts/bootstrap_database.js",
+    "start": "python main_slack.py",
+    "export-db": "./scripts/export_database.sh",
+    "test": "python -m pytest",
+    "lint": "python -m pylint agents/ tools/ integrations/"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0",
+    "python": ">=3.9.0"
+  },
+  "keywords": [
+    "ai",
+    "content",
+    "claude",
+    "slack",
+    "linkedin",
+    "twitter",
+    "email",
+    "youtube"
+  ],
+  "author": "Mitch Harris",
+  "license": "MIT"
+}
