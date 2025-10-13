@@ -529,11 +529,63 @@ Trust the prompts - they include PGA writing style examples."""
         # Extract score if mentioned in output
         score = 90  # Default, would parse from actual output
 
-        # TODO: Save to Airtable and get record URL
-        airtable_url = "https://airtable.com/appXXX/tblYYY/recZZZ"  # Placeholder
+        # Save to Airtable
+        airtable_url = None
+        airtable_record_id = None
+        try:
+            from integrations.airtable_client import get_airtable_client
+            airtable = get_airtable_client()
+
+            result = airtable.create_content_record(
+                content=output,
+                platform='email',
+                post_hook=subject_preview,
+                status='Draft'
+            )
+
+            if result.get('success'):
+                airtable_url = result.get('url')
+                airtable_record_id = result.get('record_id')
+                print(f"✅ Saved to Airtable: {airtable_url}")
+            else:
+                print(f"⚠️ Airtable save failed: {result.get('error')}")
+        except Exception as e:
+            print(f"⚠️ Airtable not configured or error: {e}")
+            airtable_url = None
+
+        # Save to Supabase with embedding
+        supabase_id = None
+        try:
+            from integrations.supabase_client import get_supabase_client
+            from tools.research_tools import generate_embedding
+
+            supabase = get_supabase_client()
+            embedding = generate_embedding(output)
+
+            supabase_result = supabase.table('generated_posts').insert({
+                'platform': 'email',
+                'post_hook': subject_preview,
+                'body_content': output,
+                'content_type': 'newsletter',
+                'airtable_record_id': airtable_record_id,
+                'airtable_url': airtable_url,
+                'status': 'draft',
+                'quality_score': score,
+                'iterations': 3,
+                'slack_thread_ts': getattr(self, 'session_id', None),
+                'user_id': self.user_id,
+                'created_by_agent': 'email_sdk_agent',
+                'embedding': embedding
+            }).execute()
+
+            if supabase_result.data:
+                supabase_id = supabase_result.data[0]['id']
+                print(f"✅ Saved to Supabase: {supabase_id}")
+        except Exception as e:
+            print(f"⚠️ Supabase save error: {e}")
 
         # TODO: Export to Google Docs and get URL
-        google_doc_url = "https://docs.google.com/document/d/XXX"  # Placeholder
+        google_doc_url = None
 
         return {
             "success": True,
@@ -542,8 +594,9 @@ Trust the prompts - they include PGA writing style examples."""
             "score": score,
             "subjects_tested": 5,
             "iterations": 3,
-            "airtable_url": airtable_url,
-            "google_doc_url": google_doc_url,
+            "airtable_url": airtable_url or "[Airtable not configured]",
+            "google_doc_url": google_doc_url or "[Coming Soon]",
+            "supabase_id": supabase_id,
             "session_id": self.user_id,
             "timestamp": datetime.now().isoformat()
         }

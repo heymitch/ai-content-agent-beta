@@ -77,6 +77,12 @@ Close: "Bubbles pop. Revolutions stumble. We're not in a bubble—just early."
 - The richer the outline, the more human the output
 - Quality target: 85+ score, 80-90% human detection
 
+**STEP 4 (Optional)**: Validate with AI detection if requested
+- After quality_check passes (18/25 score), optionally use check_ai_detection
+- Only run if user asks for validation OR post needs extra assurance
+- Shows human score (0-100%) and flags problematic sentences
+- If fails (<70% human), revise flagged sentences and re-check
+
 ### For Templates
 When user mentions content formats or frameworks:
 - Use **search_templates** to find relevant formats (e.g., "outline as content", "X vs Y comparison", "hot take")
@@ -95,11 +101,12 @@ When user mentions content formats or frameworks:
 2. **search_knowledge_base** - For brand voice and documentation
 3. **search_templates** - Search content templates/frameworks (Ship 30, comparisons, outlines)
 4. **get_template** - Get full template structure after user picks from search results
-5. **search_past_posts** - For content you've created before
-6. **get_content_calendar** - For scheduled content
-7. **get_thread_context** - For conversation history
-8. **analyze_content_performance** - For metrics
-9. **create_content_workflow** - Delegate to platform-specific content creation (LinkedIn, Twitter, Email)
+5. **check_ai_detection** - Validate post against GPTZero (use AFTER quality passes, only if requested)
+6. **search_past_posts** - For content you've created before
+7. **get_content_calendar** - For scheduled content
+8. **get_thread_context** - For conversation history
+9. **analyze_content_performance** - For metrics
+10. **delegate_to_workflow** - Delegate to platform-specific content creation (LinkedIn, Twitter, Email)
 
 ## Quality Standards
 - Hook must grab attention in first line

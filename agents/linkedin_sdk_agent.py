@@ -630,11 +630,63 @@ Trust the prompts - they include write-like-human rules."""
         # Extract score if mentioned in output
         score = 90  # Default, would parse from actual output
 
-        # TODO: Save to Airtable and get record URL
-        airtable_url = "https://airtable.com/appXXX/tblYYY/recZZZ"  # Placeholder
+        # Save to Airtable
+        airtable_url = None
+        airtable_record_id = None
+        try:
+            from integrations.airtable_client import get_airtable_client
+            airtable = get_airtable_client()
+
+            result = airtable.create_content_record(
+                content=output,
+                platform='linkedin',
+                post_hook=hook_preview,
+                status='Draft'
+            )
+
+            if result.get('success'):
+                airtable_url = result.get('url')
+                airtable_record_id = result.get('record_id')
+                print(f"✅ Saved to Airtable: {airtable_url}")
+            else:
+                print(f"⚠️ Airtable save failed: {result.get('error')}")
+        except Exception as e:
+            print(f"⚠️ Airtable not configured or error: {e}")
+            airtable_url = None
+
+        # Save to Supabase with embedding
+        supabase_id = None
+        try:
+            from integrations.supabase_client import get_supabase_client
+            from tools.research_tools import generate_embedding
+
+            supabase = get_supabase_client()
+            embedding = generate_embedding(output)
+
+            supabase_result = supabase.table('generated_posts').insert({
+                'platform': 'linkedin',
+                'post_hook': hook_preview,
+                'body_content': output,
+                'content_type': self._detect_content_type(output),
+                'airtable_record_id': airtable_record_id,
+                'airtable_url': airtable_url,
+                'status': 'draft',
+                'quality_score': score,
+                'iterations': 3,  # Would track from actual process
+                'slack_thread_ts': getattr(self, 'session_id', None),
+                'user_id': self.user_id,
+                'created_by_agent': 'linkedin_sdk_agent',
+                'embedding': embedding
+            }).execute()
+
+            if supabase_result.data:
+                supabase_id = supabase_result.data[0]['id']
+                print(f"✅ Saved to Supabase: {supabase_id}")
+        except Exception as e:
+            print(f"⚠️ Supabase save error: {e}")
 
         # TODO: Export to Google Docs and get URL
-        google_doc_url = "https://docs.google.com/document/d/XXX"  # Placeholder
+        google_doc_url = None
 
         return {
             "success": True,
@@ -643,11 +695,35 @@ Trust the prompts - they include write-like-human rules."""
             "score": score,
             "hooks_tested": 5,
             "iterations": 3,
-            "airtable_url": airtable_url,
-            "google_doc_url": google_doc_url,
+            "airtable_url": airtable_url or "[Airtable not configured]",
+            "google_doc_url": google_doc_url or "[Coming Soon]",
+            "supabase_id": supabase_id,
             "session_id": self.user_id,
             "timestamp": datetime.now().isoformat()
         }
+
+    def _detect_content_type(self, content: str) -> str:
+        """Detect content type from post structure"""
+        content_lower = content.lower()
+        lines = [l.strip() for l in content.split('\n') if l.strip()]
+
+        # Check for numbered lists (listicle/framework)
+        if any(line.startswith(('1.', '2.', '3.', '1/', '2/', '3/')) for line in lines):
+            return 'listicle'
+
+        # Check for story patterns
+        if any(word in content_lower for word in ['i was', 'i spent', 'i lost', 'here\'s what happened']):
+            return 'story'
+
+        # Check for hot take patterns
+        if content.startswith(('everyone', 'nobody', 'stop', 'you\'re', 'you don\'t')):
+            return 'hot_take'
+
+        # Check for comparison/contrast
+        if any(phrase in content_lower for phrase in ['vs', 'not x, it\'s y', 'instead of']):
+            return 'comparison'
+
+        return 'thought_leadership'  # Default
 
     async def review_post(
         self,

@@ -20,6 +20,7 @@ slack-sdk
 
 # Utilities
 requests
+httpx  # For async API calls (GPTZero)
 python-dotenv
 inflection
 

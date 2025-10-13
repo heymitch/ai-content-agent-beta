@@ -78,16 +78,15 @@ class AirtableContentCalendar:
         # Build Airtable fields
         # Platform is a multi-select field in Airtable, so it needs to be an array
         # Note: 'Created' and 'Edited Time' are auto-computed fields in Airtable
-        # Note: 'Client' might be a select field - only include if you have permission to set it
+        # Note: 'Client' is a select field - don't set it to avoid permission errors
         fields = {
             'Body Content': content,
             'Platform': [platform.capitalize()],  # Array for multi-select field
             'Status': status,
         }
 
-        # Only add Client if provided and not using default (to avoid select field issues)
-        if client and client != "Agency Content Autopilot":
-            fields['Client'] = client
+        # Don't set Client field - it's a restricted select dropdown in Airtable
+        # Users can manually set it in Airtable UI
 
         # Add optional fields only if provided
         if post_hook:
@@ -97,8 +96,9 @@ class AirtableContentCalendar:
             # Ensure date is in YYYY-MM-DD format for Airtable
             fields['Publish Date'] = publish_date
 
-        if quality_score is not None:
-            fields['% Score'] = quality_score
+        # Don't set quality_score - field doesn't exist in Airtable
+        # if quality_score is not None:
+        #     fields['% Score'] = quality_score
 
         if suggested_edits:
             fields['Suggested Edits'] = suggested_edits
