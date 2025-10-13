@@ -360,18 +360,18 @@ async def handle_slack_event(request: Request):
         # ALL messages go to Claude Agent SDK - it's smart enough to understand context
         print("🤖 Processing with Claude Agent SDK...")
 
-        # Only send acknowledgement for direct mentions to avoid spam
-        if is_bot_mentioned or event_type == 'app_mention':
-            # Add instant emoji reaction for immediate feedback
-            try:
-                client.reactions_add(
-                    channel=channel,
-                    timestamp=event_data.get('ts'),
-                    name="zap"
-                )
-            except Exception as e:
-                print(f"⚠️ Could not add reaction: {e}")
+        # Add instant ⚡ reaction for all messages (mentions + thread replies)
+        try:
+            client.reactions_add(
+                channel=channel,
+                timestamp=event_data.get('ts'),
+                name="zap"
+            )
+        except Exception as e:
+            print(f"⚠️ Could not add reaction: {e}")
 
+        # Only send "On it..." for direct mentions (not thread replies)
+        if is_bot_mentioned or event_type == 'app_mention':
             send_slack_message(
                 channel=channel,
                 text="On it...",
