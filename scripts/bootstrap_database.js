@@ -16,6 +16,7 @@
  * Requirements:
  * - SUPABASE_DB_URL in Replit Secrets or .env
  *   Format: postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres
+ *   Use "Transaction pooler" connection string from Supabase (works best with Replit)
  *
  * Usage:
  * - Runs automatically via package.json prestart hook on Replit
@@ -56,9 +57,10 @@ if (!DB_URL) {
   console.log('  - .env file (for local development)');
   console.log('');
   console.log('Get your DB URL from: https://supabase.com/dashboard');
-  console.log('→ Project Settings → Database → Connection String (Direct)');
+  console.log('→ Project Settings → Database → Connection String');
+  console.log('→ Select "Transaction pooler" (works best with Replit)');
   console.log('');
-  console.log('Format: postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres');
+  console.log('Format: postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:6543/postgres');
   console.log('');
   log('⏭️', 'Skipping database bootstrap...', colors.yellow);
   console.log('');
