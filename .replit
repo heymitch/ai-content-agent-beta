@@ -1,4 +1,4 @@
-run = "python3 -m uvicorn main_slack:app --host 0.0.0.0 --port 8080"
+run = "npm start"
 language = "python3"
 modules = ["python-3.11", "nodejs-20"]
 
@@ -9,8 +9,8 @@ PYTHONUNBUFFERED = "1"
 channel = "stable-24_05"
 
 [deployment]
-build = ["sh", "-c", "pip install -r requirements.txt && npm install -g @anthropic-ai/claude-code"]
-run = ["python3", "-m", "uvicorn", "main_slack:app", "--host", "0.0.0.0", "--port", "5000"]
+build = ["sh", "-c", "pip install -r requirements.txt && npm install"]
+run = ["sh", "-c", "npm start"]
 deploymentTarget = "vm"
 
 [agent]
@@ -34,7 +34,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 -m uvicorn main_slack:app --host 0.0.0.0 --port 5000"
+args = "npm start"
 waitForPort = 5000
 
 [workflows.workflow.metadata]

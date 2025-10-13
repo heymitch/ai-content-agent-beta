@@ -385,6 +385,17 @@ async def handle_slack_event(request: Request):
 
                 print("🚀 Claude Agent SDK ready with 6 tools")
 
+                # Save user message to conversation history
+                if handler.memory:
+                    handler.memory.add_message(
+                        thread_ts=thread_ts,
+                        channel_id=channel,
+                        user_id=user_id,
+                        role='user',
+                        content=message_text
+                    )
+                    print(f"💾 Saved user message to conversation history")
+
                 # The agent decides what to do based on context:
                 # - Create content → delegates to workflows
                 # - Answer questions → uses web_search if needed
@@ -396,6 +407,17 @@ async def handle_slack_event(request: Request):
                     thread_ts=thread_ts,  # Use thread_ts for session continuity
                     channel_id=channel
                 )
+
+                # Save assistant response to conversation history
+                if handler.memory:
+                    handler.memory.add_message(
+                        thread_ts=thread_ts,
+                        channel_id=channel,
+                        user_id='bot',
+                        role='assistant',
+                        content=response_text
+                    )
+                    print(f"💾 Saved assistant response to conversation history")
 
                 # Send response
                 send_slack_message(

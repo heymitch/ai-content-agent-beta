@@ -637,6 +637,17 @@ Trust the prompts - they include write-like-human rules."""
 
     def _parse_output(self, output: str) -> Dict[str, Any]:
         """Parse agent output into structured response"""
+        print(f"\n🔍 _parse_output called with {len(output)} chars")
+        print(f"   First 200 chars: {output[:200]}...")
+
+        if not output or len(output) < 10:
+            print(f"⚠️ WARNING: Output is empty or too short!")
+            return {
+                "success": False,
+                "error": "No content generated",
+                "post": None
+            }
+
         # Extract the hook (first 200 chars or first paragraph)
         lines = output.strip().split('\n')
         hook = lines[0] if lines else output[:200]
