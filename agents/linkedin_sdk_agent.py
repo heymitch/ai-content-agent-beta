@@ -562,8 +562,9 @@ Trust the prompts - they include write-like-human rules."""
             await client.query(creation_prompt)
             print(f"⏳ LinkedIn agent processing (this takes 30-60s)...")
 
-            # Collect the response - keep the LAST text output we see
-            final_output = ""
+            # Collect the response - keep the LONGEST text output (that's the post)
+            final_output = ""  # Last commentary message
+            final_post_content = ""  # The actual post (longest message)
             message_count = 0
             last_text_message = None
 
@@ -572,7 +573,7 @@ Trust the prompts - they include write-like-human rules."""
                 msg_type = type(msg).__name__
                 print(f"   📬 Received message {message_count}: type={msg_type}")
 
-                # Track all AssistantMessages with text content (keep the last one)
+                # Track all AssistantMessages with text content
                 if msg_type == 'AssistantMessage':
                     if hasattr(msg, 'content'):
                         if isinstance(msg.content, list):
@@ -583,32 +584,48 @@ Trust the prompts - they include write-like-human rules."""
                                     if block_type == 'text':
                                         text_content = block.get('text', '')
                                         if text_content:
+                                            # Keep the LONGEST message (that's the post)
+                                            if len(text_content) > len(final_post_content):
+                                                final_post_content = text_content
+                                                print(f"      🎯 NEW LONGEST TEXT: {len(final_post_content)} chars")
+                                            # Keep last message for commentary
                                             final_output = text_content
                                             last_text_message = message_count
-                                            print(f"      ✅ Got text output ({len(final_output)} chars)")
+                                            print(f"      ✅ Got text output ({len(text_content)} chars)")
                                 elif hasattr(block, 'text'):
                                     text_content = block.text
                                     if text_content:
+                                        if len(text_content) > len(final_post_content):
+                                            final_post_content = text_content
+                                            print(f"      🎯 NEW LONGEST TEXT: {len(final_post_content)} chars")
                                         final_output = text_content
                                         last_text_message = message_count
-                                        print(f"      ✅ Got text from block.text ({len(final_output)} chars)")
+                                        print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
                         elif hasattr(msg.content, 'text'):
                             text_content = msg.content.text
                             if text_content:
+                                if len(text_content) > len(final_post_content):
+                                    final_post_content = text_content
+                                    print(f"      🎯 NEW LONGEST TEXT: {len(final_post_content)} chars")
                                 final_output = text_content
                                 last_text_message = message_count
-                                print(f"      ✅ Got text from content.text ({len(final_output)} chars)")
+                                print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
                     elif hasattr(msg, 'text'):
                         text_content = msg.text
                         if text_content:
+                            if len(text_content) > len(final_post_content):
+                                final_post_content = text_content
+                                print(f"      🎯 NEW LONGEST TEXT: {len(final_post_content)} chars")
                             final_output = text_content
                             last_text_message = message_count
-                            print(f"      ✅ Got text from msg.text ({len(final_output)} chars)")
+                            print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
 
             print(f"\n   ✅ Stream complete after {message_count} messages (last text at message {last_text_message})")
+            print(f"   📝 Longest message: {len(final_post_content)} chars (this is the post)")
+            print(f"   💬 Last message: {len(final_output)} chars (this is the commentary)")
 
-            # Parse the output to extract structured data
-            return self._parse_output(final_output)
+            # Parse the LONGEST message (the actual post) to save to Airtable/Supabase
+            return self._parse_output(final_post_content)
 
         except Exception as e:
             print(f"❌ LinkedIn SDK Agent error: {e}")
