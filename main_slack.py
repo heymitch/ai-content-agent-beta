@@ -362,6 +362,16 @@ async def handle_slack_event(request: Request):
 
         # Only send acknowledgement for direct mentions to avoid spam
         if is_bot_mentioned or event_type == 'app_mention':
+            # Add instant emoji reaction for immediate feedback
+            try:
+                client.reactions_add(
+                    channel=channel,
+                    timestamp=event_data.get('ts'),
+                    name="zap"
+                )
+            except Exception as e:
+                print(f"⚠️ Could not add reaction: {e}")
+
             send_slack_message(
                 channel=channel,
                 text="On it...",
