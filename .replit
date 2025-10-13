@@ -9,7 +9,7 @@ PYTHONUNBUFFERED = "1"
 channel = "stable-24_05"
 
 [deployment]
-build = ["sh", "-c", "pip install -r requirements.txt && npm install"]
+build = ["sh", "-c", "pip install -r requirements.txt && npm install && npm install -g @anthropic-ai/claude-code"]
 run = ["sh", "-c", "npm start"]
 deploymentTarget = "vm"
 

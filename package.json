@@ -4,6 +4,7 @@
   "description": "Production-ready AI content agent template with Claude SDK",
   "private": true,
   "scripts": {
+    "preinstall": "npm install -g @anthropic-ai/claude-code || true",
     "prestart": "node scripts/bootstrap_database.js",
     "start": "python3 -m uvicorn main_slack:app --host 0.0.0.0 --port 5000",
     "export-db": "./scripts/export_database.sh",

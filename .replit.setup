@@ -1,0 +1,32 @@
+#!/bin/bash
+# Replit setup script
+# Installs Claude Code CLI globally for Agent SDK
+
+echo "📦 Installing dependencies..."
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install Node.js dependencies
+npm install
+
+# Install Claude Code CLI globally (required for Agent SDK)
+echo "🤖 Installing Claude Code CLI..."
+npm install -g @anthropic-ai/claude-code
+
+# Verify installation
+if command -v claude &> /dev/null; then
+    echo "✅ Claude Code CLI installed successfully"
+    claude --version
+else
+    echo "⚠️ Claude Code CLI not found in PATH"
+    echo "   Trying to add to PATH..."
+    export PATH="$HOME/.npm-global/bin:$PATH"
+    if command -v claude &> /dev/null; then
+        echo "✅ Found after adding to PATH"
+    else
+        echo "❌ Still not found - manual PATH setup may be needed"
+    fi
+fi
+
+echo "✅ Setup complete!"
