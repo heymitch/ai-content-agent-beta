@@ -4,6 +4,7 @@ modules = ["python-3.11", "nodejs-20"]
 
 [env]
 PYTHONUNBUFFERED = "1"
+PATH = "/home/runner/.npm-global/bin:${PATH}"
 
 [nix]
 channel = "stable-24_05"
