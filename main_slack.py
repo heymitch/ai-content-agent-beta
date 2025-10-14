@@ -362,7 +362,7 @@ async def handle_slack_event(request: Request):
 
         # Add instant ⚡ reaction for all messages (mentions + thread replies)
         try:
-            client.reactions_add(
+            slack_client.reactions_add(
                 channel=channel,
                 timestamp=event_data.get('ts'),
                 name="zap"

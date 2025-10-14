@@ -659,28 +659,46 @@ Trust the prompts - they include write-like-human rules."""
         score = 90  # Default, would parse from actual output
 
         # Save to Airtable
+        print("\n" + "="*60)
+        print("📋 ATTEMPTING AIRTABLE SAVE")
+        print("="*60)
         airtable_url = None
         airtable_record_id = None
         try:
             from integrations.airtable_client import get_airtable_client
-            airtable = get_airtable_client()
+            print("✅ Imported Airtable client")
 
+            airtable = get_airtable_client()
+            print(f"✅ Airtable client initialized:")
+            print(f"   Base ID: {airtable.base_id}")
+            print(f"   Table: {airtable.table_name}")
+
+            print(f"\n📝 Saving content (hook: '{hook_preview[:50]}...')")
             result = airtable.create_content_record(
                 content=output,
                 platform='linkedin',
                 post_hook=hook_preview,
                 status='Draft'
             )
+            print(f"📊 Airtable API result: {result}")
 
             if result.get('success'):
                 airtable_url = result.get('url')
                 airtable_record_id = result.get('record_id')
-                print(f"✅ Saved to Airtable: {airtable_url}")
+                print(f"✅ SUCCESS! Saved to Airtable:")
+                print(f"   Record ID: {airtable_record_id}")
+                print(f"   URL: {airtable_url}")
             else:
-                print(f"⚠️ Airtable save failed: {result.get('error')}")
+                print(f"❌ Airtable save FAILED:")
+                print(f"   Error: {result.get('error')}")
         except Exception as e:
-            print(f"⚠️ Airtable not configured or error: {e}")
+            import traceback
+            print(f"❌ EXCEPTION in Airtable save:")
+            print(f"   Error: {e}")
+            print(f"   Traceback:")
+            print(traceback.format_exc())
             airtable_url = None
+        print("="*60 + "\n")
 
         # Save to Supabase with embedding
         supabase_id = None
