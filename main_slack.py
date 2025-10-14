@@ -20,6 +20,9 @@ from collections import deque
 from slack_bot.handler import SlackContentHandler
 from slack_sdk import WebClient
 
+# Supabase helpers
+from integrations.supabase_client import is_bot_participating_in_thread
+
 # Load environment variables
 load_dotenv()
 
@@ -30,9 +33,8 @@ app = FastAPI()
 processed_events = {}
 EVENT_CACHE_TTL = 300  # 5 minutes
 
-# Track threads where bot is participating (thread_ts -> timestamp of last activity)
-participating_threads = {}
-THREAD_PARTICIPATION_TTL = 86400  # 24 hours
+# Thread participation TTL (used for Supabase query)
+THREAD_PARTICIPATION_TTL = 24  # 24 hours
 
 # Initialize Supabase
 supabase: Client = create_client(
@@ -309,44 +311,36 @@ async def handle_slack_event(request: Request):
         # bot_user_id already retrieved above
         is_bot_mentioned = bot_user_id and f'<@{bot_user_id}>' in message_text
 
-        # Clean expired thread participations
-        now = time.time()
-        expired_threads = [k for k, v in participating_threads.items()
-                          if now - v > THREAD_PARTICIPATION_TTL]
-        for k in expired_threads:
-            del participating_threads[k]
-            print(f"🧹 Expired thread participation: {k}")
-
         # Determine if bot should respond
         should_respond = False
 
         # Debug logging
         print(f"🔍 Debug: event_type={event_type}, thread_ts={thread_ts}, is_mentioned={is_bot_mentioned}")
-        print(f"🔍 Active threads: {list(participating_threads.keys())}")
 
         if event_type == 'app_mention' or is_bot_mentioned:
             # Always respond to direct mentions
             should_respond = True
-            # Mark this thread as participating
-            participating_threads[thread_ts] = now
-            print(f"✅ Bot mentioned - participating in thread {thread_ts}")
+            print(f"✅ Bot mentioned - will participate in thread {thread_ts}")
         elif event.get('channel_type') == 'im':
             # Always respond in DMs (and maintain conversation context)
             should_respond = True
-            # DMs automatically participate (the whole DM channel is one conversation)
-            participating_threads[thread_ts] = now
             print("✅ Direct message - responding with continuous context")
-        elif thread_ts in participating_threads:
-            # Respond to all messages in threads we're participating in
-            should_respond = True
-            # Update last activity time
-            participating_threads[thread_ts] = now
-            print(f"✅ Continuing conversation in thread {thread_ts}")
         else:
-            # Don't respond to random channel messages
-            print(f"⏭️ Skipping - not participating in thread {thread_ts}")
-            print(f"   Thread {thread_ts} not in active threads: {participating_threads.keys()}")
-            return {'status': 'not_participating'}
+            # Check if bot has participated in this thread recently (persists across restarts!)
+            is_participating = is_bot_participating_in_thread(
+                thread_ts=thread_ts,
+                channel_id=channel,
+                ttl_hours=THREAD_PARTICIPATION_TTL
+            )
+
+            if is_participating:
+                # Continue conversation in threads where bot has participated
+                should_respond = True
+                print(f"✅ Continuing conversation in thread {thread_ts} (from conversation history)")
+            else:
+                # Don't respond to random channel messages
+                print(f"⏭️ Skipping - not participating in thread {thread_ts}")
+                return {'status': 'not_participating'}
 
         if not should_respond:
             return {'status': 'skipped'}
