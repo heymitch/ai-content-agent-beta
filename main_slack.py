@@ -364,7 +364,7 @@ async def handle_slack_event(request: Request):
         try:
             slack_client.reactions_add(
                 channel=channel,
-                timestamp=event_data.get('ts'),
+                timestamp=event_ts,
                 name="zap"
             )
         except Exception as e:
