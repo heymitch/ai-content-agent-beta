@@ -303,8 +303,8 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
 
         elif platform.lower() in ['twitter', 'x']:
             # Use the Twitter SDK Agent workflow
-            from agents.twitter_sdk_agent import create_twitter_workflow
-            result = await create_twitter_workflow(topic, context, style)
+            from agents.twitter_sdk_agent import create_twitter_thread_workflow
+            result = await create_twitter_thread_workflow(topic, context, style)
             return result  # Already formatted with score
 
         elif platform.lower() == 'email':

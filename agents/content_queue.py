@@ -184,18 +184,25 @@ class ContentQueueManager:
                     style=job.style
                 )
             elif job.platform == "twitter":
-                from agents.agentic_twitter_orchestrator import create_twitter_thread_workflow
+                from agents.twitter_sdk_agent import create_twitter_thread_workflow
                 result = await create_twitter_thread_workflow(
                     topic=job.topic,
                     context=job.context,
                     style=job.style
                 )
             elif job.platform == "email":
-                from agents.agentic_email_orchestrator import create_email_workflow
+                from agents.email_sdk_agent import create_email_workflow
                 result = await create_email_workflow(
                     topic=job.topic,
                     context=job.context,
                     style=job.style
+                )
+            elif job.platform in ["youtube", "video"]:
+                from agents.youtube_sdk_agent import create_youtube_workflow
+                result = await create_youtube_workflow(
+                    topic=job.topic,
+                    context=job.context,
+                    script_type=job.style
                 )
             else:
                 raise ValueError(f"Unknown platform: {job.platform}")
