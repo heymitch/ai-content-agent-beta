@@ -268,10 +268,17 @@ class SlackThreadMemory:
         }
 
         try:
-            self.supabase.table('conversation_history').insert(message_data).execute()
+            result = self.supabase.table('conversation_history').insert(message_data).execute()
+            print(f"✅ Message saved to conversation_history (thread: {thread_ts[:8]}...)")
             return True
         except Exception as e:
-            print(f"⚠️ Failed to add message to history: {e}")
+            print(f"❌ FAILED to save message to conversation_history!")
+            print(f"   Error: {e}")
+            print(f"   Thread: {thread_ts}")
+            print(f"   Role: {role}")
+            print(f"   Content length: {len(content)} chars")
+            import traceback
+            traceback.print_exc()
             return False
 
     def get_thread_history(self, thread_ts: str, limit: int = 50) -> list:
