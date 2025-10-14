@@ -65,3 +65,9 @@ archive/
 *.sqlite
 
 # Test tools (delete before production)
+# Test tools
+DEPLOYMENT_TESTS.md
+WHITE_GLOVE_DEPLOYMENT.md
+test_*.py
+*_test.py
+tests/

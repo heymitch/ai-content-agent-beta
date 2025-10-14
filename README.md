@@ -1,150 +1,210 @@
-# Content Agent - Client-Scalable Setup
+# AI Content Agent Template
 
-A sophisticated content strategy agent with RAG-powered knowledge base, designed for easy client onboarding and deployment.
+A production-ready AI content creation system powered by Anthropic Claude Agent SDK. Creates high-quality, human-like content for LinkedIn, Twitter/X, and Email through Slack integration with intelligent workflows, validators, and quality controls.
 
 ## 🚀 Quick Start
 
-### For Your Business (Current Setup)
 ```bash
-# Your current working setup is in clients/your-business/
-cd clients/your-business/
-python ../../main.py
-```
+# 1. Install dependencies
+pip install -r requirements.txt
+npm install
 
-### For New Clients
-```bash
-# Onboard a new client
-python setup/client_onboarding.py --client client-name
+# 2. Set up environment variables
+cp .env.example .env
+# Edit .env with your API keys
 
-# Health check
-python utils/health_check.py
+# 3. Bootstrap database (creates tables and RAG functions)
+node scripts/bootstrap_database.js
 
-# Setup database functions (if needed)
-python setup/setup_database.py --client client-name
+# 4. Start the Slack bot
+npm start
+# Or manually: python3 -m uvicorn main_slack:app --host 0.0.0.0 --port 5000
 ```
 
 ## 📁 Project Structure
 
 ```
-content-agent/
-├── main.py                     # Core agent application
+ai-content-agent-template/
+├── main_slack.py               # FastAPI app with Slack event handlers
+├── package.json                # NPM scripts and dependencies
 ├── requirements.txt            # Python dependencies
-├── supabase_schema.sql         # Database schema reference
-├── setup/                      # Setup and onboarding scripts
-│   ├── client_onboarding.py    # Full client onboarding
-│   └── setup_database.py       # Database setup utilities
-├── utils/                      # Reusable utilities
-│   ├── embedding_utils.py      # Embedding generation tools
-│   └── health_check.py         # System health monitoring
-├── clients/                    # Client-specific configurations
-│   └── your-business/          # Your current working setup
-│       ├── .env                # Environment variables
-│       └── docs/               # Brand documentation
-└── archive/                    # Archived setup/debug files
+│
+├── agents/                     # Claude Agent SDK implementations
+│   ├── email_sdk_agent.py      # Email content generation
+│   ├── linkedin_sdk_agent.py   # LinkedIn content generation
+│   ├── twitter_sdk_agent.py    # Twitter/X content generation
+│   └── youtube_sdk_agent.py    # YouTube script generation
+│
+├── workflows/                  # Content creation workflows
+│   ├── base_workflow.py        # Core workflow orchestration
+│   ├── agentic_linkedin_workflow.py
+│   ├── agentic_twitter_workflow.py
+│   └── agentic_email_workflow.py
+│
+├── validators/                 # Quality control validators
+│   ├── base_validator.py       # Validation framework (0-25 scale)
+│   ├── linkedin_validator.py   # LinkedIn-specific rules
+│   ├── twitter_validator.py    # Twitter/X-specific rules
+│   ├── email_validator.py      # Email-specific rules
+│   └── pattern_library.py      # Writing pattern detection
+│
+├── slack_bot/                  # Slack integration layer
+│   ├── handler.py              # Main Slack event handler
+│   ├── claude_agent_handler.py # Claude Agent SDK wrapper
+│   ├── memory.py               # Thread-based conversation memory
+│   └── reactions.py            # Emoji-based interactions
+│
+├── tools/                      # Agent tools and utilities
+│   ├── brand_tools.py          # Brand voice & guidelines
+│   ├── content_tools.py        # Content search & analysis
+│   ├── research_tools.py       # Web search via Tavily
+│   ├── template_search.py      # Content template library
+│   └── google_drive_sync.py    # Google Drive integration
+│
+├── templates/                  # Content templates & frameworks
+│   ├── linkedin/               # LinkedIn post templates
+│   ├── twitter/                # Twitter thread templates
+│   ├── email/                  # Email templates
+│   ├── ship-30/                # Ship 30 for 30 frameworks
+│   └── frameworks/             # Writing frameworks (hooks, listicles)
+│
+├── integrations/               # External service integrations
+│   ├── supabase_client.py      # Database client
+│   └── airtable_client.py      # Content calendar (optional)
+│
+├── scripts/                    # Setup and utility scripts
+│   ├── bootstrap_database.js   # Database initialization
+│   └── export_database.py      # Database export utility
+│
+└── prompts/                    # System prompts for agents
+    ├── linkedin_tools.py
+    ├── twitter_tools.py
+    └── email_tools.py
 ```
 
 ## 🛠️ Features
 
-### Core Agent Capabilities
-- **Strategic Content Planning**: AI-powered content strategy with brand voice integration
-- **RAG-Powered Knowledge Base**: Semantic search across training content and frameworks
-- **Conversation Memory**: Maintains context across chat sessions
-- **Enhanced Webhook Delivery**: Comprehensive strategic context for downstream automation
-- **Multi-Platform Support**: Slack integration with extensible platform support
+### Core Capabilities
+- **Multi-Platform Content Creation**: LinkedIn posts, Twitter threads, Emails, YouTube scripts
+- **Claude Agent SDK Integration**: Autonomous workflows with tool use and self-correction
+- **Quality Validation**: 25-point scoring system with platform-specific validators
+- **Pattern Detection**: Identifies overused phrases, clichés, and robotic patterns
+- **RAG-Powered Research**: Semantic search across brand docs, templates, and past content
+- **Conversation Memory**: Thread-based context retention for continuous conversations
+- **Web Search Integration**: Real-time research via Tavily API
+- **Template Library**: Ship 30 for 30 frameworks, hooks, listicles, comparisons
+- **AI Detection Validation**: Optional GPTZero integration for human-likeness scoring
 
-### Training Data Sources
-- **Social Content**: 1900+ training examples with embeddings
-- **Proven Content**: High-performing posts from industry leaders
-- **Strategic Frameworks**: Content strategy and brand voice guidelines
-- **Custom Brand Docs**: Client-specific brand guidelines and voice
+### Content Workflows
+Each platform has specialized workflows with:
+- **Research Phase**: Web search, template matching, brand voice retrieval
+- **Generation Phase**: Outline → Draft → Validation → Iteration
+- **Quality Control**: Validators check hooks, structure, voice, patterns
+- **Iteration Loop**: Auto-revises until quality threshold met (18/25 = 72%)
 
-### RAG Search Functions
-- `match_social_content`: Search training social media content
-- `match_high_performing_content`: Search proven high-performing content
-- `match_documents`: Search general documents and resources
-- `match_knowledge`: Search strategic frameworks and guidelines
+### Platform Support
+- **LinkedIn**: Framework posts, storytelling, professional insights
+- **Twitter/X**: Threads, hot takes, comparisons, outlines
+- **Email**: Value-driven, indirect sales, direct sales approaches
+- **YouTube**: Video scripts with timing markers and retention hooks
 
-## 🔧 Client Onboarding
+### Slack Integration
+- **Event Handlers**: Mentions, DMs, thread replies with deduplication
+- **Slash Commands**: `/content`, `/batch`, `/calendar`, `/plan`, `/stats`
+- **Reaction Controls**: Emoji-based interactions for approvals/iterations
+- **Thread Memory**: Maintains conversation context within threads
 
-### 1. Prepare Client Assets
-Create folder structure for new client:
-```
-clients/client-name/
-├── docs/                       # Brand guidelines
-│   ├── brand_voice.md
-│   ├── content_strategy.md
-│   └── company_context.md
-└── training-data/              # Training content
-    ├── social-content/         # Social media posts (.md files)
-    ├── high-performing/        # Proven content (.md files)
-    └── documents/              # General resources (.md files)
-```
+## 🔧 Setup & Configuration
 
-### 2. Run Onboarding Script
+### 1. Environment Variables
+Copy [.env.example](.env.example) to `.env` and configure:
+
+**Required:**
+- `ANTHROPIC_API_KEY` - Claude API key
+- `SLACK_BOT_TOKEN` - Slack bot token (xoxb-...)
+- `SLACK_SIGNING_SECRET` - Slack signing secret
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_KEY` - Supabase anon/service key
+- `OPENAI_API_KEY` - OpenAI API key (for embeddings)
+- `TAVILY_API_KEY` - Tavily API key (for web search)
+
+**Optional:**
+- `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` - AI observability
+- `GPTZERO_API_KEY` - AI detection validation
+- `AIRTABLE_ACCESS_TOKEN` - Content calendar integration
+
+### 2. Database Setup
+The bootstrap script creates all necessary tables and RAG functions:
+
 ```bash
-python setup/client_onboarding.py \
-  --client client-name \
-  --supabase-url "your-supabase-url" \
-  --supabase-key "your-supabase-key" \
-  --openai-key "your-openai-key"
+node scripts/bootstrap_database.js
 ```
 
-### 3. Validate Setup
+This creates:
+- `knowledge_base` - Brand voice, guidelines, frameworks
+- `documents` - General documents and resources
+- `social_content` - Past LinkedIn/Twitter posts
+- `email_content` - Past email examples
+- `conversation_history` - Thread-based memory
+- RAG functions with pgvector for semantic search
+
+### 3. Slack App Setup
+1. Create Slack app at https://api.slack.com/apps
+2. Enable **Event Subscriptions** → Point to `https://your-domain.com/slack/events`
+3. Subscribe to: `app_mention`, `message.im`, `message.channels`, `reaction_added`
+4. Enable **Slash Commands**: `/content`, `/batch`, `/calendar`, `/plan`, `/stats`
+5. Install app to workspace and copy tokens to `.env`
+
+## 📖 Usage
+
+### Slack Interactions
+
+**Direct Mentions:**
+```
+@CMO write a LinkedIn post about AI automation trends in 2025
+@CMO create a Twitter thread comparing X vs Y
+@CMO draft an email promoting our new product
+```
+
+**Thread Replies:**
+The agent maintains conversation context within threads:
+```
+You: @CMO write a LinkedIn post about AI agents
+CMO: [generates post]
+You: make it more technical
+CMO: [revises with technical details]
+You: both versions
+CMO: [returns original + technical version]
+```
+
+**Slash Commands:**
 ```bash
-python utils/health_check.py
+/content linkedin AI automation trends
+/batch 5 linkedin content marketing tips
+/calendar                    # View upcoming scheduled content
+/plan create a week of content about X
+/stats                       # View content statistics
 ```
 
-## 📊 Database Setup
+### Content Creation Flow
 
-### Required Supabase Tables
-- `knowledge_base`: Strategic frameworks and guidelines
-- `documents`: General documents and resources
-- `social_content`: Social media training content
-- `high_performing_content`: Proven high-performing content
-- `conversation_history`: Chat conversation logs
-- `strategic_plans`: Generated strategic plans
+1. **User Request** → Agent analyzes intent and platform
+2. **Research Phase** → Web search, template matching, brand voice
+3. **Draft Generation** → Creates outline then full content
+4. **Validation** → Quality scoring (0-25 scale)
+5. **Iteration** → Revises until score ≥ 18/25 (72%)
+6. **Delivery** → Returns content via Slack thread
 
-### Required RAG Functions
-The onboarding script will provide SQL to add these functions to your Supabase:
-- `match_knowledge()`
-- `match_documents()`
-- `match_social_content()`
-- `match_high_performing_content()`
+### Quality Scoring (25-point scale)
 
-## 🔑 Environment Variables
+Each validator checks:
+- **Hook Quality** (5 pts) - Attention-grabbing, specific, tension-building
+- **Content Structure** (5 pts) - Logical flow, scannable formatting
+- **Brand Voice** (5 pts) - Authentic tone, avoids clichés
+- **Supporting Evidence** (5 pts) - Specific examples, data, stories
+- **Call-to-Action** (5 pts) - Clear next step, appropriate urgency
 
-### Required
-```env
-SUPABASE_URL=your_supabase_project_url
-SUPABASE_KEY=your_supabase_anon_key
-OPENAI_API_KEY=your_openai_api_key
-```
-
-### Optional (for Slack integration)
-```env
-SLACK_WEBHOOK_URL=your_slack_webhook_url
-SLACK_BOT_TOKEN=your_slack_bot_token
-PLAN_DELIVERY_WEBHOOK_URL=your_plan_delivery_webhook
-```
-
-## 🚦 Health Monitoring
-
-### Quick Health Check
-```bash
-python utils/health_check.py --quick
-```
-
-### Comprehensive Health Check
-```bash
-python utils/health_check.py
-```
-
-Checks include:
-- Environment variables
-- Database connectivity
-- RAG function availability
-- OpenAI API access
-- File structure validation
+**Threshold:** 18/25 (72%) required to pass
 
 ## 🎯 Deployment
 
@@ -152,57 +212,126 @@ Checks include:
 ```bash
 # Install dependencies
 pip install -r requirements.txt
+npm install
 
-# Run health check
-python utils/health_check.py
+# Bootstrap database
+node scripts/bootstrap_database.js
 
-# Start agent
-python main.py
+# Start server
+npm start
 ```
 
-### Production Deployment
-1. Set up client using onboarding script
-2. Configure environment variables
-3. Validate with health check
-4. Deploy using your preferred platform (Heroku, Railway, etc.)
+### Production (Railway/Render/Fly.io)
+1. Set environment variables in platform dashboard
+2. Deploy from GitHub repository
+3. Platform will run: `npm install` → `npm start`
+4. Bootstrap script runs automatically via `prestart` hook
 
-## 📚 Usage Examples
+### Environment Setup
+- **Railway**: Add env vars in dashboard → Deploy
+- **Render**: Create Web Service → Add env vars → Deploy
+- **Fly.io**: `fly secrets set KEY=value` → `fly deploy`
 
-### Adding Training Content
-```bash
-# Add markdown files to training folders
-clients/client-name/training-data/social-content/post-1.md
-clients/client-name/training-data/high-performing/proven-thread.md
+## 🔧 Architecture
 
-# Regenerate embeddings
-python setup/client_onboarding.py --client client-name
-```
+### Claude Agent SDK Integration
+The agent uses Anthropic's Claude Agent SDK for autonomous operation:
 
-### Testing RAG Search
 ```python
-from utils.embedding_utils import test_rag_search
-from supabase import create_client
+# agents/linkedin_sdk_agent.py
+from claude_agent_sdk import Agent, tool
 
-supabase = create_client(url, key)
-test_rag_search(supabase, 'match_social_content', 'content strategy')
+agent = Agent(
+    name="LinkedIn Content Creator",
+    tools=[
+        web_search_tool,
+        search_templates_tool,
+        search_knowledge_base_tool,
+        quality_check_tool
+    ]
+)
+
+# Agent autonomously:
+# 1. Researches topic via web search
+# 2. Finds relevant templates
+# 3. Retrieves brand voice
+# 4. Generates content
+# 5. Validates quality
+# 6. Iterates until threshold met
 ```
 
-## 🔄 Maintenance
+### Workflow Orchestration
+Each platform has a specialized workflow:
 
-### Regular Tasks
-- **Monitor embedding counts**: Ensure new content gets embedded
-- **Health checks**: Run before deployments
-- **Client updates**: Re-run onboarding when adding new training data
+```python
+# workflows/agentic_linkedin_workflow.py
+class AgenticLinkedInWorkflow:
+    async def create_content(self, topic: str):
+        # 1. Research phase
+        research = await agent.research(topic)
 
-### Troubleshooting
-- Check `archive/` folder for debugging scripts from initial setup
-- Run `python utils/health_check.py` to diagnose issues
-- Validate RAG functions in Supabase SQL Editor
+        # 2. Generation phase
+        draft = await agent.generate(research)
+
+        # 3. Validation phase
+        score = validator.validate(draft)
+
+        # 4. Iteration phase (if needed)
+        while score < 18:
+            feedback = validator.get_feedback(draft)
+            draft = await agent.revise(draft, feedback)
+            score = validator.validate(draft)
+
+        return draft
+```
+
+### Memory System
+Thread-based memory maintains conversation context:
+
+```python
+# slack_bot/memory.py
+class ConversationMemory:
+    def get_context(self, thread_ts: str) -> List[Dict]:
+        """Retrieve last N messages from thread"""
+
+    def add_message(self, thread_ts: str, role: str, content: str):
+        """Store message in conversation history"""
+```
+
+## 🧪 Testing
+
+```bash
+# Test database connection
+node test_supabase_connection.js
+
+# Test content generation
+python test_generated_posts.py
+
+# Run validator tests
+python -m pytest validators/tests/
+```
+
+## 📚 Resources
+
+- **Claude Agent SDK**: [docs.anthropic.com](https://docs.anthropic.com/claude/docs/agent-sdk)
+- **Supabase**: [supabase.com/docs](https://supabase.com/docs)
+- **Tavily API**: [docs.tavily.com](https://docs.tavily.com)
+- **Langfuse**: [langfuse.com/docs](https://langfuse.com/docs)
 
 ## 📝 License
 
-This project is configured for client services delivery. Each client deployment should have its own isolated database and configuration.
+MIT License - See LICENSE file for details
+
+## 🤝 Contributing
+
+Contributions welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ---
 
-**Need help?** Check the health monitoring output or review archived setup scripts in the `archive/` folder.# Trigger deployment Wed Oct  1 15:02:55 MST 2025
+**Built with:** Claude Agent SDK • FastAPI • Supabase • Slack SDK • Tavily
+
+**Author:** Mitch Harris
