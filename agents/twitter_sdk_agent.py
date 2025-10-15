@@ -649,53 +649,80 @@ Trust the prompts - they include write-like-human rules."""
 
     def _parse_output(self, output: str) -> Dict[str, Any]:
         """Parse agent output into structured response"""
-        # Extract the hook (first 280 chars or first tweet)
-        lines = output.strip().split('\n')
-        hook = lines[0] if lines else output[:280]
+        # Clean the content (remove SDK metadata/headers)
+        from integrations.airtable_client import AirtableContentCalendar
+        cleaner = AirtableContentCalendar.__new__(AirtableContentCalendar)
+        clean_output = cleaner._clean_content(output)
 
-        # Truncate hook to 280 chars for preview
-        hook_preview = hook[:277] + "..." if len(hook) > 280 else hook
+        # Extract the hook from clean content
+        hook_preview = cleaner._extract_hook(clean_output, 'twitter')
 
         # Extract score if mentioned in output
         score = 90  # Default, would parse from actual output
 
         # Save to Airtable
+        print("\n" + "="*60)
+        print("📋 ATTEMPTING AIRTABLE SAVE")
+        print("="*60)
         airtable_url = None
         airtable_record_id = None
         try:
             from integrations.airtable_client import get_airtable_client
-            airtable = get_airtable_client()
+            print("✅ Imported Airtable client")
 
+            airtable = get_airtable_client()
+            print(f"✅ Airtable client initialized:")
+            print(f"   Base ID: {airtable.base_id}")
+            print(f"   Table: {airtable.table_name}")
+
+            print(f"\n📝 Saving content (hook: '{hook_preview[:50]}...')")
             result = airtable.create_content_record(
-                content=output,
+                content=output,  # Pass raw output, cleaning happens inside
                 platform='twitter',
                 post_hook=hook_preview,
                 status='Draft'
             )
+            print(f"📊 Airtable API result: {result}")
 
             if result.get('success'):
                 airtable_url = result.get('url')
                 airtable_record_id = result.get('record_id')
-                print(f"✅ Saved to Airtable: {airtable_url}")
+                print(f"✅ SUCCESS! Saved to Airtable:")
+                print(f"   Record ID: {airtable_record_id}")
+                print(f"   URL: {airtable_url}")
             else:
-                print(f"⚠️ Airtable save failed: {result.get('error')}")
+                print(f"❌ Airtable save FAILED:")
+                print(f"   Error: {result.get('error')}")
         except Exception as e:
-            print(f"⚠️ Airtable not configured or error: {e}")
+            import traceback
+            print(f"❌ EXCEPTION in Airtable save:")
+            print(f"   Error: {e}")
+            print(f"   Traceback:")
+            print(traceback.format_exc())
             airtable_url = None
+        print("="*60 + "\n")
 
         # Save to Supabase with embedding
+        print("\n" + "="*60)
+        print("💾 ATTEMPTING SUPABASE SAVE")
+        print("="*60)
         supabase_id = None
         try:
             from integrations.supabase_client import get_supabase_client
             from tools.research_tools import generate_embedding
 
+            print("✅ Imported Supabase client")
             supabase = get_supabase_client()
-            embedding = generate_embedding(output)
 
+            print(f"📊 Generating embedding for {len(clean_output)} chars...")
+            embedding = generate_embedding(clean_output)
+            print(f"✅ Embedding generated: {len(embedding)} dimensions")
+
+            print(f"\n📝 Saving to Supabase...")
             supabase_result = supabase.table('generated_posts').insert({
                 'platform': 'twitter',
                 'post_hook': hook_preview,
-                'body_content': output,
+                'body_content': clean_output,  # Save clean content
                 'content_type': 'thread',  # Twitter is always threads
                 'airtable_record_id': airtable_record_id,
                 'airtable_url': airtable_url,
@@ -710,16 +737,22 @@ Trust the prompts - they include write-like-human rules."""
 
             if supabase_result.data:
                 supabase_id = supabase_result.data[0]['id']
-                print(f"✅ Saved to Supabase: {supabase_id}")
+                print(f"✅ SUCCESS! Saved to Supabase:")
+                print(f"   Record ID: {supabase_id}")
         except Exception as e:
-            print(f"⚠️ Supabase save error: {e}")
+            import traceback
+            print(f"❌ EXCEPTION in Supabase save:")
+            print(f"   Error: {e}")
+            print(f"   Traceback:")
+            print(traceback.format_exc())
+        print("="*60 + "\n")
 
         # TODO: Export to Google Docs and get URL
         google_doc_url = None
 
         return {
             "success": True,
-            "thread": output,  # The final optimized thread
+            "thread": clean_output,  # The clean thread content (metadata stripped)
             "hook": hook_preview,  # First 280 chars for Slack preview
             "score": score,
             "hooks_tested": 5,

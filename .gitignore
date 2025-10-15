@@ -68,6 +68,9 @@ archive/
 # Test tools
 DEPLOYMENT_TESTS.md
 WHITE_GLOVE_DEPLOYMENT.md
+DEV_CONTEXT.md 
+ROADMAP.md 
+SDK_DOCS.md 
 test_*.py
 *_test.py
 tests/

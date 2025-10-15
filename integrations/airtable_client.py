@@ -71,16 +71,19 @@ class AirtableContentCalendar:
             Created Airtable record
         """
 
+        # Clean content before saving (remove SDK metadata/headers)
+        clean_content = self._clean_content(content)
+
         # Auto-extract hook from content if not provided
-        if not post_hook and content:
-            post_hook = self._extract_hook(content, platform)
+        if not post_hook and clean_content:
+            post_hook = self._extract_hook(clean_content, platform)
 
         # Build Airtable fields
         # Platform is a multi-select field in Airtable, so it needs to be an array
         # Note: 'Created' and 'Edited Time' are auto-computed fields in Airtable
         # Note: 'Client' is a select field - don't set it to avoid permission errors
         fields = {
-            'Body Content': content,
+            'Body Content': clean_content,  # Save only clean post content
             'Platform': [platform.capitalize()],  # Array for multi-select field
             'Status': status,
         }
@@ -215,24 +218,93 @@ class AirtableContentCalendar:
                 'error': str(e)
             }
 
+    def _clean_content(self, content: str) -> str:
+        """
+        Strip SDK output metadata and headers to get clean post content.
+
+        Removes:
+        - "---" dividers
+        - "POST 1:", "POST 2:", etc.
+        - "Final LinkedIn Post", "Final Twitter Thread", etc.
+        - Score/metadata lines
+        - "(Estimated Score: X/Y)" lines
+        - "Changes Applied:" sections
+
+        Args:
+            content: Raw SDK output
+
+        Returns:
+            Clean post content only
+        """
+        if not content:
+            return ""
+
+        import re
+
+        # Clean HTML if present
+        text = re.sub(r'<[^>]+>', '', content)
+        text = text.strip()
+
+        # Split into lines
+        lines = text.split('\n')
+        clean_lines = []
+        skip_rest = False
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Skip horizontal dividers
+            if stripped == '---' or stripped.startswith('==='):
+                continue
+
+            # Skip headers like "POST 1:", "POST 2:", etc.
+            if re.match(r'^(POST|THREAD|EMAIL|SCRIPT)\s*\d*:', stripped, re.IGNORECASE):
+                continue
+
+            # Skip "Final [Platform] Post" headers
+            if re.match(r'^Final (LinkedIn|Twitter|Email|YouTube)', stripped, re.IGNORECASE):
+                continue
+
+            # Skip score lines
+            if re.search(r'(Estimated Score|Quality Score):', stripped, re.IGNORECASE):
+                continue
+
+            # Skip "Changes Applied:" and everything after
+            if re.match(r'^Changes Applied:', stripped, re.IGNORECASE):
+                skip_rest = True
+                continue
+
+            if skip_rest:
+                continue
+
+            # Skip empty lines at the start
+            if not clean_lines and not stripped:
+                continue
+
+            clean_lines.append(line)
+
+        # Join and clean up extra whitespace
+        cleaned = '\n'.join(clean_lines).strip()
+        return cleaned
+
     def _extract_hook(self, content: str, platform: str) -> str:
         """
         Extract the hook/opening line from content
 
         Args:
-            content: Full content text
+            content: Full content text (should be pre-cleaned)
             platform: Platform type to determine extraction logic
 
         Returns:
-            First line or sentence as hook
+            First 200 chars of actual post content as hook
         """
         if not content:
             return ""
 
-        # Clean HTML if present
         import re
-        text = re.sub(r'<[^>]+>', '', content)
-        text = text.strip()
+
+        # Clean content first
+        text = self._clean_content(content)
 
         if platform.lower() == 'email':
             # For email, extract subject line if present
@@ -240,8 +312,9 @@ class AirtableContentCalendar:
             for line in lines[:3]:
                 if line.startswith('Subject:'):
                     return line.replace('Subject:', '').strip()
-            # Otherwise first line
-            return lines[0] if lines else ""
+            # Otherwise first non-empty line
+            non_empty = [l.strip() for l in lines if l.strip()]
+            return non_empty[0][:200] if non_empty else ""
 
         elif platform.lower() == 'twitter':
             # For Twitter, get first tweet
@@ -249,20 +322,21 @@ class AirtableContentCalendar:
             first_tweet = tweets[0] if tweets else text
             # Remove thread numbering like "1/7"
             first_tweet = re.sub(r'^\d+/\d+\s*', '', first_tweet)
-            return first_tweet[:100] + ('...' if len(first_tweet) > 100 else '')
+            # Return first 200 chars
+            return first_tweet[:200].strip()
 
         else:
-            # For LinkedIn/other, get first line
-            lines = [l.strip() for l in text.split('\n') if l.strip()]
-            return lines[0] if lines else text[:100]
+            # For LinkedIn/YouTube/other, get first 200 chars
+            non_empty_lines = [l.strip() for l in text.split('\n') if l.strip()]
+            first_content = '\n'.join(non_empty_lines) if non_empty_lines else text
+            return first_content[:200].strip()
 
-
-# Singleton instance
-_airtable_client = None
 
 def get_airtable_client() -> AirtableContentCalendar:
-    """Get or create Airtable client singleton"""
-    global _airtable_client
-    if _airtable_client is None:
-        _airtable_client = AirtableContentCalendar()
-    return _airtable_client
+    """
+    Create a fresh Airtable client instance.
+
+    Note: No singleton caching to support multi-tenant deployments
+    where different instances may use different table IDs.
+    """
+    return AirtableContentCalendar()

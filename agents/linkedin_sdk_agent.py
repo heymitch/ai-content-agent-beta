@@ -648,12 +648,13 @@ Trust the prompts - they include write-like-human rules."""
                 "post": None
             }
 
-        # Extract the hook (first 200 chars or first paragraph)
-        lines = output.strip().split('\n')
-        hook = lines[0] if lines else output[:200]
+        # Clean the content (remove SDK metadata/headers)
+        from integrations.airtable_client import AirtableContentCalendar
+        cleaner = AirtableContentCalendar.__new__(AirtableContentCalendar)  # Create instance without __init__
+        clean_output = cleaner._clean_content(output)
 
-        # Truncate hook to 200 chars for preview
-        hook_preview = hook[:197] + "..." if len(hook) > 200 else hook
+        # Extract the hook from clean content
+        hook_preview = cleaner._extract_hook(clean_output, 'linkedin')
 
         # Extract score if mentioned in output
         score = 90  # Default, would parse from actual output
@@ -701,19 +702,27 @@ Trust the prompts - they include write-like-human rules."""
         print("="*60 + "\n")
 
         # Save to Supabase with embedding
+        print("\n" + "="*60)
+        print("💾 ATTEMPTING SUPABASE SAVE")
+        print("="*60)
         supabase_id = None
         try:
             from integrations.supabase_client import get_supabase_client
             from tools.research_tools import generate_embedding
 
+            print("✅ Imported Supabase client")
             supabase = get_supabase_client()
-            embedding = generate_embedding(output)
 
+            print(f"📊 Generating embedding for {len(clean_output)} chars...")
+            embedding = generate_embedding(clean_output)
+            print(f"✅ Embedding generated: {len(embedding)} dimensions")
+
+            print(f"\n📝 Saving to Supabase...")
             supabase_result = supabase.table('generated_posts').insert({
                 'platform': 'linkedin',
                 'post_hook': hook_preview,
-                'body_content': output,
-                'content_type': self._detect_content_type(output),
+                'body_content': clean_output,  # Save clean content
+                'content_type': self._detect_content_type(clean_output),
                 'airtable_record_id': airtable_record_id,
                 'airtable_url': airtable_url,
                 'status': 'draft',
@@ -727,16 +736,22 @@ Trust the prompts - they include write-like-human rules."""
 
             if supabase_result.data:
                 supabase_id = supabase_result.data[0]['id']
-                print(f"✅ Saved to Supabase: {supabase_id}")
+                print(f"✅ SUCCESS! Saved to Supabase:")
+                print(f"   Record ID: {supabase_id}")
         except Exception as e:
-            print(f"⚠️ Supabase save error: {e}")
+            import traceback
+            print(f"❌ EXCEPTION in Supabase save:")
+            print(f"   Error: {e}")
+            print(f"   Traceback:")
+            print(traceback.format_exc())
+        print("="*60 + "\n")
 
         # TODO: Export to Google Docs and get URL
         google_doc_url = None
 
         return {
             "success": True,
-            "post": output,  # The final optimized post
+            "post": clean_output,  # The clean post content (metadata stripped)
             "hook": hook_preview,  # First 200 chars for Slack preview
             "score": score,
             "hooks_tested": 5,
