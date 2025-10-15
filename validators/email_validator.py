@@ -313,13 +313,13 @@ class EmailValidator(BaseValidator):
                 'message': 'Remove triple line breaks (n8n format: single line per sentence)'
             })
 
-        # Check for proper sign-off
-        if not re.search(r'\n(?:Cole|Dickie)\s*$', body, re.MULTILINE):
+        # Check for proper sign-off (any capitalized first name)
+        if not re.search(r'\n[A-Z][a-z]+\s*$', body, re.MULTILINE):
             issues.append({
                 'type': 'missing_signature',
                 'severity': 'low',
                 'auto_fixable': False,
-                'message': 'Email should end with "Cole" or "Dickie" signature'
+                'message': 'Email should end with first name signature'
             })
 
         return issues
@@ -386,7 +386,7 @@ EMAIL WRITING RULES ({self.email_type.upper()} TYPE):
 - One sentence per line (NO double breaks within paragraphs)
 - Double line break ONLY between major sections
 - CTA variables in backticks: `{{call_cta}}` or `{{app_cta}}` or `{{ghost_cta}}`
-- Sign-off: "Cole" or "Dickie"
+- Sign-off: First name only (e.g., "Mitchell")
 
 **Forbidden:**
 - ❌ Spam triggers ("free money", "guaranteed", "act now")

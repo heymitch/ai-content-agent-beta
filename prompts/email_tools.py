@@ -117,6 +117,22 @@ AI loves parallel structure with exactly three items. Humans vary their rhythm.
 
 **If you find yourself writing three parallel things in a row → STOP. Combine two or vary the structure.**
 
+**SPECIFIC RULE OF THREE PATTERNS TO AVOID:**
+✗ "Same sales team. Same market conditions. Same product offering." (three parallel "Same X" fragments)
+✓ "It was the same sales team under the same market conditions, and they offered the same product."
+
+✗ "Bold. Daring. Transformative." (three adjectives in a row)
+✓ "Bold and daring. Even transformative."
+
+✗ "No fluff. No wasted time. Just real results." (three parallel negatives/statements)
+✓ "I hate wasting time."
+
+✗ "Cut the bottom 20%. Bring in new blood. Hope it works." (three imperative commands)
+✓ "Cut the bottom 20% and bring in new blood."
+
+**The pattern**: Three parallel grammatical structures in a row (noun phrases, fragments, imperatives)
+**The fix**: Combine two with "and" or rewrite as complete sentence
+
 **STACCATO FRAGMENTS - ANOTHER AI TELL:**
 AI loves short dramatic fragments at the start. Humans write complete sentences.
 
@@ -409,11 +425,34 @@ Evaluate on these axes (0-5):
 
 MINIMUM THRESHOLD: 18/25
 
-**AI TELLS TO FLAG:**
-- Contrast framing ("It's not X, it's Y")
-- Rule of Three (three parallel fragments)
-- Formal greetings ("I hope this email finds you well")
-- Generic CTAs ("Let me know if you have questions")
+**AI TELLS TO FLAG (AUTO-DEDUCT 2 POINTS EACH):**
+
+1. **CONTRAST FRAMING** - Any "not X, it's Y" structure:
+   - "Smart operators eliminate X. Dumb operators eliminate Y."
+   - "It's not about X. It's about Y."
+   - "This isn't X, it's Y."
+   → FLAG and suggest rewriting positively
+
+2. **RULE OF THREE** - Three parallel structures in sequence:
+   - "Same X. Same Y. Same Z." (three parallel "Same" fragments)
+   - "Bold. Daring. Transformative." (three adjectives)
+   - "No X. No Y. Just Z." (three parallel negatives)
+   - "[Verb]. [Verb]. [Verb]." (three parallel imperatives/fragments)
+   → FLAG and suggest combining two or varying structure
+
+3. **STACCATO OPENINGS** - Multiple fragments at start:
+   - "Six months later? Product velocity tanked. Technical debt piled up."
+   → FLAG and suggest complete sentences
+
+4. **FORMAL GREETINGS/CLOSINGS**:
+   - "I hope this email finds you well"
+   - "Thank you for your time"
+   → FLAG as non-PGA style
+
+**DETECTION STRATEGY:**
+- Scan for 3+ sentences with identical grammatical structure in a row
+- Look for repeated words/patterns ("Same X. Same Y. Same Z.")
+- Count fragments vs complete sentences (fragments OK but not at start)
 
 **FABRICATION CHECK:**
 Use web_search tool to verify ANY specific claims that seem fabricated:
@@ -471,12 +510,24 @@ CRITICAL RULES:
    - ❌ DO NOT water down to vague language
    - ❌ DO NOT make it more formal
 
-3. **APPLY FIXES BY SEVERITY**:
+3. **DETECT & DESTROY RULE OF THREE**:
+   - Look for ANY three parallel structures:
+     - "Same X. Same Y. Same Z."
+     - "Adjective. Adjective. Adjective."
+     - "No X. No Y. Just Z."
+   - Fix by combining two or rewriting:
+     ✗ "Same sales team. Same headcount. 34% revenue jump."
+     ✓ "Same sales team and headcount, but 34% revenue jump."
+
+     ✗ "Bold. Daring. Transformative."
+     ✓ "Bold and daring. Even transformative."
+
+4. **APPLY FIXES BY SEVERITY**:
    - Severity "high" → Must fix (raises score significantly)
    - Severity "medium" → Fix if it doesn't hurt specificity
    - Severity "low" → Skip unless obviously wrong
 
-4. **EXAMPLES OF SURGICAL FIXES**:
+5. **EXAMPLES OF SURGICAL FIXES**:
    - Issue: Subject too long (68 chars)
      Fix: Shorten while keeping specificity: "Sujoy made $5k - here's the exact email he sent" → "Sujoy made $5k - the exact email"
 

@@ -74,6 +74,13 @@ class AirtableContentCalendar:
         # Clean content before saving (remove SDK metadata/headers)
         clean_content = self._clean_content(content)
 
+        # Prevent saving blank content
+        if not clean_content or len(clean_content.strip()) < 10:
+            return {
+                'success': False,
+                'error': 'Content is empty or too short after cleaning'
+            }
+
         # Auto-extract hook from content if not provided
         if not post_hook and clean_content:
             post_hook = self._extract_hook(clean_content, platform)
@@ -82,9 +89,19 @@ class AirtableContentCalendar:
         # Platform is a multi-select field in Airtable, so it needs to be an array
         # Note: 'Created' and 'Edited Time' are auto-computed fields in Airtable
         # Note: 'Client' is a select field - don't set it to avoid permission errors
+
+        # Map internal platform names to Airtable options (case-sensitive)
+        platform_mapping = {
+            'linkedin': 'Linkedin',
+            'twitter': 'Twitter',
+            'email': 'Email',  # Add this option to Airtable Platform field
+            'youtube': 'Youtube'
+        }
+        airtable_platform = platform_mapping.get(platform.lower(), platform.capitalize())
+
         fields = {
             'Body Content': clean_content,  # Save only clean post content
-            'Platform': [platform.capitalize()],  # Array for multi-select field
+            'Platform': [airtable_platform],  # Array for multi-select field
             'Status': status,
         }
 
