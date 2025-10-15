@@ -557,25 +557,37 @@ async def handle_slack_event(request: Request):
 
                 print(f"🧵 Will reply in thread: {thread_ts}")
 
-                # Send "transcribing..." message IN THREAD
-                processing_msg = slack_client.chat_postMessage(
-                    channel=channel_id,
-                    text="🎙️ Transcribing voice message...",
-                    thread_ts=thread_ts  # Reply in thread!
-                )
-                processing_ts = processing_msg.get('ts')
+                # Add microphone emoji reaction to indicate transcribing
+                try:
+                    slack_client.reactions_add(
+                        channel=channel_id,
+                        timestamp=thread_ts,  # React to the voice message itself
+                        name="microphone"  # 🎤 emoji
+                    )
+                    print(f"🎤 Added microphone reaction")
+                except Exception as e:
+                    print(f"⚠️ Could not add microphone reaction: {e}")
 
                 # Download file
                 bot_token = os.getenv('SLACK_BOT_TOKEN')
                 file_bytes = download_slack_file(url_private, bot_token)
 
                 if not file_bytes:
-                    # Update message with error
-                    slack_client.chat_update(
+                    # Post error in thread
+                    slack_client.chat_postMessage(
                         channel=channel_id,
-                        ts=processing_ts,
-                        text="❌ Failed to download audio file"
+                        text="❌ Failed to download audio file",
+                        thread_ts=thread_ts
                     )
+                    # Remove microphone reaction
+                    try:
+                        slack_client.reactions_remove(
+                            channel=channel_id,
+                            timestamp=thread_ts,
+                            name="microphone"
+                        )
+                    except:
+                        pass
                     return
 
                 # Transcribe with Whisper
@@ -587,15 +599,16 @@ async def handle_slack_event(request: Request):
 
                     print(f"✅ Transcription complete: {len(transcript_text)} characters")
 
-                    # Delete the "Transcribing..." message (cleaner UX)
+                    # Remove microphone reaction (transcription done)
                     try:
-                        slack_client.chat_delete(
+                        slack_client.reactions_remove(
                             channel=channel_id,
-                            ts=processing_ts
+                            timestamp=thread_ts,
+                            name="microphone"
                         )
-                        print(f"🗑️ Deleted processing message")
+                        print(f"🎤 Removed microphone reaction")
                     except Exception as e:
-                        print(f"⚠️ Could not delete processing message: {e}")
+                        print(f"⚠️ Could not remove microphone reaction: {e}")
 
                     # Pass transcript to CMO agent for response
                     handler = get_slack_handler()
@@ -654,6 +667,16 @@ async def handle_slack_event(request: Request):
                         print(f"📝 Posted transcript (agent unavailable)")
 
                 else:
+                    # Remove microphone reaction
+                    try:
+                        slack_client.reactions_remove(
+                            channel=channel_id,
+                            timestamp=thread_ts,
+                            name="microphone"
+                        )
+                    except:
+                        pass
+
                     # Whisper failed, try Slack's native transcript
                     slack_transcript = get_slack_transcript_fallback(file_data)
 
@@ -663,19 +686,19 @@ async def handle_slack_event(request: Request):
                             filename=filename
                         ) + "\n\n_Using Slack's transcript (Whisper unavailable)_"
 
-                        slack_client.chat_update(
+                        slack_client.chat_postMessage(
                             channel=channel_id,
-                            ts=processing_ts,
-                            text=fallback_message
+                            text=fallback_message,
+                            thread_ts=thread_ts
                         )
                         print(f"✅ Posted Slack transcript as fallback")
                     else:
                         # Both failed
                         error_msg = result.get('error', 'Unknown error')
-                        slack_client.chat_update(
+                        slack_client.chat_postMessage(
                             channel=channel_id,
-                            ts=processing_ts,
-                            text=f"❌ Transcription unavailable\n_{error_msg}_"
+                            text=f"❌ Transcription unavailable\n_{error_msg}_",
+                            thread_ts=thread_ts
                         )
                         print(f"❌ Both Whisper and Slack transcript unavailable")
 
@@ -684,14 +707,23 @@ async def handle_slack_event(request: Request):
                 import traceback
                 traceback.print_exc()
 
-                # Try to update the message with error
+                # Remove microphone reaction
                 try:
-                    if processing_ts:
-                        slack_client.chat_update(
-                            channel=channel_id,
-                            ts=processing_ts,
-                            text=f"❌ Transcription error: {str(e)}"
-                        )
+                    slack_client.reactions_remove(
+                        channel=channel_id,
+                        timestamp=thread_ts,
+                        name="microphone"
+                    )
+                except:
+                    pass
+
+                # Post error in thread
+                try:
+                    slack_client.chat_postMessage(
+                        channel=channel_id,
+                        text=f"❌ Transcription error: {str(e)}",
+                        thread_ts=thread_ts
+                    )
                 except:
                     pass
 
