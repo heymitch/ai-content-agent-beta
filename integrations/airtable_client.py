@@ -336,13 +336,14 @@ class AirtableContentCalendar:
         text = self._clean_content(content)
 
         if platform.lower() == 'email':
-            # For email, extract subject line if present
-            lines = text.split('\n')
-            for line in lines[:3]:
-                if line.startswith('Subject:'):
+            # For email, extract subject line from RAW content (before cleaning strips it)
+            # Don't use cleaned text - we need the "Subject:" line
+            raw_lines = content.split('\n')
+            for line in raw_lines[:10]:  # Check first 10 lines
+                if line.strip().startswith('Subject:'):
                     return line.replace('Subject:', '').strip()
-            # Otherwise first non-empty line
-            non_empty = [l.strip() for l in lines if l.strip()]
+            # Fallback: first non-empty line from cleaned text
+            non_empty = [l.strip() for l in text.split('\n') if l.strip()]
             return non_empty[0][:200] if non_empty else ""
 
         elif platform.lower() == 'twitter':
