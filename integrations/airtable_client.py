@@ -93,7 +93,7 @@ class AirtableContentCalendar:
         # Map internal platform names to Airtable options (case-sensitive)
         platform_mapping = {
             'linkedin': 'Linkedin',
-            'twitter': 'Twitter',
+            'twitter': 'X/twitter',  # Matches Airtable field option
             'email': 'Email',  # Add this option to Airtable Platform field
             'youtube': 'Youtube'
         }
@@ -278,8 +278,11 @@ class AirtableContentCalendar:
             if re.match(r'^(POST|THREAD|EMAIL|SCRIPT)\s*\d*:', stripped, re.IGNORECASE):
                 continue
 
-            # Skip "Final [Platform] Post" headers
-            if re.match(r'^Final (LinkedIn|Twitter|Email|YouTube)', stripped, re.IGNORECASE):
+            # Skip "Final [Platform] Post" headers (with optional markdown ## and emojis)
+            # Handles: "## ✅ Final Twitter Thread (Score: 24+/25)"
+            if re.match(r'^#+\s*[✅✓]?\s*Final (LinkedIn|Twitter|Email|YouTube)', stripped, re.IGNORECASE):
+                continue
+            if re.match(r'^[✅✓]?\s*Final (LinkedIn|Twitter|Email|YouTube)', stripped, re.IGNORECASE):
                 continue
 
             # Skip score lines
