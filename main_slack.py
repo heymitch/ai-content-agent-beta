@@ -649,19 +649,29 @@ async def handle_slack_event(request: Request):
                             print(f"💾 Transcript saved to conversation history")
 
                         # Get agent response (same pattern as text messages)
-                        response_text = await handler.claude_agent.handle_conversation(
-                            message=transcript_text,
-                            user_id=user_id,
-                            thread_ts=thread_ts,
-                            channel_id=channel_id
-                        )
+                        try:
+                            response_text = await handler.claude_agent.handle_conversation(
+                                message=transcript_text,
+                                user_id=user_id,
+                                thread_ts=thread_ts,
+                                channel_id=channel_id
+                            )
 
-                        # Post agent's response in thread
-                        slack_client.chat_postMessage(
-                            channel=channel_id,
-                            text=response_text,
-                            thread_ts=thread_ts
-                        )
+                            # Post agent's response in thread
+                            slack_client.chat_postMessage(
+                                channel=channel_id,
+                                text=response_text,
+                                thread_ts=thread_ts
+                            )
+                        except Exception as e:
+                            print(f"❌ Agent error: {e}")
+                            # Post error to user
+                            slack_client.chat_postMessage(
+                                channel=channel_id,
+                                text=f"Sorry, I encountered an error: {str(e)}",
+                                thread_ts=thread_ts
+                            )
+                            return
 
                         print(f"✅ Agent responded to voice message")
 
