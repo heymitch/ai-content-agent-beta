@@ -519,6 +519,14 @@ Trust the prompts - they include PGA writing style examples."""
 
     async def _parse_output(self, output: str) -> Dict[str, Any]:
         """Parse agent output into structured response"""
+
+        # Debug: Track how many times this is called
+        import traceback
+        print(f"\n⚠️ DEBUG: _parse_output called")
+        print(f"   Call stack (last 3 frames):")
+        for line in traceback.format_stack()[-4:-1]:
+            print(f"   {line.strip()}")
+
         # Clean the content (remove SDK metadata/headers)
         from integrations.airtable_client import AirtableContentCalendar
         cleaner = AirtableContentCalendar.__new__(AirtableContentCalendar)

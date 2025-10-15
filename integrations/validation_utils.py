@@ -56,12 +56,21 @@ async def run_quality_check(content: str, platform: str) -> Dict[str, Any]:
                 if hasattr(block, 'text'):
                     final_text += block.text
 
-            # Try to parse JSON
+            # Try to parse JSON (handle markdown code fences)
             try:
-                json_result = json.loads(final_text)
+                # Strip markdown code fences if present
+                import re
+                cleaned_text = final_text.strip()
+
+                # Remove ```json\n...\n``` wrapper
+                json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', cleaned_text, re.DOTALL)
+                if json_match:
+                    cleaned_text = json_match.group(1)
+
+                json_result = json.loads(cleaned_text)
                 if "scores" in json_result and "decision" in json_result:
                     return json_result
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, AttributeError):
                 pass
 
             # Fallback: return raw text
@@ -282,7 +291,27 @@ def format_validation_for_airtable(validation_json_str: str) -> str:
     surgical_summary = data.get('surgical_summary', '')
     if surgical_summary:
         lines.append("💡 Recommended Fixes:")
-        lines.append(f"   {surgical_summary}")
+
+        # Check if surgical_summary is JSON (fallback case)
+        if surgical_summary.strip().startswith('{') or '```json' in surgical_summary:
+            lines.append("   ⚠️ Quality check returned JSON instead of summary:")
+            lines.append("   (This means the quality check tool didn't parse correctly)")
+            # Try to extract the actual summary from the JSON
+            try:
+                import re
+                # Strip code fences
+                cleaned = re.sub(r'```(?:json)?\s*\n?', '', surgical_summary)
+                cleaned = re.sub(r'\n?```', '', cleaned)
+                parsed = json.loads(cleaned)
+                actual_summary = parsed.get('surgical_summary', '')
+                if actual_summary:
+                    lines.append(f"   Extracted: {actual_summary}")
+            except:
+                lines.append("   [Could not parse - check quality check logs]")
+        else:
+            # Normal text summary
+            lines.append(f"   {surgical_summary}")
+
         lines.append("")
 
     # Burstiness Analysis (if quality check provided it)
