@@ -279,18 +279,27 @@ class AirtableContentCalendar:
                 continue
 
             # Skip "Final [Platform] Post" headers (with optional markdown ## and emojis)
-            # Handles: "## ✅ Final Twitter Thread (Score: 24+/25)"
+            # Handles: "## ✅ Final Twitter Thread (Score: 24+/25)" or "✅ FINAL EMAIL (Score: 22/25)"
             if re.match(r'^#+\s*[✅✓]?\s*Final (LinkedIn|Twitter|Email|YouTube)', stripped, re.IGNORECASE):
                 continue
             if re.match(r'^[✅✓]?\s*Final (LinkedIn|Twitter|Email|YouTube)', stripped, re.IGNORECASE):
                 continue
 
-            # Skip score lines
-            if re.search(r'(Estimated Score|Quality Score):', stripped, re.IGNORECASE):
+            # Skip score lines and "Final Score:"
+            if re.search(r'(Estimated Score|Quality Score|Final Score):', stripped, re.IGNORECASE):
                 continue
 
-            # Skip "Changes Applied:" and everything after
-            if re.match(r'^Changes Applied:', stripped, re.IGNORECASE):
+            # Skip "Subject:" and "Preview:" lines (for email body - hook extracts these separately)
+            if re.match(r'^(Subject|Preview):', stripped, re.IGNORECASE):
+                continue
+
+            # Stop at "Final Score:" - this marks end of actual content
+            if re.match(r'^Final Score:', stripped, re.IGNORECASE):
+                skip_rest = True
+                continue
+
+            # Stop at agent conversation patterns
+            if re.match(r'^(Changes Applied:|Ready to send)', stripped, re.IGNORECASE):
                 skip_rest = True
                 continue
 

@@ -356,7 +356,22 @@ AI TELLS AUTO-FAIL:
 - Rule of Three: "Same X. Same Y. Over Z%."
 - Formal greetings: "I hope this email finds you well"
 
-DO NOT explain. DO NOT iterate beyond one revise. Return final email when threshold met."""
+DO NOT explain. DO NOT iterate beyond one revise. Return final email when threshold met.
+
+**FINAL OUTPUT FORMAT:**
+Your LAST message must contain ONLY the email body in this exact format:
+
+✅ FINAL EMAIL (Score: X/25)
+
+Subject: [subject line]
+
+Preview: [preview text]
+
+[Full email body]
+
+Final Score: X/25 (Above 18/25 threshold ✓)
+
+DO NOT add any commentary after "Final Score:" line. DO NOT say "Ready to send" or ask questions."""
 
         # Create MCP server with Email-specific tools (LEAN 5-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
