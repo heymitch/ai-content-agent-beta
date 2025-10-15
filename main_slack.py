@@ -636,6 +636,8 @@ async def handle_slack_event(request: Request):
                                 memory_handler=handler.memory if handler else None
                             )
                             print("🚀 Claude Agent SDK initialized for voice transcription")
+                            # Give subprocess time to fully initialize
+                            await asyncio.sleep(0.5)
 
                         # Save user's voice message to conversation history
                         if handler.memory:
