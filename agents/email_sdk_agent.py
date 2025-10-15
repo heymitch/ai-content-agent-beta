@@ -507,7 +507,7 @@ Trust the prompts - they include PGA writing style examples."""
             print(f"\n   ✅ Stream complete after {message_count} messages (last text at message {last_text_message})")
 
             # Parse the output to extract structured data
-            return self._parse_output(final_output)
+            return await self._parse_output(final_output)
 
         except Exception as e:
             print(f"❌ Email SDK Agent error: {e}")
@@ -517,7 +517,7 @@ Trust the prompts - they include PGA writing style examples."""
                 "email": None
             }
 
-    def _parse_output(self, output: str) -> Dict[str, Any]:
+    async def _parse_output(self, output: str) -> Dict[str, Any]:
         """Parse agent output into structured response"""
         # Clean the content (remove SDK metadata/headers)
         from integrations.airtable_client import AirtableContentCalendar
@@ -529,6 +529,19 @@ Trust the prompts - they include PGA writing style examples."""
 
         # Extract score if mentioned in output
         score = 90  # Default, would parse from actual output
+
+        # Run validators (quality check + optional GPTZero)
+        validation_json = None
+        validation_formatted = None
+        try:
+            from integrations.validation_utils import run_all_validators, format_validation_for_airtable
+            validation_json = await run_all_validators(clean_output, 'email')
+            # Format for human-readable Airtable display
+            validation_formatted = format_validation_for_airtable(validation_json)
+        except Exception as e:
+            print(f"⚠️ Validation error (non-fatal): {e}")
+            validation_json = None
+            validation_formatted = None
 
         # Save to Airtable
         print("\n" + "="*60)
@@ -550,7 +563,8 @@ Trust the prompts - they include PGA writing style examples."""
                 content=output,  # Pass raw output, cleaning happens inside
                 platform='email',
                 post_hook=subject_preview,
-                status='Draft'
+                status='Draft',
+                suggested_edits=validation_formatted  # Human-readable validation report
             )
             print(f"📊 Airtable API result: {result}")
 

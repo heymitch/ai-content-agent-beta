@@ -625,7 +625,7 @@ Trust the prompts - they include write-like-human rules."""
             print(f"   💬 Last message: {len(final_output)} chars (this is the commentary)")
 
             # Parse the LONGEST message (the actual post) to save to Airtable/Supabase
-            return self._parse_output(final_post_content)
+            return await self._parse_output(final_post_content)
 
         except Exception as e:
             print(f"❌ LinkedIn SDK Agent error: {e}")
@@ -635,7 +635,7 @@ Trust the prompts - they include write-like-human rules."""
                 "post": None
             }
 
-    def _parse_output(self, output: str) -> Dict[str, Any]:
+    async def _parse_output(self, output: str) -> Dict[str, Any]:
         """Parse agent output into structured response"""
         print(f"\n🔍 _parse_output called with {len(output)} chars")
         print(f"   First 200 chars: {output[:200]}...")
@@ -659,6 +659,19 @@ Trust the prompts - they include write-like-human rules."""
         # Extract score if mentioned in output
         score = 90  # Default, would parse from actual output
 
+        # Run validators (quality check + optional GPTZero)
+        validation_json = None
+        validation_formatted = None
+        try:
+            from integrations.validation_utils import run_all_validators, format_validation_for_airtable
+            validation_json = await run_all_validators(clean_output, 'linkedin')
+            # Format for human-readable Airtable display
+            validation_formatted = format_validation_for_airtable(validation_json)
+        except Exception as e:
+            print(f"⚠️ Validation error (non-fatal): {e}")
+            validation_json = None
+            validation_formatted = None
+
         # Save to Airtable
         print("\n" + "="*60)
         print("📋 ATTEMPTING AIRTABLE SAVE")
@@ -679,7 +692,8 @@ Trust the prompts - they include write-like-human rules."""
                 content=output,
                 platform='linkedin',
                 post_hook=hook_preview,
-                status='Draft'
+                status='Draft',
+                suggested_edits=validation_formatted  # Human-readable validation report
             )
             print(f"📊 Airtable API result: {result}")
 
