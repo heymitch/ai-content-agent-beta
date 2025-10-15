@@ -93,7 +93,7 @@ class AirtableContentCalendar:
         # Map internal platform names to Airtable options (case-sensitive)
         platform_mapping = {
             'linkedin': 'Linkedin',
-            'twitter': 'X/twitter',  # Matches Airtable field option
+            'twitter': 'X/Twitter',  # Exact match for Airtable field option
             'email': 'Email',  # Add this option to Airtable Platform field
             'youtube': 'Youtube'
         }
