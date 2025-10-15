@@ -640,6 +640,12 @@ Trust the prompts - they include write-like-human rules."""
         print(f"\n🔍 _parse_output called with {len(output)} chars")
         print(f"   First 200 chars: {output[:200]}...")
 
+        # Debug: Track how many times this is called
+        import traceback
+        print(f"⚠️ DEBUG: Call stack (last 3 frames):")
+        for line in traceback.format_stack()[-4:-1]:
+            print(f"   {line.strip()}")
+
         if not output or len(output) < 10:
             print(f"⚠️ WARNING: Output is empty or too short!")
             return {
