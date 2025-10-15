@@ -466,6 +466,160 @@ async def handle_slack_event(request: Request):
 
         return {'status': 'reaction_handled'}
 
+    # Handle file uploads (voice messages, audio files)
+    elif event_type == 'file_shared':
+        file_id = event.get('file_id')
+        channel_id = event.get('channel_id')
+        user_id = event.get('user_id')
+
+        if not file_id:
+            print("⚠️ No file_id in file_shared event")
+            return {'status': 'no_file_id'}
+
+        print(f"📎 File shared: {file_id}")
+
+        # Check if Whisper transcription is enabled
+        whisper_enabled = os.getenv('ENABLE_WHISPER_TRANSCRIPTION', 'true').lower() == 'true'
+
+        if not whisper_enabled:
+            print("⏭️ Whisper transcription disabled")
+            return {'status': 'whisper_disabled'}
+
+        # Process file transcription in background
+        async def process_file_transcription():
+            try:
+                from tools.whisper_transcription import (
+                    download_slack_file,
+                    transcribe_audio_file,
+                    format_transcript_message,
+                    get_slack_transcript_fallback,
+                    is_audio_file
+                )
+
+                # Get file info from Slack
+                file_info = slack_client.files_info(file=file_id)
+                file_data = file_info.get('file', {})
+
+                filename = file_data.get('name', 'unknown')
+                mimetype = file_data.get('mimetype', '')
+                filetype = file_data.get('filetype', '')
+                url_private = file_data.get('url_private')
+                file_size = file_data.get('size', 0)
+
+                print(f"📄 File: {filename} ({mimetype}, {file_size:,} bytes)")
+
+                # Check if it's an audio file
+                if not is_audio_file(mimetype, filetype):
+                    print(f"⏭️ Not an audio file, skipping transcription")
+                    return
+
+                # Get thread_ts for replies (use the message timestamp from the file)
+                # Files are shared in messages, so we need to find the message
+                # For now, just post in the channel (can enhance later)
+                thread_ts = event.get('event_ts')  # Use event timestamp as thread
+
+                # Send "transcribing..." message
+                processing_msg = slack_client.chat_postMessage(
+                    channel=channel_id,
+                    text="🎙️ Transcribing voice message..."
+                )
+                processing_ts = processing_msg.get('ts')
+
+                # Download file
+                bot_token = os.getenv('SLACK_BOT_TOKEN')
+                file_bytes = download_slack_file(url_private, bot_token)
+
+                if not file_bytes:
+                    # Update message with error
+                    slack_client.chat_update(
+                        channel=channel_id,
+                        ts=processing_ts,
+                        text="❌ Failed to download audio file"
+                    )
+                    return
+
+                # Transcribe with Whisper
+                result = transcribe_audio_file(file_bytes, filename)
+
+                if result['success']:
+                    # Format and post transcript
+                    transcript_text = result['text']
+                    duration = result.get('duration')
+
+                    formatted_message = format_transcript_message(
+                        transcript_text,
+                        duration=duration,
+                        filename=filename
+                    )
+
+                    # Update the processing message with transcript
+                    slack_client.chat_update(
+                        channel=channel_id,
+                        ts=processing_ts,
+                        text=formatted_message
+                    )
+
+                    print(f"✅ Transcript posted successfully")
+
+                    # Optionally: Feed transcript into conversation for CMO agent
+                    handler = get_slack_handler()
+                    if handler and handler.memory:
+                        handler.memory.add_message(
+                            thread_ts=thread_ts or processing_ts,
+                            channel_id=channel_id,
+                            user_id=user_id,
+                            role='user',
+                            content=f"[Voice message]: {transcript_text}"
+                        )
+                        print(f"💾 Transcript saved to conversation history")
+
+                else:
+                    # Whisper failed, try Slack's native transcript
+                    slack_transcript = get_slack_transcript_fallback(file_data)
+
+                    if slack_transcript:
+                        fallback_message = format_transcript_message(
+                            slack_transcript,
+                            filename=filename
+                        ) + "\n\n_Using Slack's transcript (Whisper unavailable)_"
+
+                        slack_client.chat_update(
+                            channel=channel_id,
+                            ts=processing_ts,
+                            text=fallback_message
+                        )
+                        print(f"✅ Posted Slack transcript as fallback")
+                    else:
+                        # Both failed
+                        error_msg = result.get('error', 'Unknown error')
+                        slack_client.chat_update(
+                            channel=channel_id,
+                            ts=processing_ts,
+                            text=f"❌ Transcription unavailable\n_{error_msg}_"
+                        )
+                        print(f"❌ Both Whisper and Slack transcript unavailable")
+
+            except Exception as e:
+                print(f"❌ Error processing file transcription: {e}")
+                import traceback
+                traceback.print_exc()
+
+                # Try to update the message with error
+                try:
+                    if processing_ts:
+                        slack_client.chat_update(
+                            channel=channel_id,
+                            ts=processing_ts,
+                            text=f"❌ Transcription error: {str(e)}"
+                        )
+                except:
+                    pass
+
+        # Start background processing
+        asyncio.create_task(process_file_transcription())
+
+        return {'status': 'processing_file'}
+
     return {'status': 'ok'}
 
 # ============= SLACK SLASH COMMANDS =============
