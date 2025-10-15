@@ -144,6 +144,48 @@ AI loves short dramatic fragments at the start. Humans write complete sentences.
 
 **Start with complete sentences. Save fragments for emphasis later, not at the top.**
 
+**HUMAN VOICE PATTERNS - CRITICAL FOR GPTZero BYPASS:**
+These patterns increase "burstiness" and "perplexity" - the 2 metrics GPTZero uses.
+
+**SENTENCE LENGTH VARIATION** (increases burstiness):
+- Mix short (5-10 words), medium (10-20 words), and long (20-30 words) sentences
+- ✓ "I saw a CEO brag about AI. He cut his whole dev team. Six months later? Product velocity tanked."
+  (6 words → 6 words → 3 words = HIGH burstiness)
+- ✗ "The CEO replaced developers with AI agents. His investors approved the decision. Product quality declined significantly."
+  (7 words → 6 words → 5 words = LOW burstiness, uniform)
+
+**UNPREDICTABLE WORD CHOICES** (increases perplexity):
+- Use contractions heavily: "I'm", "I've", "here're", "that's", "'Cause", "won't"
+- Use hedging language: "pretty well", "definitely", "a bunch of", "I'm looking to"
+- Use informal verbs: "tanked", "jumped", "slammed", "grabbed"
+- Avoid: "significantly", "substantially", "considerably" (AI loves these)
+
+**INFORMAL CONNECTORS** (human speech pattern):
+- Start sentences with: "So", "And", "But", "Now", "Here's the thing"
+- ✓ "So before you replace anyone..."
+- ✓ "And that's the play."
+- ✗ "Therefore, prior to replacement..." (AI formal pattern)
+
+**CONVERSATIONAL FRAGMENTS** (spontaneous human voice):
+- Use: "Boom!", "That's it!", "Here's why:", "The result?", "Six months later?"
+- Use trailing thoughts: "at the end of the day…", "So..."
+- ✓ "Revenue jumped 34%. Boom."
+- ✗ "Revenue increased by 34 percent." (AI precision)
+
+**INTENTIONAL REPETITION** (humans repeat for emphasis):
+- Repeat words/phrases for emphasis (AI tries to vary)
+- ✓ "definitely" 2-3 times in email
+- ✓ "really" multiple times
+- ✗ Perfect synonym variation (AI pattern: "significant", "substantial", "considerable")
+
+**PERSONAL VOICE MARKERS** (impossible for AI):
+- Use: "I think", "I feel", "in my experience", "I've seen"
+- Add: Questions to self: "What happened next?", "The result?"
+- Use: Rhetorical asides: "(spoiler: it didn't work)", "(trust me on this)"
+
+**CRITICAL: These patterns are NOT errors. They're how humans actually write emails.**
+GPTZero measures burstiness + perplexity. This section maximizes both.
+
 G. Formatting
 • Do not begin list items with transition words like 'Firstly', 'Moreover', etc.
 • Avoid numbered headings unless the user asks for an outline.
@@ -353,6 +395,36 @@ Write in PGA style:
 - Short paragraphs (1-3 sentences max)
 - Real specifics from user's context (NO fabrication, NO copying from examples)
 
+**BURSTINESS REQUIREMENTS** (to pass GPTZero):
+Your email MUST vary sentence length dramatically. Follow this pattern:
+
+Paragraph 1 (intro):
+- Sentence 1: 5-10 words (short hook)
+- Sentence 2: 15-25 words (context)
+- Sentence 3: 3-8 words (fragment or question)
+
+Paragraph 2-3 (body):
+- Mix: Short (5-10w) + Medium (10-20w) + Long (20-30w)
+- Use fragments: "Boom.", "The result?", "Six months later?"
+- Start some sentences with: "So", "And", "But", "Now"
+
+Paragraph 4 (CTA):
+- Sentence 1: 10-15 words (action)
+- Sentence 2: 5-10 words (benefit)
+
+**Example of HIGH burstiness:**
+"I saw a CEO brag about AI. (6 words - short)
+He cut his whole dev team and investors loved the lower burn rate. (13 words - medium)
+Six months later? (3 words - fragment)
+Product velocity tanked. (3 words - short)
+The AI couldn't handle edge cases, and technical debt piled up because there was no one left to maintain the codebase. (23 words - long)"
+
+**Example of LOW burstiness (AVOID):**
+"A CEO made the decision to replace developers. (8 words)
+His investors approved because costs decreased significantly. (7 words)
+Six months later the product quality declined considerably. (8 words)"
+(All 7-8 words = uniform = 100% AI detection)
+
 Output JSON:
 {{
   "subject_line": "...",
@@ -424,6 +496,24 @@ Evaluate on these axes (0-5):
    Score 0: Missing or passive
 
 MINIMUM THRESHOLD: 18/25
+
+**BURSTINESS CHECK (GPTZero bypass):**
+Count sentence lengths in email body (ignore subject/preview):
+- Short (≤10 words): Need 30%+ of sentences
+- Medium (10-20 words): Need 40%+ of sentences
+- Long (≥20 words): Need 20%+ of sentences
+- Fragments (≤5 words): Need 10%+ of sentences
+
+**If burstiness is LOW (sentences all 10-15 words):**
+- Deduct 2 points from total score
+- Add issue: "Low burstiness - all sentences similar length (AI tell)"
+- Suggest: "Rewrite with varied lengths: 5w, 15w, 25w, 3w pattern"
+
+**How to calculate:**
+1. Split email body by periods
+2. Count words per sentence
+3. Calculate % in each bucket
+4. Flag if any bucket is <10% or if 80%+ sentences are 10-15 words
 
 **AI TELLS TO FLAG (AUTO-DEDUCT 2 POINTS EACH):**
 
@@ -522,12 +612,26 @@ CRITICAL RULES:
      ✗ "Bold. Daring. Transformative."
      ✓ "Bold and daring. Even transformative."
 
-4. **APPLY FIXES BY SEVERITY**:
+4. **FIX BURSTINESS (if flagged)**:
+   - Look for paragraphs with uniform sentence length
+   - Break long sentences into fragments + medium
+   - Combine short sentences into longer ones
+
+   Example fix:
+   ✗ "The CEO replaced the team. Investors approved it. Quality declined later."
+     (6w, 4w, 4w = low burstiness)
+
+   ✓ "I saw a CEO brag about replacing his dev team. (10w)
+      Investors loved it. (3w - fragment)
+      Six months later? Product velocity tanked because the AI couldn't handle edge cases. (13w)"
+     (10w, 3w, 13w = HIGH burstiness)
+
+5. **APPLY FIXES BY SEVERITY**:
    - Severity "high" → Must fix (raises score significantly)
    - Severity "medium" → Fix if it doesn't hurt specificity
    - Severity "low" → Skip unless obviously wrong
 
-5. **EXAMPLES OF SURGICAL FIXES**:
+6. **EXAMPLES OF SURGICAL FIXES**:
    - Issue: Subject too long (68 chars)
      Fix: Shorten while keeping specificity: "Sujoy made $5k - here's the exact email he sent" → "Sujoy made $5k - the exact email"
 

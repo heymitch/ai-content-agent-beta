@@ -285,6 +285,19 @@ def format_validation_for_airtable(validation_json_str: str) -> str:
         lines.append(f"   {surgical_summary}")
         lines.append("")
 
+    # Burstiness Analysis (if quality check provided it)
+    burstiness = data.get('burstiness_analysis', {})
+    if burstiness:
+        lines.append("📏 Sentence Variation (Burstiness):")
+        lines.append(f"   • Short (≤10w): {burstiness.get('short_pct', 0)}%")
+        lines.append(f"   • Medium (10-20w): {burstiness.get('medium_pct', 0)}%")
+        lines.append(f"   • Long (≥20w): {burstiness.get('long_pct', 0)}%")
+        lines.append(f"   • Fragments (≤5w): {burstiness.get('fragment_pct', 0)}%")
+
+        if burstiness.get('is_uniform', False):
+            lines.append("   ⚠️ WARNING: Low burstiness detected (AI tell)")
+        lines.append("")
+
     # GPTZero Results
     gptzero = data.get('gptzero', {})
     gptzero_status = gptzero.get('status', 'NOT_RUN')
