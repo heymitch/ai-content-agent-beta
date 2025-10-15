@@ -513,6 +513,9 @@ async def handle_slack_event(request: Request):
                     print(f"⏭️ Not an audio file, skipping transcription")
                     return
 
+                # Add instant ⚡ reaction to voice message (same as text messages)
+                # We'll add this after we find the thread_ts
+
                 # Find the message where this file was shared
                 # Voice messages in Slack are shared in a message with the file attached
                 # We need to find that message to reply in its thread
@@ -556,6 +559,17 @@ async def handle_slack_event(request: Request):
                     thread_ts = event.get('event_ts')
 
                 print(f"🧵 Will reply in thread: {thread_ts}")
+
+                # Add instant ⚡ reaction to voice message (same as text messages)
+                try:
+                    slack_client.reactions_add(
+                        channel=channel_id,
+                        timestamp=thread_ts,
+                        name="zap"
+                    )
+                    print(f"⚡ Added lightning reaction")
+                except Exception as e:
+                    print(f"⚠️ Could not add lightning reaction: {e}")
 
                 # Add microphone emoji reaction to indicate transcribing
                 try:
@@ -612,8 +626,16 @@ async def handle_slack_event(request: Request):
 
                     # Pass transcript to CMO agent for response
                     handler = get_slack_handler()
-                    if handler and handler.claude_agent:
+                    if handler:
                         print(f"🤖 Sending transcript to CMO agent...")
+
+                        # Initialize Claude Agent SDK handler if needed (same as text messages)
+                        if not hasattr(handler, 'claude_agent'):
+                            from slack_bot.claude_agent_handler import ClaudeAgentHandler
+                            handler.claude_agent = ClaudeAgentHandler(
+                                memory_handler=handler.memory if handler else None
+                            )
+                            print("🚀 Claude Agent SDK initialized for voice transcription")
 
                         # Save user's voice message to conversation history
                         if handler.memory:
@@ -626,9 +648,9 @@ async def handle_slack_event(request: Request):
                             )
                             print(f"💾 Transcript saved to conversation history")
 
-                        # Get agent response
+                        # Get agent response (same pattern as text messages)
                         response_text = await handler.claude_agent.handle_conversation(
-                            message=transcript_text,  # Pass transcript as user message
+                            message=transcript_text,
                             user_id=user_id,
                             thread_ts=thread_ts,
                             channel_id=channel_id
@@ -653,18 +675,13 @@ async def handle_slack_event(request: Request):
                                 content=response_text
                             )
                     else:
-                        # Fallback: just post transcript if agent not available
-                        formatted_message = format_transcript_message(
-                            transcript_text,
-                            duration=duration,
-                            filename=filename
-                        )
+                        # No handler available - post error
                         slack_client.chat_postMessage(
                             channel=channel_id,
-                            text=formatted_message,
+                            text="❌ Agent unavailable for voice transcription",
                             thread_ts=thread_ts
                         )
-                        print(f"📝 Posted transcript (agent unavailable)")
+                        print(f"❌ Handler unavailable")
 
                 else:
                     # Remove microphone reaction
