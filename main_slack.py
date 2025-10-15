@@ -84,6 +84,14 @@ def get_slack_handler():
             print("📝 Initializing Slack handler without Airtable...")
             slack_handler = SlackContentHandler(supabase, None)
             print("✅ Slack handler initialized (no calendar)")
+
+        # Pre-initialize Claude Agent SDK to avoid subprocess race conditions
+        from slack_bot.claude_agent_handler import ClaudeAgentHandler
+        slack_handler.claude_agent = ClaudeAgentHandler(
+            memory_handler=slack_handler.memory
+        )
+        print("🚀 Claude Agent SDK pre-initialized")
+
     return slack_handler
 
 # ============= RATE LIMITING =============
@@ -381,11 +389,8 @@ async def handle_slack_event(request: Request):
 
                 handler = get_slack_handler()
 
-                # Use the REAL Claude Agent SDK handler
-                if not hasattr(handler, 'claude_agent'):
-                    handler.claude_agent = ClaudeAgentHandler(
-                        memory_handler=handler.memory if handler else None
-                    )
+                # Claude Agent SDK already pre-initialized on first handler creation
+                # (No need for lazy initialization - already exists)
 
                 print("🚀 Claude Agent SDK ready with 6 tools")
 
@@ -626,66 +631,67 @@ async def handle_slack_event(request: Request):
 
                     # Pass transcript to CMO agent for response
                     handler = get_slack_handler()
-                    if handler:
-                        print(f"🤖 Sending transcript to CMO agent...")
+                    if not handler or not hasattr(handler, 'claude_agent'):
+                        print("❌ Agent not initialized")
+                        slack_client.chat_postMessage(
+                            channel=channel_id,
+                            text="❌ Agent not ready, please try again in a moment",
+                            thread_ts=thread_ts
+                        )
+                        return
 
-                        # Initialize Claude Agent SDK handler if needed (same as text messages)
-                        if not hasattr(handler, 'claude_agent'):
-                            from slack_bot.claude_agent_handler import ClaudeAgentHandler
-                            handler.claude_agent = ClaudeAgentHandler(
-                                memory_handler=handler.memory if handler else None
-                            )
-                            print("🚀 Claude Agent SDK initialized for voice transcription")
-                            # Give subprocess time to fully initialize
-                            await asyncio.sleep(0.5)
+                    print(f"🤖 Sending transcript to CMO agent...")
 
-                        # Save user's voice message to conversation history
-                        if handler.memory:
-                            handler.memory.add_message(
-                                thread_ts=thread_ts,
-                                channel_id=channel_id,
-                                user_id=user_id,
-                                role='user',
-                                content=f"[Voice message]: {transcript_text}"
-                            )
-                            print(f"💾 Transcript saved to conversation history")
+                    # Claude Agent SDK already pre-initialized on first handler creation
+                    # (No need for lazy initialization - already exists)
 
-                        # Get agent response (same pattern as text messages)
-                        try:
-                            response_text = await handler.claude_agent.handle_conversation(
-                                message=transcript_text,
-                                user_id=user_id,
-                                thread_ts=thread_ts,
-                                channel_id=channel_id
-                            )
+                    # Save user's voice message to conversation history
+                    if handler.memory:
+                        handler.memory.add_message(
+                            thread_ts=thread_ts,
+                            channel_id=channel_id,
+                            user_id=user_id,
+                            role='user',
+                            content=f"[Voice message]: {transcript_text}"
+                        )
+                        print(f"💾 Transcript saved to conversation history")
 
-                            # Post agent's response in thread
-                            slack_client.chat_postMessage(
-                                channel=channel_id,
-                                text=response_text,
-                                thread_ts=thread_ts
-                            )
-                        except Exception as e:
-                            print(f"❌ Agent error: {e}")
-                            # Post error to user
-                            slack_client.chat_postMessage(
-                                channel=channel_id,
-                                text=f"Sorry, I encountered an error: {str(e)}",
-                                thread_ts=thread_ts
-                            )
-                            return
+                    # Get agent response (same pattern as text messages)
+                    try:
+                        response_text = await handler.claude_agent.handle_conversation(
+                            message=transcript_text,
+                            user_id=user_id,
+                            thread_ts=thread_ts,
+                            channel_id=channel_id
+                        )
 
-                        print(f"✅ Agent responded to voice message")
+                        # Post agent's response in thread
+                        slack_client.chat_postMessage(
+                            channel=channel_id,
+                            text=response_text,
+                            thread_ts=thread_ts
+                        )
+                    except Exception as e:
+                        print(f"❌ Agent error: {e}")
+                        # Post error to user
+                        slack_client.chat_postMessage(
+                            channel=channel_id,
+                            text=f"Sorry, I encountered an error: {str(e)}",
+                            thread_ts=thread_ts
+                        )
+                        return
 
-                        # Save agent response to conversation history
-                        if handler.memory:
-                            handler.memory.add_message(
-                                thread_ts=thread_ts,
-                                channel_id=channel_id,
-                                user_id='bot',
-                                role='assistant',
-                                content=response_text
-                            )
+                    print(f"✅ Agent responded to voice message")
+
+                    # Save agent response to conversation history
+                    if handler.memory:
+                        handler.memory.add_message(
+                            thread_ts=thread_ts,
+                            channel_id=channel_id,
+                            user_id='bot',
+                            role='assistant',
+                            content=response_text
+                        )
                     else:
                         # No handler available - post error
                         slack_client.chat_postMessage(
