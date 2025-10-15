@@ -131,10 +131,12 @@ async def run_gptzero_check(content: str) -> Optional[Dict[str, Any]]:
                 }
 
             doc = documents[0]
-            human_prob = doc.get('average_generated_prob', 0) * 100
-            ai_prob = doc.get('completely_generated_prob', 0) * 100
-            mixed_prob = doc.get('partially_generated_prob', 0) * 100
-            overall_class = doc.get('class_probabilities', {}).get('ai', 0)
+
+            # Extract probabilities from class_probabilities (CORRECT way)
+            class_probs = doc.get('class_probabilities', {})
+            human_prob = class_probs.get('human', 0) * 100
+            ai_prob = class_probs.get('ai', 0) * 100
+            mixed_prob = class_probs.get('mixed', 0) * 100
 
             # Get flagged sentences
             sentences = doc.get('sentences', [])
@@ -144,6 +146,7 @@ async def run_gptzero_check(content: str) -> Optional[Dict[str, Any]]:
                 if s.get('generated_prob', 0) > 0.7
             ]
 
+            # PASS if human probability > 70% (i.e., AI < 30%)
             passes = human_prob > 70
 
             return {
@@ -151,7 +154,6 @@ async def run_gptzero_check(content: str) -> Optional[Dict[str, Any]]:
                 "human_probability": round(human_prob, 1),
                 "ai_probability": round(ai_prob, 1),
                 "mixed_probability": round(mixed_prob, 1),
-                "overall_ai_score": round(overall_class * 100, 1),
                 "flagged_sentences_count": len(flagged),
                 "flagged_sentences": [s[:100] + "..." for s in flagged[:3]]
             }
