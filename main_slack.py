@@ -513,15 +513,55 @@ async def handle_slack_event(request: Request):
                     print(f"⏭️ Not an audio file, skipping transcription")
                     return
 
-                # Get thread_ts for replies (use the message timestamp from the file)
-                # Files are shared in messages, so we need to find the message
-                # For now, just post in the channel (can enhance later)
-                thread_ts = event.get('event_ts')  # Use event timestamp as thread
+                # Find the message where this file was shared
+                # Voice messages in Slack are shared in a message with the file attached
+                # We need to find that message to reply in its thread
+                try:
+                    # Look for recent messages in the channel with this file
+                    history = slack_client.conversations_history(
+                        channel=channel_id,
+                        limit=10
+                    )
 
-                # Send "transcribing..." message
+                    file_message_ts = None
+                    for msg in history.get('messages', []):
+                        if 'files' in msg:
+                            for f in msg['files']:
+                                if f.get('id') == file_id:
+                                    file_message_ts = msg['ts']
+                                    break
+                        if file_message_ts:
+                            break
+
+                    # If file is in a thread, use the thread_ts; otherwise use message ts
+                    if file_message_ts:
+                        # Check if this message is already in a thread
+                        file_msg_data = slack_client.conversations_history(
+                            channel=channel_id,
+                            latest=file_message_ts,
+                            inclusive=True,
+                            limit=1
+                        )
+                        if file_msg_data.get('messages'):
+                            msg = file_msg_data['messages'][0]
+                            thread_ts = msg.get('thread_ts') or file_message_ts
+                        else:
+                            thread_ts = file_message_ts
+                    else:
+                        # Fallback: use event timestamp
+                        thread_ts = event.get('event_ts')
+
+                except Exception as e:
+                    print(f"⚠️ Could not find file message: {e}")
+                    thread_ts = event.get('event_ts')
+
+                print(f"🧵 Will reply in thread: {thread_ts}")
+
+                # Send "transcribing..." message IN THREAD
                 processing_msg = slack_client.chat_postMessage(
                     channel=channel_id,
-                    text="🎙️ Transcribing voice message..."
+                    text="🎙️ Transcribing voice message...",
+                    thread_ts=thread_ts  # Reply in thread!
                 )
                 processing_ts = processing_msg.get('ts')
 
@@ -542,36 +582,76 @@ async def handle_slack_event(request: Request):
                 result = transcribe_audio_file(file_bytes, filename)
 
                 if result['success']:
-                    # Format and post transcript
                     transcript_text = result['text']
                     duration = result.get('duration')
 
-                    formatted_message = format_transcript_message(
-                        transcript_text,
-                        duration=duration,
-                        filename=filename
-                    )
+                    print(f"✅ Transcription complete: {len(transcript_text)} characters")
 
-                    # Update the processing message with transcript
-                    slack_client.chat_update(
-                        channel=channel_id,
-                        ts=processing_ts,
-                        text=formatted_message
-                    )
-
-                    print(f"✅ Transcript posted successfully")
-
-                    # Optionally: Feed transcript into conversation for CMO agent
-                    handler = get_slack_handler()
-                    if handler and handler.memory:
-                        handler.memory.add_message(
-                            thread_ts=thread_ts or processing_ts,
-                            channel_id=channel_id,
-                            user_id=user_id,
-                            role='user',
-                            content=f"[Voice message]: {transcript_text}"
+                    # Delete the "Transcribing..." message (cleaner UX)
+                    try:
+                        slack_client.chat_delete(
+                            channel=channel_id,
+                            ts=processing_ts
                         )
-                        print(f"💾 Transcript saved to conversation history")
+                        print(f"🗑️ Deleted processing message")
+                    except Exception as e:
+                        print(f"⚠️ Could not delete processing message: {e}")
+
+                    # Pass transcript to CMO agent for response
+                    handler = get_slack_handler()
+                    if handler and handler.claude_agent:
+                        print(f"🤖 Sending transcript to CMO agent...")
+
+                        # Save user's voice message to conversation history
+                        if handler.memory:
+                            handler.memory.add_message(
+                                thread_ts=thread_ts,
+                                channel_id=channel_id,
+                                user_id=user_id,
+                                role='user',
+                                content=f"[Voice message]: {transcript_text}"
+                            )
+                            print(f"💾 Transcript saved to conversation history")
+
+                        # Get agent response
+                        response_text = await handler.claude_agent.handle_conversation(
+                            message=transcript_text,  # Pass transcript as user message
+                            user_id=user_id,
+                            thread_ts=thread_ts,
+                            channel_id=channel_id
+                        )
+
+                        # Post agent's response in thread
+                        slack_client.chat_postMessage(
+                            channel=channel_id,
+                            text=response_text,
+                            thread_ts=thread_ts
+                        )
+
+                        print(f"✅ Agent responded to voice message")
+
+                        # Save agent response to conversation history
+                        if handler.memory:
+                            handler.memory.add_message(
+                                thread_ts=thread_ts,
+                                channel_id=channel_id,
+                                user_id='bot',
+                                role='assistant',
+                                content=response_text
+                            )
+                    else:
+                        # Fallback: just post transcript if agent not available
+                        formatted_message = format_transcript_message(
+                            transcript_text,
+                            duration=duration,
+                            filename=filename
+                        )
+                        slack_client.chat_postMessage(
+                            channel=channel_id,
+                            text=formatted_message,
+                            thread_ts=thread_ts
+                        )
+                        print(f"📝 Posted transcript (agent unavailable)")
 
                 else:
                     # Whisper failed, try Slack's native transcript
