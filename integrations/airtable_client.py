@@ -240,12 +240,14 @@ class AirtableContentCalendar:
         Strip SDK output metadata and headers to get clean post content.
 
         Removes:
+        - Agent commentary ("✅ ALL CONTENT COMPLETE", "Key themes across all three formats", etc.)
         - "---" dividers
-        - "POST 1:", "POST 2:", etc.
+        - "POST 1:", "POST 2:", "1. LINKEDIN POST", "2. THREE TWITTER POSTS", etc.
         - "Final LinkedIn Post", "Final Twitter Thread", etc.
         - Score/metadata lines
         - "(Estimated Score: X/Y)" lines
         - "Changes Applied:" sections
+        - Multi-platform summaries
 
         Args:
             content: Raw SDK output
@@ -266,16 +268,25 @@ class AirtableContentCalendar:
         lines = text.split('\n')
         clean_lines = []
         skip_rest = False
+        found_content_start = False
 
         for line in lines:
             stripped = line.strip()
 
-            # Skip horizontal dividers
-            if stripped == '---' or stripped.startswith('==='):
+            # Skip agent commentary patterns
+            if re.match(r'^[✅✓🚀🎯]\s*(ALL CONTENT COMPLETE|Key themes|Ready to ship|Posted above)', stripped, re.IGNORECASE):
                 continue
 
-            # Skip headers like "POST 1:", "POST 2:", etc.
-            if re.match(r'^(POST|THREAD|EMAIL|SCRIPT)\s*\d*:', stripped, re.IGNORECASE):
+            # Skip horizontal dividers
+            if stripped == '---' or stripped.startswith('===') or re.match(r'^-{3,}$', stripped):
+                continue
+
+            # Skip numbered section headers like "1. LINKEDIN POST", "2. THREE TWITTER POSTS", "3. YOUTUBE SCRIPT"
+            if re.match(r'^\d+\.\s+(LINKEDIN|TWITTER|EMAIL|YOUTUBE|THREE\s+TWITTER)', stripped, re.IGNORECASE):
+                continue
+
+            # Skip headers like "POST 1:", "POST 2:", "Tweet 1:", "Tweet 2:", etc.
+            if re.match(r'^(POST|THREAD|EMAIL|SCRIPT|TWEET)\s*\d*:', stripped, re.IGNORECASE):
                 continue
 
             # Skip "Final [Platform] Post" headers (with optional markdown ## and emojis)
@@ -285,12 +296,20 @@ class AirtableContentCalendar:
             if re.match(r'^[✅✓]?\s*Final (LinkedIn|Twitter|Email|YouTube)', stripped, re.IGNORECASE):
                 continue
 
-            # Skip score lines and "Final Score:"
-            if re.search(r'(Estimated Score|Quality Score|Final Score):', stripped, re.IGNORECASE):
+            # Skip score lines and "Final Score:" or "(Score: X/25)"
+            if re.search(r'(Estimated Score|Quality Score|Final Score|\(Score:\s*\d+/\d+\))', stripped, re.IGNORECASE):
                 continue
 
             # Skip "Subject:" and "Preview:" lines (for email body - hook extracts these separately)
             if re.match(r'^(Subject|Preview):', stripped, re.IGNORECASE):
+                continue
+
+            # Skip "Title:" and "Structure:" lines (YouTube metadata)
+            if re.match(r'^(Title|Structure):', stripped, re.IGNORECASE):
+                continue
+
+            # Skip section markers like "Hook (0:00-0:30):", "Section 1 (0:30-2:30):"
+            if re.search(r'^\w+\s*\(\d+:\d+-\d+:\d+\):', stripped):
                 continue
 
             # Stop at "Final Score:" - this marks end of actual content
@@ -299,21 +318,38 @@ class AirtableContentCalendar:
                 continue
 
             # Stop at agent conversation patterns
-            if re.match(r'^(Changes Applied:|Ready to send)', stripped, re.IGNORECASE):
+            if re.match(r'^(Changes Applied:|Ready to send|Key themes|Full script saved)', stripped, re.IGNORECASE):
+                skip_rest = True
+                continue
+
+            # Stop at summary patterns
+            if re.match(r'^(All content emphasizes|Ready to ship)', stripped, re.IGNORECASE):
                 skip_rest = True
                 continue
 
             if skip_rest:
                 continue
 
+            # Skip "Posted above -" commentary lines
+            if re.match(r'^Posted above', stripped, re.IGNORECASE):
+                continue
+
             # Skip empty lines at the start
             if not clean_lines and not stripped:
                 continue
+
+            # If we've found actual content, keep track
+            if stripped and not found_content_start:
+                found_content_start = True
 
             clean_lines.append(line)
 
         # Join and clean up extra whitespace
         cleaned = '\n'.join(clean_lines).strip()
+
+        # Remove trailing whitespace and multiple blank lines
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+
         return cleaned
 
     def _extract_hook(self, content: str, platform: str) -> str:
@@ -347,11 +383,18 @@ class AirtableContentCalendar:
             return non_empty[0][:200] if non_empty else ""
 
         elif platform.lower() == 'twitter':
-            # For Twitter, get first tweet
+            # For Twitter, get first tweet (handle multiple tweet formats)
+            # Remove "Tweet 1:", "Tweet 2:" patterns first
+            text = re.sub(r'^Tweet\s+\d+\s*(\([^)]+\))?:', '', text, flags=re.MULTILINE|re.IGNORECASE)
+
+            # Split on double newlines to get individual tweets
             tweets = text.split('\n\n')
             first_tweet = tweets[0] if tweets else text
-            # Remove thread numbering like "1/7"
+
+            # Remove thread numbering like "1/7" or "(Contrarian Hook)"
             first_tweet = re.sub(r'^\d+/\d+\s*', '', first_tweet)
+            first_tweet = re.sub(r'^\([^)]+\):\s*', '', first_tweet)
+
             # Return first 200 chars
             return first_tweet[:200].strip()
 
