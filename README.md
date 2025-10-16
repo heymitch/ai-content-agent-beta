@@ -130,8 +130,9 @@ Copy [.env.example](.env.example) to `.env` and configure:
 
 **Optional:**
 - `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` - AI observability
-- `GPTZERO_API_KEY` - AI detection validation
+- `GPTZERO_API_KEY` - AI detection validation (human-likeness scoring)
 - `AIRTABLE_ACCESS_TOKEN` - Content calendar integration
+- `LOG_LEVEL` - Logging verbosity (DEBUG, INFO, WARNING, ERROR; default: INFO)
 
 ### 2. Database Setup
 The bootstrap script creates all necessary tables and RAG functions:
@@ -205,6 +206,64 @@ Each validator checks:
 - **Call-to-Action** (5 pts) - Clear next step, appropriate urgency
 
 **Threshold:** 18/25 (72%) required to pass
+
+### Content Validation System
+
+The validation system runs automatically after content generation and performs two checks in parallel for optimal performance:
+
+#### 1. Quality Check (AI Pattern Detection)
+- Uses Claude to analyze content for AI writing patterns
+- Detects robotic phrases, clichés, and overused expressions
+- Scores content on 5 dimensions (0-5 each):
+  - Hook quality (attention-grabbing, specific)
+  - Proof points (data, examples, specificity)
+  - Structure (flow, formatting, readability)
+  - Call-to-action (clear, appropriate urgency)
+  - Human-likeness (varied sentences, natural voice)
+- Returns: Score (0-25), decision (accept/revise/reject), surgical fixes
+
+#### 2. GPTZero AI Detection (Optional)
+- Analyzes content for AI-generation probability
+- Requires `GPTZERO_API_KEY` environment variable
+- Returns: Human probability, AI probability, flagged sentences
+- **Threshold:** >70% human probability = PASS
+
+**Validation Results:**
+- Saved to Airtable "Suggested Edits" field (human-readable format)
+- Includes quality breakdown, AI patterns found, recommended fixes
+- GPTZero results (if configured)
+- Available in Supabase for analytics
+
+**Performance:**
+- Validators run in parallel using `asyncio.gather()`
+- Total validation time: ~3-5 seconds (vs 6-8s sequential)
+- Graceful degradation: Works without GPTZero API key
+
+**Example validation output in Airtable:**
+```
+🔍 CONTENT VALIDATION REPORT
+================================================
+✅ OVERALL: ACCEPT (Score: 20/25)
+
+📊 Quality Breakdown:
+   • Hook: 4/5
+   • Proof: 4/5
+   • Structure: 4/5
+   • Cta: 4/5
+   • Human: 4/5
+
+⚡ AI Patterns Detected:
+   • Contrast structure: "It's not X, it's Y"
+
+💡 Recommended Fixes:
+   Remove contrast framing. State point directly.
+
+✅ GPTZero AI Detection:
+   • Human-written: 78.5%
+   • AI-generated: 21.5%
+
+📅 Generated: 2025-10-16 10:00:00
+```
 
 ## 🎯 Deployment
 

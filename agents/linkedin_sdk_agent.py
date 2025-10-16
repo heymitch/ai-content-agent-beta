@@ -12,6 +12,7 @@ from claude_agent_sdk import (
 )
 import os
 import json
+import logging
 import asyncio
 from typing import Dict, Optional, Any, List
 from datetime import datetime, timedelta
@@ -20,6 +21,10 @@ from textwrap import dedent
 
 # Load environment variables for API keys
 load_dotenv()
+
+# Setup logging
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
 
 # ================== TIER 3 TOOL DEFINITIONS (LAZY LOADED) ==================
