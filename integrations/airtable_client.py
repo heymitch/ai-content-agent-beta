@@ -318,12 +318,12 @@ class AirtableContentCalendar:
                 continue
 
             # Stop at agent conversation patterns
-            if re.match(r'^(Changes Applied:|Ready to send|Key themes|Full script saved)', stripped, re.IGNORECASE):
+            if re.match(r'^(Changes Applied:|Ready to send|Key themes|Full script saved|What changed:)', stripped, re.IGNORECASE):
                 skip_rest = True
                 continue
 
             # Stop at summary patterns
-            if re.match(r'^(All content emphasizes|Ready to ship)', stripped, re.IGNORECASE):
+            if re.match(r'^(All content emphasizes|Ready to ship|Post now scores)', stripped, re.IGNORECASE):
                 skip_rest = True
                 continue
 
