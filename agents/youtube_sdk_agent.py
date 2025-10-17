@@ -522,23 +522,33 @@ Trust the prompts - they include Cole's script style examples and timing logic."
             }
 
     async def _parse_output(self, output: str) -> Dict[str, Any]:
-        """Parse agent output into structured response"""
-        # Debug: Track how many times this is called
-        import traceback
-        print(f"\n⚠️ DEBUG: _parse_output called")
-        print(f"   Call stack (last 3 frames):")
-        for line in traceback.format_stack()[-4:-1]:
-            print(f"   {line.strip()}")
+        """Parse agent output into structured response using Haiku extraction"""
+        print(f"\n🔍 _parse_output called with {len(output)} chars")
 
-        # Clean the content (remove SDK metadata/headers)
-        from integrations.airtable_client import AirtableContentCalendar
-        cleaner = AirtableContentCalendar.__new__(AirtableContentCalendar)
-        clean_output = cleaner._clean_content(output)
+        if not output or len(output) < 10:
+            print(f"⚠️ WARNING: Output is empty or too short!")
+            return {
+                "success": False,
+                "error": "No content generated",
+                "script": None
+            }
 
-        # Extract the hook from clean content
-        hook_preview = cleaner._extract_hook(clean_output, 'youtube')
+        # Extract structured content using Haiku (replaces fragile regex)
+        from integrations.content_extractor import extract_structured_content
 
-        # Try to extract timing from output
+        print("📝 Extracting content with Haiku...")
+        extracted = await extract_structured_content(
+            raw_output=output,
+            platform='youtube'
+        )
+
+        clean_output = extracted['body']
+        hook_preview = extracted['hook']  # For YouTube, hook is title/opening
+
+        print(f"✅ Extracted: {len(clean_output)} chars body")
+        print(f"✅ Hook: {hook_preview[:80]}...")
+
+        # Try to extract timing from output (if present in script)
         import re
         timing_pattern = r'(\d+:\d+)-(\d+:\d+)'
         timings = re.findall(timing_pattern, clean_output)

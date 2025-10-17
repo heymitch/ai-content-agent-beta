@@ -533,22 +533,31 @@ Trust the prompts - they include PGA writing style examples."""
             }
 
     async def _parse_output(self, output: str) -> Dict[str, Any]:
-        """Parse agent output into structured response"""
+        """Parse agent output into structured response using Haiku extraction"""
+        print(f"\n🔍 _parse_output called with {len(output)} chars")
 
-        # Debug: Track how many times this is called
-        import traceback
-        print(f"\n⚠️ DEBUG: _parse_output called")
-        print(f"   Call stack (last 3 frames):")
-        for line in traceback.format_stack()[-4:-1]:
-            print(f"   {line.strip()}")
+        if not output or len(output) < 10:
+            print(f"⚠️ WARNING: Output is empty or too short!")
+            return {
+                "success": False,
+                "error": "No content generated",
+                "email": None
+            }
 
-        # Clean the content (remove SDK metadata/headers)
-        from integrations.airtable_client import AirtableContentCalendar
-        cleaner = AirtableContentCalendar.__new__(AirtableContentCalendar)
-        clean_output = cleaner._clean_content(output)
+        # Extract structured content using Haiku (replaces fragile regex)
+        from integrations.content_extractor import extract_structured_content
 
-        # Extract the subject/hook from clean content
-        subject_preview = cleaner._extract_hook(clean_output, 'email')
+        print("📝 Extracting content with Haiku...")
+        extracted = await extract_structured_content(
+            raw_output=output,
+            platform='email'
+        )
+
+        clean_output = extracted['body']
+        subject_preview = extracted['hook']  # For email, hook is subject line
+
+        print(f"✅ Extracted: {len(clean_output)} chars body")
+        print(f"✅ Subject: {subject_preview[:80]}...")
 
         # Extract score if mentioned in output
         score = 90  # Default, would parse from actual output
