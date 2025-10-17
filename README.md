@@ -267,6 +267,41 @@ The validation system runs automatically after content generation and performs t
 
 ## 🎯 Deployment
 
+### Client Deployment (Replit)
+
+For detailed deployment instructions, see **[docs/CLIENT_DEPLOYMENT.md](docs/CLIENT_DEPLOYMENT.md)**
+
+**Quick Start:**
+```bash
+# 1. First-time setup
+bash scripts/client_setup.sh
+
+# 2. Create brand context
+cp .claude/CLAUDE.md.example .claude/CLAUDE.md
+nano .claude/CLAUDE.md  # Edit with your brand voice
+
+# 3. Bootstrap database
+node scripts/bootstrap_database.js
+
+# 4. Start the agent
+npm start
+```
+
+**Update to Latest:**
+```bash
+# Safe update (handles divergent branches)
+bash scripts/client_update.sh review-fix
+
+# Or for production:
+bash scripts/client_update.sh main
+```
+
+**Why this matters:**
+- ✅ Your `.claude/CLAUDE.md` customizations are **gitignored** (safe from updates)
+- ✅ Update scripts preserve your brand context
+- ✅ System prompts are automatically cached (90% cost savings)
+- ✅ No merge conflicts when pulling updates
+
 ### Local Development
 ```bash
 # Install dependencies
@@ -290,6 +325,7 @@ npm start
 - **Railway**: Add env vars in dashboard → Deploy
 - **Render**: Create Web Service → Add env vars → Deploy
 - **Fly.io**: `fly secrets set KEY=value` → `fly deploy`
+- **Replit**: See [docs/CLIENT_DEPLOYMENT.md](docs/CLIENT_DEPLOYMENT.md)
 
 ## 🔧 Architecture
 
