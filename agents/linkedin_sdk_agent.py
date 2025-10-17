@@ -417,54 +417,59 @@ class LinkedInSDKAgent:
         # LinkedIn-specific base prompt with quality thresholds
         base_prompt = """You are a LinkedIn content creation agent. Your goal: posts that score 18+ out of 25 without needing 3 rounds of revision.
 
-YOU MUST USE TOOLS. EXECUTE immediately. Parse JSON responses.
-
 AVAILABLE TOOLS (5-tool workflow):
-- mcp__linkedin_tools__generate_5_hooks → Returns 5 hook options
-- mcp__linkedin_tools__create_human_draft → Returns JSON: {post_text, self_assessment}
-- mcp__linkedin_tools__inject_proof_points → Adds metrics
-- mcp__linkedin_tools__quality_check → Returns JSON: {scores, decision, issues}
-- mcp__linkedin_tools__apply_fixes → Returns JSON: {revised_post, changes_made, estimated_new_score}
 
-QUALITY THRESHOLD: 18/25 minimum (5-axis rubric)
+1. mcp__linkedin_tools__generate_5_hooks
+   Input: {"topic": str, "context": str, "audience": str}
+   Returns: JSON array with 5 hooks (question/bold/stat/story/mistake formats)
+   When to use: Always call first to generate hook options
 
-WORKFLOW WITH DECISION LOGIC:
-1. generate_5_hooks → Pick best
-2. create_human_draft → Parse JSON
-   - Check self_assessment.total
-   - If <18 → Try different hook, GOTO 1
-   - If ≥18 → Continue to 3
-3. inject_proof_points → Add specifics
-4. quality_check → Parse JSON
-   - decision="reject" (score <18) → Try different hook, GOTO 1
-   - decision="accept" (score ≥20) → Return post, DONE
-   - decision="revise" (score 18-19) → GOTO 5
-5. apply_fixes → Parse JSON
-   - Check estimated_new_score
-   - If ≥18 → Return revised_post, DONE
-   - If <18 → Try different approach, GOTO 1
+2. mcp__linkedin_tools__create_human_draft
+   Input: {"topic": str, "hook": str, "context": str}
+   Returns: JSON with {post_text, self_assessment: {hook: 0-5, audience: 0-5, headers: 0-5, proof: 0-5, cta: 0-5, total: 0-25}}
+   What it does: Creates LinkedIn post using 127-line WRITE_LIKE_HUMAN_RULES (cached)
+   Quality: Trained on Nicolas Cole, Dickie Bush examples - produces human-sounding content
+   When to use: After selecting best hook from generate_5_hooks
 
-MAX RETRIES: 3 attempts
-If all fail → Return best attempt with warning: "Best score achieved: X/25"
+3. mcp__linkedin_tools__inject_proof_points
+   Input: {"draft": str, "topic": str, "industry": str}
+   Returns: Enhanced draft with metrics from topic/context (NO fabrication)
+   What it does: Adds specific numbers/dates/names ONLY from provided context
+   When to use: After create_human_draft, before quality_check
 
-CRITICAL RULES:
-- Parse JSON from create_human_draft, quality_check, apply_fixes
-- Check scores before proceeding
-- DO NOT return posts that score <18/25
-- ONE pass through revise (no iteration loops)
-- Trust the rubric - tools evaluate on 5 axes:
-  1. Hook quality (proven framework + specific + cliffhanger)
-  2. Audience specificity (role + stage + problem)
-  3. Header tangibility (metrics/outcomes)
-  4. Numeric proof (2+ concrete numbers)
-  5. Engagement trigger (active CTA)
+4. mcp__linkedin_tools__quality_check
+   Input: {"post": str}
+   Returns: JSON with {scores: {hook/audience/headers/proof/cta/total, ai_deductions}, decision: accept/revise/reject, issues: [{axis, severity, original, fix, impact}], searches_performed: [...]}
+   What it does: 
+   - Evaluates 5-axis rubric (0-5 each, total 0-25)
+   - AUTO-DETECTS AI tells with -2pt deductions: contrast framing, rule of three, cringe questions
+   - WEB SEARCHES to verify names/companies/titles for fabrication detection
+   - Returns SURGICAL fixes (specific text replacements, not full rewrites)
+   When to use: After inject_proof_points to evaluate quality
+   
+   CRITICAL UNDERSTANDING:
+   - decision="accept" (score ≥20): Post is high quality, no changes needed
+   - decision="revise" (score 18-19): Good but could be better, surgical fixes provided
+   - decision="reject" (score <18): Multiple issues, surgical fixes provided
+   - issues array has severity: critical/high/medium/low
+   
+   AI TELL SEVERITIES:
+   - Contrast framing: ALWAYS severity="critical" (must fix)
+   - Rule of three: ALWAYS severity="critical" (must fix)
+   - Jargon (leveraging, seamless, robust): ALWAYS severity="high" (must fix)
+   - Fabrications: ALWAYS severity="critical" (flag for user, don't block)
+   - Generic audience: severity="high" (good to fix)
+   - Weak CTA: severity="medium" (nice to fix)
 
-AI TELLS AUTO-FAIL:
-- Contrast framing: "It's not X, it's Y"
-- Rule of Three: "Same X. Same Y. Over Z%."
-- Cringe questions: "The truth?" / "The result?"
-
-DO NOT explain. DO NOT iterate beyond one revise. Return final post when threshold met."""
+5. mcp__linkedin_tools__apply_fixes
+   Input: {"post": str, "issues_json": str}
+   Returns: JSON with {revised_post, changes_made: [{issue_addressed, original, revised, impact}], estimated_new_score: int}
+   What it does: 
+   - Applies 3-5 SURGICAL fixes (doesn't rewrite whole post)
+   - PRESERVES all specifics: numbers, names, dates, emotional language, contractions
+   - Targets exact problems from issues array
+   - Uses WRITE_LIKE_HUMAN_RULES to ensure fixes sound natural
+   When to use: When quality_check returns issues that need fixing"""
 
         # Compose base prompt + client context (if exists)
         from integrations.prompt_loader import load_system_prompt
@@ -640,16 +645,32 @@ Trust the prompts - they include write-like-human rules."""
         from integrations.content_extractor import extract_structured_content
 
         print("📝 Extracting content with Haiku...")
-        extracted = await extract_structured_content(
-            raw_output=output,
-            platform='linkedin'
-        )
+        is_clarification = False
+        try:
+            extracted = await extract_structured_content(
+                raw_output=output,
+                platform='linkedin'
+            )
 
-        clean_output = extracted['body']
-        hook_preview = extracted['hook']
+            clean_output = extracted['body']
+            hook_preview = extracted['hook']
 
-        print(f"✅ Extracted: {len(clean_output)} chars body")
-        print(f"✅ Hook: {hook_preview[:80]}...")
+            print(f"✅ Extracted: {len(clean_output)} chars body")
+            print(f"✅ Hook: {hook_preview[:80]}...")
+
+        except ValueError as e:
+            # Agent requested clarification instead of completing post
+            print(f"⚠️ Extraction detected agent clarification: {e}")
+            is_clarification = True
+            clean_output = ""  # Empty body - no post was created
+            hook_preview = "Agent requested clarification (see Suggested Edits)"
+
+        except Exception as e:
+            # Other extraction errors - treat as clarification
+            print(f"❌ Extraction error: {e}")
+            is_clarification = True
+            clean_output = ""
+            hook_preview = "Extraction failed (see Suggested Edits)"
 
         # Extract score if mentioned in output
         score = 90  # Default, would parse from actual output
