@@ -308,8 +308,8 @@ class YouTubeSDKAgent:
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
 
-        # YouTube-specific system prompt with quality thresholds
-        self.system_prompt = """You are a YouTube script creation agent. Your goal: scripts that score 18+ out of 25 without needing 3 rounds of revision.
+        # YouTube-specific base prompt with quality thresholds
+        base_prompt = """You are a YouTube script creation agent. Your goal: scripts that score 18+ out of 25 without needing 3 rounds of revision.
 
 YOU MUST USE TOOLS. EXECUTE immediately. Parse JSON responses.
 
@@ -362,6 +362,10 @@ AI TELLS AUTO-FAIL:
 - Staccato fragments: "500 subs. 3 months. One change."
 
 DO NOT explain. DO NOT iterate beyond one revise. Return final script with timing when threshold met."""
+
+        # Compose base prompt + client context (if exists)
+        from integrations.prompt_loader import load_system_prompt
+        self.system_prompt = load_system_prompt(base_prompt)
 
         # Create MCP server with YouTube-specific tools (LEAN 5-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(

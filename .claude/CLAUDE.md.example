@@ -1,0 +1,148 @@
+# Client Business Context
+
+This file lets you customize the AI content agent for your brand voice, target audience, and business messaging.
+
+**Important**: Your workflow and quality rules are handled separately by the base system. Focus this file on:
+- WHO you are (company, product)
+- HOW you sound (voice, tone)
+- WHO you're talking to (audience)
+- WHAT you talk about (topics, messaging)
+- WHAT to avoid
+
+## Company Information
+
+**Name**: [Your company name]
+**Product/Service**: [What you sell]
+**Industry**: [Your industry]
+**Website**: [Your website URL]
+
+## Brand Voice & Tone
+
+Describe your writing style:
+- **Voice**: [Example: Conversational but data-driven]
+- **Tone**: [Example: Professional yet approachable]
+- **Personality**: [Example: Practical, not aspirational; show don't tell]
+- **Technical Level**: [Example: Technical depth without jargon]
+
+### Examples of Your Voice
+**Good**: [Example of content that sounds like you]
+**Bad**: [Example of what NOT to sound like]
+
+## Target Audience
+
+**Primary Audience**:
+- **Role/Title**: [Example: VPs of Engineering, CTOs, Engineering Managers]
+- **Company Stage**: [Example: Series A-C SaaS companies]
+- **Company Size**: [Example: 50-500 employees]
+- **Team Size**: [Example: 20-100 person engineering teams]
+
+**Pain Points** (what keeps them up at night):
+- [Pain point 1]
+- [Pain point 2]
+- [Pain point 3]
+
+**Goals** (what they're trying to achieve):
+- [Goal 1]
+- [Goal 2]
+- [Goal 3]
+
+## Key Topics & Themes
+
+Topics we cover frequently:
+- [Topic 1 - Example: AI adoption in product teams]
+- [Topic 2 - Example: Developer productivity metrics]
+- [Topic 3 - Example: Build vs buy decisions for tools]
+- [Topic 4]
+- [Topic 5]
+
+## Messaging Pillars
+
+Our core messages (what we want known for):
+1. **[Pillar 1]**: [Example: Speed - Ship features 40% faster with AI tools]
+2. **[Pillar 2]**: [Example: Quality - Maintain code quality while moving fast]
+3. **[Pillar 3]**: [Example: Adoption - Get 80%+ team usage in 90 days]
+
+## What to Avoid
+
+**Don't mention**:
+- [Competitor names to avoid]
+- [Sensitive topics]
+- [Company policies]
+
+**Don't use**:
+- Buzzwords: [Example: "revolutionary", "game-changing", "disrupting"]
+- Clichés: [Example: "synergy", "paradigm shift"]
+- Unverified claims (always cite sources or internal data)
+
+**Don't**:
+- Bash competitors
+- Make promises we can't keep
+- Use jargon the audience won't understand
+
+## Calls-to-Action (CTAs)
+
+**Primary CTA**: [Example: Read full guide at blog.yourcompany.com/ai-adoption]
+**Secondary CTA**: [Example: Book a demo at yourcompany.com/demo]
+**Alternative CTAs**: [Example: Download our framework, Join our community]
+
+## Data & Proof Points
+
+Metrics we can reference:
+- [Example: 127 developers trained across 8 companies]
+- [Example: Usage increased from 12% to 68% in 6 weeks]
+- [Example: 40% faster feature velocity]
+
+**Note**: Only use metrics you can verify. The AI won't fabricate numbers.
+
+## Content Examples
+
+### Example 1: LinkedIn Post That Sounds Like Us
+```
+[Paste an example of a post that captures your voice perfectly]
+```
+
+### Example 2: What NOT to Do
+```
+[Paste an example of content that doesn't match your brand]
+```
+
+## Additional Notes
+
+[Any other context the AI should know about your business, audience, or content strategy]
+
+---
+
+## How to Use This File
+
+1. **First time**: Copy this example file
+   ```bash
+   cp .claude/CLAUDE.md.example .claude/CLAUDE.md
+   ```
+
+2. **Customize**: Fill in your company details above in `CLAUDE.md`
+
+3. **Deploy**: Restart the app - the AI will use your context
+
+4. **Update anytime**: Edit `.claude/CLAUDE.md` and restart
+
+5. **After git pull**: Your `CLAUDE.md` is preserved (gitignored)
+
+## What Gets Composed
+
+Your content in `CLAUDE.md` gets added to the base system prompt like this:
+
+```
+[Base system prompt - workflow, quality rules, how to create content]
+
+---
+
+## CLIENT BUSINESS CONTEXT
+
+[Your content from CLAUDE.md]
+
+---
+
+Use the CLIENT CONTEXT to match voice, target audience, reference products...
+```
+
+The AI follows the base workflow but adapts the content to YOUR brand and audience.

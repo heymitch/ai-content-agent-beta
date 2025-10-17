@@ -414,8 +414,8 @@ class LinkedInSDKAgent:
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
 
-        # LinkedIn-specific system prompt with quality thresholds
-        self.system_prompt = """You are a LinkedIn content creation agent. Your goal: posts that score 18+ out of 25 without needing 3 rounds of revision.
+        # LinkedIn-specific base prompt with quality thresholds
+        base_prompt = """You are a LinkedIn content creation agent. Your goal: posts that score 18+ out of 25 without needing 3 rounds of revision.
 
 YOU MUST USE TOOLS. EXECUTE immediately. Parse JSON responses.
 
@@ -465,6 +465,10 @@ AI TELLS AUTO-FAIL:
 - Cringe questions: "The truth?" / "The result?"
 
 DO NOT explain. DO NOT iterate beyond one revise. Return final post when threshold met."""
+
+        # Compose base prompt + client context (if exists)
+        from integrations.prompt_loader import load_system_prompt
+        self.system_prompt = load_system_prompt(base_prompt)
 
         # Create MCP server with LinkedIn-specific tools (LEAN 5-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(

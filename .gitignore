@@ -33,6 +33,9 @@ MANIFEST
 clients/*/.env
 clients/*/.env.*
 
+# Client-specific system prompt customization
+.claude/CLAUDE.md
+
 # IDE
 .vscode/
 .idea/

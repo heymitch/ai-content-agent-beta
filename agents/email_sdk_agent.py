@@ -306,8 +306,8 @@ class EmailSDKAgent:
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
 
-        # Email-specific system prompt with quality thresholds
-        self.system_prompt = """You are an email newsletter creation agent. Your goal: emails that score 18+ out of 25 without needing 3 rounds of revision.
+        # Email-specific base prompt with quality thresholds
+        base_prompt = """You are an email newsletter creation agent. Your goal: emails that score 18+ out of 25 without needing 3 rounds of revision.
 
 YOU MUST USE TOOLS. EXECUTE immediately. Parse JSON responses.
 
@@ -372,6 +372,10 @@ Preview: [preview text]
 Final Score: X/25 (Above 18/25 threshold ✓)
 
 DO NOT add any commentary after "Final Score:" line. DO NOT say "Ready to send" or ask questions."""
+
+        # Compose base prompt + client context (if exists)
+        from integrations.prompt_loader import load_system_prompt
+        self.system_prompt = load_system_prompt(base_prompt)
 
         # Create MCP server with Email-specific tools (LEAN 5-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
