@@ -227,6 +227,7 @@ async def run_all_validators(content: str, platform: str) -> str:
         "decision": quality_result.get('decision'),
         "ai_patterns_found": quality_result.get('issues', []),
         "surgical_summary": quality_result.get('surgical_summary', ''),
+        "searches_performed": quality_result.get('searches_performed', []),  # For fact-checking transparency
         "gptzero": gptzero_result if gptzero_result else {"status": "NOT_RUN", "reason": "API key not configured"},
         "platform": platform,
         "timestamp": datetime.now().isoformat()
@@ -293,12 +294,123 @@ def format_validation_for_airtable(validation_json_str: str) -> str:
                 lines.append(f"   • {key.replace('_', ' ').title()}: {value}/5")
         lines.append("")
 
-    # AI Patterns Found
+    # AI Patterns Found - Enhanced formatting with severity grouping
     ai_patterns = data.get('ai_patterns_found', [])
+
+    # Initialize severity lists (needed for later sections)
+    critical_issues = []
+    high_issues = []
+    medium_issues = []
+    low_issues = []
+
     if ai_patterns:
-        lines.append("⚡ AI Patterns Detected:")
-        for pattern in ai_patterns:
-            lines.append(f"   • {pattern}")
+        # Check if ai_patterns contains dicts (new format) or strings (old format)
+        if ai_patterns and isinstance(ai_patterns[0], dict):
+            # NEW FORMAT: Array of issue objects with severity
+            lines.append("⚠️ ISSUES FOUND:")
+            lines.append("")
+
+            # Group by severity
+            critical_issues = [p for p in ai_patterns if p.get('severity') == 'critical']
+            high_issues = [p for p in ai_patterns if p.get('severity') == 'high']
+            medium_issues = [p for p in ai_patterns if p.get('severity') == 'medium']
+            low_issues = [p for p in ai_patterns if p.get('severity') == 'low']
+
+            # Display critical issues first
+            if critical_issues:
+                lines.append("🚨 CRITICAL:")
+                for issue in critical_issues:
+                    axis = issue.get('axis', 'general').upper()
+                    original = issue.get('original', 'N/A')
+                    fix = issue.get('fix', 'N/A')
+                    impact = issue.get('impact', '')
+
+                    lines.append(f"   [{axis}]")
+                    lines.append(f"   Problem: {original}")
+                    lines.append(f"   Fix: {fix}")
+                    if impact:
+                        lines.append(f"   Impact: {impact}")
+                    lines.append("")
+
+            # High priority issues
+            if high_issues:
+                lines.append("⚠️ HIGH PRIORITY:")
+                for issue in high_issues:
+                    axis = issue.get('axis', 'general').upper()
+                    original = issue.get('original', 'N/A')
+                    fix = issue.get('fix', 'N/A')
+                    impact = issue.get('impact', '')
+
+                    lines.append(f"   [{axis}]")
+                    lines.append(f"   Problem: {original}")
+                    lines.append(f"   Fix: {fix}")
+                    if impact:
+                        lines.append(f"   Impact: {impact}")
+                    lines.append("")
+
+            # Medium priority issues
+            if medium_issues:
+                lines.append("📝 MEDIUM PRIORITY:")
+                for issue in medium_issues:
+                    axis = issue.get('axis', 'general').upper()
+                    original = issue.get('original', 'N/A')
+                    fix = issue.get('fix', 'N/A')
+                    impact = issue.get('impact', '')
+
+                    lines.append(f"   [{axis}]")
+                    lines.append(f"   Problem: {original}")
+                    lines.append(f"   Fix: {fix}")
+                    if impact:
+                        lines.append(f"   Impact: {impact}")
+                    lines.append("")
+
+            # Low priority issues
+            if low_issues:
+                lines.append("💡 SUGGESTIONS:")
+                for issue in low_issues:
+                    axis = issue.get('axis', 'general').upper()
+                    original = issue.get('original', 'N/A')
+                    fix = issue.get('fix', 'N/A')
+
+                    lines.append(f"   [{axis}] {original} → {fix}")
+                    lines.append("")
+
+        else:
+            # OLD FORMAT: Array of strings (backwards compatibility)
+            lines.append("⚡ AI Patterns Detected:")
+            for pattern in ai_patterns:
+                lines.append(f"   • {pattern}")
+            lines.append("")
+
+    # Add numbered action items section if we have issues
+    if ai_patterns and isinstance(ai_patterns[0], dict):
+        lines.append("🔧 SPECIFIC EDITS TO MAKE:")
+        lines.append("")
+
+        # Combine all issues in priority order for action list
+        all_issues = critical_issues + high_issues + medium_issues + low_issues
+
+        for i, issue in enumerate(all_issues, 1):
+            severity = issue.get('severity', 'medium').upper()
+            axis = issue.get('axis', 'general')
+            original = issue.get('original', 'N/A')
+            fix = issue.get('fix', 'N/A')
+            impact = issue.get('impact', '')
+
+            lines.append(f"{i}. [{severity}] {axis.title()}")
+            lines.append(f"   Original: \"{original}\"")
+            lines.append(f"   Fix: \"{fix}\"")
+            if impact:
+                lines.append(f"   Impact: {impact}")
+            lines.append("")
+
+    # Show search queries performed (transparency for fact-checking)
+    searches = data.get('searches_performed', [])
+
+    if searches:
+        lines.append("🔍 Fact-Checking Performed:")
+        for search_query in searches:
+            lines.append(f"   • Searched: \"{search_query}\"")
         lines.append("")
 
     # Surgical Summary
