@@ -739,7 +739,7 @@ Trust the prompts - they include Cole's script style examples and timing logic."
 
             print(f"\n📝 Saving content (hook: '{hook_preview[:50]}...')")
             result = airtable.create_content_record(
-                content=output,  # Pass raw output, cleaning happens inside
+                content=clean_output,  # Save the CLEAN extracted script, not raw output
                 platform='youtube',
                 post_hook=hook_preview,
                 status='Draft',
