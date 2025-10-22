@@ -833,7 +833,7 @@ async def send_to_calendar(args):
             content=post,
             platform=platform,
             post_hook=hook_preview,
-            status='Scheduled',
+            status='Draft',  # Use 'Draft' to match SDK agents (user can change in Airtable)
             suggested_edits=f"Quality Score: {score}/100"
         )
 
