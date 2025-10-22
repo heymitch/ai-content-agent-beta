@@ -397,6 +397,7 @@ async def delegate_to_workflow(args):
 )
 async def generate_post_linkedin(args):
     """Generate LinkedIn post draft"""
+    print(f"📝 generate_post_linkedin CALLED - Topic: {args.get('topic', 'N/A')[:50]}")
     import json
     from anthropic import Anthropic
     from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
@@ -431,6 +432,7 @@ Return ONLY the post text. No markdown formatting (**bold** or *italic*). No met
         messages=[{"role": "user", "content": prompt}]
     )
 
+    print(f"✅ generate_post_linkedin COMPLETED - Generated {len(response.content[0].text)} chars")
     return {"content": [{"type": "text", "text": response.content[0].text}]}
 
 
@@ -721,8 +723,11 @@ async def quality_check_instagram(args):
 )
 async def apply_fixes_linkedin(args):
     """Apply fixes tool for LinkedIn posts"""
+    print(f"🔧 apply_fixes_linkedin CALLED with args: {list(args.keys())}")
     from agents.linkedin_sdk_agent import apply_fixes as linkedin_apply_fixes
-    return await linkedin_apply_fixes(args)
+    result = await linkedin_apply_fixes(args)
+    print(f"✅ apply_fixes_linkedin COMPLETED")
+    return result
 
 
 @tool(
