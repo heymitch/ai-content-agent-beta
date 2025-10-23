@@ -193,12 +193,45 @@ Target: {target_length} characters or less.
 
 # ==================== QUALITY CHECK ====================
 
-QUALITY_CHECK_PROMPT = dedent("""You are evaluating an Instagram caption. Your job: determine if this stops the scroll or gets skipped.
+QUALITY_CHECK_PROMPT = dedent(f"""You are evaluating an Instagram caption using Editor-in-Chief standards.
+
+═══════════════════════════════════════════════════════════════
+EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
+═══════════════════════════════════════════════════════════════
+
+{EDITOR_IN_CHIEF_RULES}
+
+═══════════════════════════════════════════════════════════════
+END OF EDITOR-IN-CHIEF STANDARDS
+═══════════════════════════════════════════════════════════════
+
+YOUR TASK:
+1. Read the caption below
+2. Scan sentence-by-sentence for EVERY violation listed in Editor-in-Chief standards above
+3. Create ONE surgical issue per violation found
+4. Use EXACT replacement strategies from the standards (don't make up your own)
 
 CAPTION TO EVALUATE:
-{post}
+{{post}}
 
-EVALUATION CRITERIA (5 axes, 0-5 points each):
+WORKFLOW:
+
+STEP 1: SCAN FOR VIOLATIONS
+Go through the caption sentence-by-sentence and find Editor-in-Chief violations:
+- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y")
+- Masked contrast patterns ("Instead of X", "but rather")
+- Section summaries ("In summary", "In conclusion")
+- Promotional puffery ("stands as", "testament")
+- Overused conjunctions ("moreover", "furthermore")
+- Vague attributions without sources
+- Em-dash overuse
+- Words needing substitution ("leverages", "encompasses", "facilitates")
+- Buzzwords ("game-changer", "unlock", "revolutionary")
+
+STEP 2: CREATE SURGICAL ISSUES
+For EACH violation found, create ONE issue with EXACT text and EXACT fix from Editor-in-Chief examples.
+
+STEP 3: SCORE THE CAPTION - Evaluation criteria (5 axes, 0-5 points each):
 
 1. HOOK STRENGTH (First 125 chars before "...more")
    5 points: Specific number/question/story + curiosity gap + under 125 chars
@@ -235,22 +268,26 @@ EVALUATION CRITERIA (5 axes, 0-5 points each):
    2 points: Generic CTA ("DM me")
    0 points: No CTA or hashtag spam (10+)
 
-AI TELL DETECTION (auto-deduct 2 points each):
--2 pts: Contrast framing ("It's not X, it's Y")
--2 pts: Rule of three ("Same X. Same Y. Over Z%.")
--2 pts: Cringe questions ("The truth?" / "Sound familiar?")
--2 pts: Buzzwords (game-changer, unlock, revolutionary, leverage)
+STEP 4: VERIFY FACTS (use web_search)
+Search for any specific claims (names, companies, stats, news stories).
+Examples: "Rick Beato YouTube AI filters" or "James Chen Clearbit"
 
-VERIFICATION CHECK (use web_search tool):
-- Search any specific claims (names, companies, stats, news stories)
-- Example: "Rick Beato YouTube AI filters" or "James Chen Clearbit"
-- If verified → Note as "verified claim"
-- If NOT verified:
-  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
-  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
-  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
+If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
+Only use "FABRICATED" if provably false.
 
-RETURN FORMAT (JSON):
+STEP 5: CHECK INSTAGRAM-SPECIFIC
+- First 125 chars hook (before "...more")
+- Character count vs 2200 limit
+- Visual pairing context
+
+CRITICAL RULES:
+✅ Create ONE issue per Editor-in-Chief violation
+✅ Quote EXACT text in "original"
+✅ Use EXACT fixes from Editor-in-Chief standards (don't improvise)
+✅ Be comprehensive - find EVERY violation
+✅ Deduct 2 points per major AI tell
+
+Output JSON:
 {{
   "scores": {{
     "hook": 4,
@@ -258,27 +295,28 @@ RETURN FORMAT (JSON):
     "readability": 4,
     "proof": 5,
     "cta_hashtags": 4,
-    "ai_deductions": -2,
-    "total": 20
+    "ai_deductions": -4,
+    "total": 18
   }},
-  "decision": "accept",  # accept (≥20), revise (18-19), reject (<18)
+  "decision": "revise",
+  "searches_performed": ["query 1", "query 2"],
   "issues": [
     {{
-      "axis": "hook",
-      "severity": "high",  # critical/high/medium/low
-      "original": "Check this out...",
-      "fix": "What if 12 hours/week vanish on 12-minute tasks?",
-      "impact": "+2 pts (creates curiosity gap, under 125 chars)"
+      "axis": "ai_tells",
+      "severity": "high",
+      "pattern": "contrast_direct",
+      "original": "[exact quote from caption]",
+      "fix": "[exact fix from Editor-in-Chief examples]",
+      "impact": "[specific improvement]"
     }}
   ],
-  "searches_performed": ["Nike air max release date", ...],
   "character_count": 1847,
   "character_limit": 2200,
-  "preview_length": 124  # first 125 chars check
+  "preview_length": 124,
+  "surgical_summary": "Found [number] violations. Applying all fixes would raise score from [current] to [projected]."
 }}
 
-Run web searches for any specific claims. Flag fabrications as severity="critical".
-Return JSON only.
+Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
 """)
 
 # ==================== APPLY FIXES ====================
