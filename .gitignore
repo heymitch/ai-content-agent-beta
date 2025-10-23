@@ -74,9 +74,10 @@ WHITE_GLOVE_DEPLOYMENT.md
 DEV_CONTEXT.md
 ROADMAP.md
 SDK_DOCS.md
-test_*.py
-*_test.py
-tests/
+# Keep tests/ folder for pre-deployment testing
+# But ignore loose test files in root (NOT in tests/ folder)
+/test_*.py
+/*_test.py
 
 # Testing infrastructure (added 2024-10-21)
 TESTING_CHECKLIST.md
@@ -85,4 +86,4 @@ run_tests.sh
 
 # All-caps documentation files
 AGENT_INSTRUCTIONS.md
-README.md
+/README.md
