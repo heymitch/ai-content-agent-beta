@@ -4,7 +4,18 @@ Detailed prompts stored here to minimize SDK context window usage.
 Only loaded when tools are actually called.
 """
 
+from pathlib import Path
 from textwrap import dedent
+
+# ==================== LOAD EDITOR-IN-CHIEF STANDARDS ====================
+# Load comprehensive Editor-in-Chief standards for quality_check
+EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
+try:
+    with open(EDITOR_FILE_PATH, 'r', encoding='utf-8') as f:
+        EDITOR_IN_CHIEF_RULES = f.read()
+except FileNotFoundError:
+    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
+    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
 
 # ==================== GLOBAL WRITING RULES (CACHED) ====================
 # Source: write-like-a-human.md - COMPLETE VERSION (not summarized)
@@ -777,82 +788,88 @@ Return as JSON:
 
 # ==================== QUALITY CHECK (COMBINED: AI CRINGE + FACT CHECK) ====================
 
-QUALITY_CHECK_PROMPT = dedent("""You are evaluating a Twitter thread. Your job: determine if this would get engagement or get scrolled past.
+QUALITY_CHECK_PROMPT = dedent(f"""You are evaluating a Twitter thread using Editor-in-Chief standards.
 
-Thread: {post}
+═══════════════════════════════════════════════════════════════
+EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
+═══════════════════════════════════════════════════════════════
 
-Evaluate on these axes (0-5):
+{EDITOR_IN_CHIEF_RULES}
 
-1. HOOK STRENGTH
-   - Does the first tweet grab attention immediately?
-   - Is it specific with concrete details?
-   - Does it create intrigue?
+═══════════════════════════════════════════════════════════════
+END OF EDITOR-IN-CHIEF STANDARDS
+═══════════════════════════════════════════════════════════════
 
-   Score 5: Provocative + specific + creates curiosity
-   Score 3: Interesting but vague
-   Score 0: Generic statement
+YOUR TASK:
+1. Read the thread below
+2. Scan tweet-by-tweet for EVERY violation listed in Editor-in-Chief standards above
+3. Create ONE surgical issue per violation found
+4. Use EXACT replacement strategies from the standards (don't make up your own)
+5. ALSO check 280-character limit for each tweet
 
-2. THREAD FLOW
-   - Does each tweet build on the previous one?
-   - Is the progression logical?
-   - Does it maintain momentum?
+Thread to evaluate:
+{{post}}
 
-   Score 5: Each tweet advances argument naturally
-   Score 3: Some tweets feel disconnected
-   Score 0: Random thoughts stitched together
+WORKFLOW:
 
-3. BREVITY + RATE OF REVELATION
-   - Is each tweet under 280 characters?
-   - Does each tweet reveal NEW information?
-   - Zero fluff or unnecessary words?
-
-   Score 5: Every tweet packs new value
-   Score 3: Some tweets could be cut
-   Score 0: Verbose, repetitive
-
-4. PROOF/CREDIBILITY
-   - Are there concrete examples or specifics?
-   - Do claims feel real from user's context?
-   - ZERO fabricated details?
-
-   Score 5: Specific real examples
-   Score 3: Vague claims
-   Score 0: Made-up stories
-
-5. ENGAGEMENT TRIGGER
-   - Does thread end with question or CTA?
-   - Does it invite replies?
-   - Avoid passive endings
-
-   Score 5: Strong engagement trigger
-   Score 3: Weak question
-   Score 0: No engagement trigger
-
-CRITICAL AI TELLS (AUTO-DEDUCT 2 POINTS EACH):
-- Contrast framing: "It's not X, it's Y" / "This isn't about X" / "not just X, but Y" / "rather than"
-- Rule of Three: "Same X. Same Y. Over Z%." (three parallel fragments)
-- Cringe questions: "The truth?" / "The result?" / "Sound familiar?"
-
-CRITICAL: 280 CHARACTER VALIDATION (MANDATORY):
-- Parse thread into individual tweets (split by numbering or line breaks)
+STEP 1: VALIDATE 280-CHAR LIMIT (MANDATORY)
+- Parse thread into individual tweets
 - Count characters for EACH tweet
-- If ANY tweet exceeds 280 characters → AUTO-DEDUCT 5 points AND flag as "high" severity issue
-- Example issue format: {{"axis": "brevity", "severity": "high", "original": "Tweet 3 (312 chars)", "fix": "Split into two tweets or cut 32 chars"}}
+- If ANY tweet >280 chars → Create HIGH severity issue with exact character count
 
-VERIFICATION CHECK (use web_search):
-- Names + titles + companies: "James Chen, Head of Growth at Clearbit"
-- News stories, events, product launches: "Rick Beato YouTube AI filters"
-- If found in thread → web_search to verify
-- If verified → Note as "verified claim"
-- If NOT verified:
-  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
-  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
-  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
+STEP 2: SCAN FOR VIOLATIONS
+Go through the thread tweet-by-tweet and find:
+- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y", "Rather than X")
+- Masked contrast patterns ("Instead of X", "but rather")
+- Section summaries ("In summary", "In conclusion")
+- Promotional puffery ("stands as", "testament")
+- Overused conjunctions ("moreover", "furthermore")
+- Vague attributions without sources
+- Em-dash overuse
+- Words needing substitution ("leverages", "encompasses", "facilitates")
 
-SEARCH STRATEGY:
-- Max 3 searches for efficiency
-- Search: "[Full Name] [Company] [Title]" or "[Topic] [Event/News]"
-- If no results → Check if it's newsworthy before flagging
+STEP 3: CREATE SURGICAL ISSUES
+For EACH violation found, create ONE issue:
+{{
+  "axis": "ai_tells" | "brevity",
+  "severity": "high" | "medium" | "low",
+  "pattern": "contrast_direct" | "over_280_chars" | "word_substitution" | etc,
+  "original": "[EXACT text - word-for-word quote]",
+  "fix": "[EXACT replacement using Editor-in-Chief examples]",
+  "impact": "[How this improves the thread]"
+}}
+
+STEP 4: USE REPLACEMENT STRATEGIES FROM STANDARDS
+When creating fixes, use the EXACT patterns from Editor-in-Chief standards:
+
+For contrast framing:
+❌ "Success isn't about working harder but working smarter."
+✅ "Success comes from working smarter and more strategically."
+
+For word substitutions:
+leverages → uses | encompasses → includes | facilitates → enables
+
+STEP 5: SCORE THE THREAD
+Hook (0-5): First tweet grabs attention + specific?
+Flow (0-5): Each tweet builds on previous?
+Brevity (0-5): Every tweet <280 chars + packs value?
+Proof (0-5): Concrete examples, not fabricated?
+Engagement (0-5): Strong ending trigger?
+
+Deduct 2 points per major AI tell.
+Deduct 5 points if ANY tweet exceeds 280 characters.
+
+STEP 6: VERIFY FACTS (use web_search)
+Search for names, companies, news claims.
+If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
+Only use "FABRICATED" if provably false.
+
+CRITICAL RULES:
+✅ Create ONE issue per violation (8 violations = 8 issues)
+✅ Quote EXACT text from thread in "original"
+✅ Use EXACT fixes from Editor-in-Chief standards (don't improvise)
+✅ Check EVERY tweet for 280-char limit
+✅ Be comprehensive - find EVERY violation
 
 Output JSON:
 {{
@@ -863,25 +880,26 @@ Output JSON:
     "proof": 5,
     "engagement": 4,
     "total": 21,
-    "ai_deductions": 0
+    "ai_deductions": -4
   }},
-  "decision": "accept",  // accept (≥20) | revise (18-19) | reject (<18)
+  "decision": "revise",
   "searches_performed": ["query 1", "query 2"],
   "issues": [
     {{
-      "axis": "hook",
-      "severity": "medium",
-      "original": "AI is changing everything",
-      "fix": "GPT-5 shows we've crossed the point where most people can't tell models apart",
-      "impact": "Raises hook score from 3 to 5"
+      "axis": "ai_tells",
+      "severity": "high",
+      "pattern": "contrast_direct",
+      "original": "[exact quote from thread]",
+      "fix": "[exact fix from Editor-in-Chief examples]",
+      "impact": "[specific improvement]"
     }}
   ],
-  "surgical_summary": "2 specific fixes would move this from score 18 to 21+",
-  "threshold": 18,
-  "meets_threshold": true
+  "surgical_summary": "Found [number] violations. Applying all fixes would raise score from [current] to [projected].",
+  "threshold": 20,
+  "meets_threshold": false
 }}
 
-Be surgical: don't rewrite the whole thing. Give 3-5 specific fixes that would raise the score.
+Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
 """)
 
 # ==================== CREATE CAROUSEL SLIDES ====================
