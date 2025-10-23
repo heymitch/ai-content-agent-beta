@@ -33,36 +33,88 @@ def search_past_posts(
             os.getenv('SUPABASE_KEY')
         )
 
-        # Query content_performance table
-        query = client.table('content_performance')\
-            .select('*')\
-            .eq('user_id', user_id)\
-            .gte('quality_score', min_score)\
-            .gte('created_at', (datetime.now() - timedelta(days=days_back)).isoformat())\
-            .order('created_at', desc=True)\
-            .limit(10)
+        cutoff_date = (datetime.now() - timedelta(days=days_back)).isoformat()
+        all_posts = []
 
-        if platform:
-            query = query.eq('platform', platform)
+        # 1. Query generated_posts (unpublished/queue)
+        try:
+            gen_query = client.table('generated_posts')\
+                .select('*')\
+                .gte('quality_score', min_score)\
+                .gte('created_at', cutoff_date)\
+                .order('created_at', desc=True)\
+                .limit(10)
 
-        result = query.execute()
+            if platform:
+                gen_query = gen_query.eq('platform', platform.lower())
 
-        if not result.data:
+            gen_result = gen_query.execute()
+
+            for post in gen_result.data or []:
+                all_posts.append({
+                    'source': 'QUEUE',
+                    'platform': post.get('platform', 'unknown'),
+                    'score': post.get('quality_score', 0),
+                    'content': post.get('body_content') or post.get('content', ''),
+                    'hook': post.get('post_hook', ''),
+                    'created': post.get('created_at', ''),
+                    'iterations': post.get('iterations', 1),
+                    'status': post.get('status', 'draft')
+                })
+        except Exception as e:
+            print(f"Warning: Could not query generated_posts: {e}")
+
+        # 2. Query content_performance (published)
+        try:
+            perf_query = client.table('content_performance')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .gte('quality_score', min_score)\
+                .gte('created_at', cutoff_date)\
+                .order('created_at', desc=True)\
+                .limit(10)
+
+            if platform:
+                perf_query = perf_query.eq('platform', platform)
+
+            perf_result = perf_query.execute()
+
+            for post in perf_result.data or []:
+                all_posts.append({
+                    'source': 'PUBLISHED',
+                    'platform': post.get('platform', 'unknown'),
+                    'score': post.get('quality_score', 0),
+                    'content': post.get('content', ''),
+                    'hook': post.get('post_hook', ''),
+                    'created': post.get('created_at', ''),
+                    'iterations': post.get('iterations', 1),
+                    'status': 'published'
+                })
+        except Exception as e:
+            print(f"Warning: Could not query content_performance: {e}")
+
+        if not all_posts:
             return f"No posts found in the last {days_back} days"
 
+        # Sort by created date (most recent first)
+        all_posts.sort(key=lambda x: x['created'], reverse=True)
+
         # Format results
-        posts_summary = []
-        for i, post in enumerate(result.data, 1):
-            score = post.get('quality_score', 0)
-            content_preview = post.get('content', '')[:150]
-            created = post.get('created_at', '')[:10]
-            platform_name = post.get('platform', 'unknown')
-            iterations = post.get('iterations', 1)
+        posts_summary = ["📚 PAST CONTENT:\n"]
+        for i, post in enumerate(all_posts[:10], 1):
+            score = post['score']
+            content_preview = post['content'][:150] if post['content'] else '[No content]'
+            created = post['created'][:10]
+            platform_name = post['platform']
+            iterations = post['iterations']
+            source = post['source']
+            hook = post['hook'][:80] if post['hook'] else content_preview[:80]
+            status_emoji = "📅" if source == "QUEUE" else "✅"
 
             posts_summary.append(
-                f"{i}. [{platform_name.upper()}] Score: {score}/100 ({iterations} iterations)\n"
+                f"{i}. {status_emoji} [{platform_name.upper()}] {source} | Score: {score}/100 ({iterations} iterations)\n"
                 f"   Created: {created}\n"
-                f"   Preview: {content_preview}...\n"
+                f"   Hook: {hook}...\n"
             )
 
         return "\n".join(posts_summary)

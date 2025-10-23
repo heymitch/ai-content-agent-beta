@@ -335,8 +335,14 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
             result = await create_youtube_workflow(topic, context, script_type)
             return result  # Already formatted with timing markers
 
+        elif platform.lower() in ['instagram', 'ig', 'insta']:
+            # Use the Instagram SDK Agent workflow
+            from agents.instagram_sdk_agent import create_instagram_caption_workflow
+            result = await create_instagram_caption_workflow(topic, context, style)
+            return result  # Already formatted with hook preview and character count
+
         else:
-            return f"Unknown platform: {platform}. Use 'linkedin', 'twitter', 'email', or 'youtube'"
+            return f"Unknown platform: {platform}. Use 'linkedin', 'twitter', 'email', 'youtube', or 'instagram'"
 
     except ImportError:
         # Fallback if workflows not available
@@ -379,6 +385,497 @@ async def delegate_to_workflow(args):
             "text": result
         }]
     }
+
+
+# ================== PLATFORM-SPECIFIC GENERATE POST TOOLS ==================
+# These tools allow the CMO to generate initial drafts using WRITE_LIKE_HUMAN_RULES
+
+@tool(
+    "generate_post_linkedin",
+    "Generate LinkedIn post using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
+    {"topic": str, "context": str}
+)
+async def generate_post_linkedin(args):
+    """Generate LinkedIn post draft"""
+    print(f"📝 generate_post_linkedin CALLED - Topic: {args.get('topic', 'N/A')[:50]}")
+    import json
+    from anthropic import Anthropic
+    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+
+    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    topic = args.get('topic', '')
+    context = args.get('context', '')
+
+    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
+
+TASK: Write a LinkedIn post
+
+Topic: {topic}
+Context: {context}
+
+LINKEDIN POST STRUCTURE:
+- Hook (first 2-3 lines): Question, bold claim, or specific stat
+- Body (150-300 words): One main idea with specific examples/numbers
+- Call-to-action: Specific question or engagement trigger
+
+CRITICAL RULES:
+✗ NO contrast framing ("It's not X, it's Y")
+✗ NO rule of three ("Same X. Same Y. Over Z%.")
+✗ NO cringe questions ("The truth?" / "Sound familiar?")
+✗ NO AI buzzwords (leverage, seamless, robust, game-changer)
+
+Return ONLY the post text. No markdown formatting (**bold** or *italic*). No metadata or explanations."""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    print(f"✅ generate_post_linkedin COMPLETED - Generated {len(response.content[0].text)} chars")
+    return {"content": [{"type": "text", "text": response.content[0].text}]}
+
+
+@tool(
+    "generate_post_twitter",
+    "Generate Twitter thread using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
+    {"topic": str, "context": str}
+)
+async def generate_post_twitter(args):
+    """Generate Twitter thread draft"""
+    import json
+    from anthropic import Anthropic
+    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+
+    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    topic = args.get('topic', '')
+    context = args.get('context', '')
+
+    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
+
+TASK: Write a Twitter thread
+
+Topic: {topic}
+Context: {context}
+
+TWITTER THREAD STRUCTURE:
+- Tweet 1 (Hook): Bold claim, specific stat, or question (under 280 chars)
+- Tweets 2-5: One idea per tweet, build on each other
+- Final tweet: Recap + CTA
+
+TWITTER-SPECIFIC RULES:
+- Each tweet under 280 characters
+- First tweet must hook (people decide in 2 seconds)
+- Use line breaks for readability
+- Numbers tweets (1/, 2/, 3/ etc.)
+
+CRITICAL RULES:
+✗ NO contrast framing ("It's not X, it's Y")
+✗ NO rule of three
+✗ NO cringe questions
+✗ NO AI buzzwords
+
+Return thread as numbered tweets. Format: "1/ [tweet]\\n\\n2/ [tweet]" etc."""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return {"content": [{"type": "text", "text": response.content[0].text}]}
+
+
+@tool(
+    "generate_post_email",
+    "Generate email newsletter using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
+    {"topic": str, "context": str}
+)
+async def generate_post_email(args):
+    """Generate email newsletter draft"""
+    import json
+    from anthropic import Anthropic
+    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+
+    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    topic = args.get('topic', '')
+    context = args.get('context', '')
+
+    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
+
+TASK: Write an email newsletter
+
+Topic: {topic}
+Context: {context}
+
+EMAIL NEWSLETTER STRUCTURE:
+- Subject line: Specific, benefit-focused (under 60 chars)
+- Opening: Personal, direct (2-3 sentences)
+- Body: One main insight with examples (200-400 words)
+- CTA: Clear next step (reply, click, try)
+
+EMAIL-SPECIFIC RULES:
+- Conversational tone (like talking to a friend)
+- Short paragraphs (2-3 sentences max)
+- Specific examples over theory
+- One clear action at the end
+
+CRITICAL RULES:
+✗ NO contrast framing
+✗ NO rule of three
+✗ NO cringe questions
+✗ NO AI buzzwords
+
+Return format:
+Subject: [subject line]
+
+[email body]
+
+CTA: [call to action]"""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=2500,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return {"content": [{"type": "text", "text": response.content[0].text}]}
+
+
+@tool(
+    "generate_post_youtube",
+    "Generate YouTube script using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
+    {"topic": str, "context": str}
+)
+async def generate_post_youtube(args):
+    """Generate YouTube script draft"""
+    import json
+    from anthropic import Anthropic
+    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+
+    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    topic = args.get('topic', '')
+    context = args.get('context', '')
+
+    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
+
+TASK: Write a YouTube video script
+
+Topic: {topic}
+Context: {context}
+
+YOUTUBE SCRIPT STRUCTURE:
+- Title: Specific, searchable, benefit-focused
+- Hook (first 15 seconds): Bold statement or question
+- Intro (15-30 seconds): What viewers will learn
+- Main content: 3-5 clear points with examples
+- Outro: Recap + CTA (like, subscribe, comment)
+
+YOUTUBE-SPECIFIC RULES:
+- Write for speaking (contractions, natural rhythm)
+- Include [B-ROLL] markers for visual suggestions
+- Time estimates in parentheses
+- Conversational, energetic tone
+
+CRITICAL RULES:
+✗ NO contrast framing
+✗ NO rule of three
+✗ NO cringe questions
+✗ NO AI buzzwords
+
+Return format:
+Title: [video title]
+
+HOOK (0:00-0:15):
+[opening hook]
+
+INTRO (0:15-0:45):
+[introduction]
+
+[Continue with timestamped sections]"""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=3000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return {"content": [{"type": "text", "text": response.content[0].text}]}
+
+
+@tool(
+    "generate_post_instagram",
+    "Generate Instagram caption using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
+    {"topic": str, "context": str}
+)
+async def generate_post_instagram(args):
+    """Generate Instagram caption draft"""
+    import json
+    from anthropic import Anthropic
+    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+
+    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    topic = args.get('topic', '')
+    context = args.get('context', '')
+
+    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
+
+TASK: Write an Instagram caption
+
+Topic: {topic}
+Context: {context}
+
+INSTAGRAM CAPTION STRUCTURE:
+- Hook (first 125 chars): Must work in preview before "...more"
+- Body (under 2,200 chars total): Short paragraphs, line breaks every 2-3 sentences
+- Visual pairing: Add context the image/Reel can't show
+- CTA: Specific engagement trigger
+- Hashtags: 3-5 relevant tags at end
+
+INSTAGRAM-SPECIFIC RULES:
+- 2,200 character HARD LIMIT (includes hashtags)
+- First 125 chars appear before "...more" (must create curiosity)
+- Line breaks for mobile readability
+- 1-2 strategic emojis (not spam)
+- Reference visual naturally ("swipe", "above")
+
+CRITICAL RULES:
+✗ NO contrast framing ("It's not X, it's Y")
+✗ NO rule of three ("Same X. Same Y. Over Z%.")
+✗ NO cringe questions ("The truth?" / "Sound familiar?")
+✗ NO AI buzzwords (game-changer, unlock, revolutionary)
+
+Return ONLY the caption text with hashtags. No markdown formatting. No metadata."""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return {"content": [{"type": "text", "text": response.content[0].text}]}
+
+
+# ================== PLATFORM-SPECIFIC QUALITY CHECK TOOLS ==================
+# These tools allow the CMO to directly check quality and apply fixes during co-writing
+
+@tool(
+    "quality_check_linkedin",
+    "Evaluate LinkedIn post with 5-axis rubric, detect AI tells, verify facts with web search.",
+    {"post": str}
+)
+async def quality_check_linkedin(args):
+    """Quality check tool for LinkedIn posts"""
+    from agents.linkedin_sdk_agent import quality_check as linkedin_quality_check
+    return await linkedin_quality_check(args)
+
+
+@tool(
+    "quality_check_twitter",
+    "Evaluate Twitter thread with 5-axis rubric, detect AI tells, verify facts with web search.",
+    {"post": str}
+)
+async def quality_check_twitter(args):
+    """Quality check tool for Twitter threads"""
+    from agents.twitter_sdk_agent import quality_check as twitter_quality_check
+    return await twitter_quality_check(args)
+
+
+@tool(
+    "quality_check_email",
+    "Evaluate email newsletter with 5-axis rubric, detect AI tells, verify facts with web search.",
+    {"post": str}
+)
+async def quality_check_email(args):
+    """Quality check tool for email newsletters"""
+    from agents.email_sdk_agent import quality_check as email_quality_check
+    return await email_quality_check(args)
+
+
+@tool(
+    "quality_check_youtube",
+    "Evaluate YouTube script with 5-axis rubric, detect AI tells, verify facts with web search.",
+    {"post": str}
+)
+async def quality_check_youtube(args):
+    """Quality check tool for YouTube scripts"""
+    from agents.youtube_sdk_agent import quality_check as youtube_quality_check
+    return await youtube_quality_check(args)
+
+
+@tool(
+    "quality_check_instagram",
+    "Evaluate Instagram caption with 5-axis rubric (hook/visual/readability/proof/cta), detect AI tells, verify facts.",
+    {"post": str}
+)
+async def quality_check_instagram(args):
+    """Quality check tool for Instagram captions"""
+    from agents.instagram_sdk_agent import quality_check as instagram_quality_check
+    return await instagram_quality_check(args)
+
+
+# ================== PLATFORM-SPECIFIC APPLY FIXES TOOLS ==================
+
+@tool(
+    "apply_fixes_linkedin",
+    "Apply surgical fixes to LinkedIn post based on quality_check feedback and user requests.",
+    {"post": str, "issues_json": str}
+)
+async def apply_fixes_linkedin(args):
+    """Apply fixes tool for LinkedIn posts"""
+    print(f"🔧 apply_fixes_linkedin CALLED with args: {list(args.keys())}")
+    from agents.linkedin_sdk_agent import apply_fixes as linkedin_apply_fixes
+    result = await linkedin_apply_fixes(args)
+    print(f"✅ apply_fixes_linkedin COMPLETED")
+    return result
+
+
+@tool(
+    "apply_fixes_twitter",
+    "Apply surgical fixes to Twitter thread based on quality_check feedback and user requests.",
+    {"post": str, "issues_json": str}
+)
+async def apply_fixes_twitter(args):
+    """Apply fixes tool for Twitter threads"""
+    from agents.twitter_sdk_agent import apply_fixes as twitter_apply_fixes
+    return await twitter_apply_fixes(args)
+
+
+@tool(
+    "apply_fixes_email",
+    "Apply surgical fixes to email newsletter based on quality_check feedback and user requests.",
+    {"post": str, "issues_json": str}
+)
+async def apply_fixes_email(args):
+    """Apply fixes tool for email newsletters"""
+    from agents.email_sdk_agent import apply_fixes as email_apply_fixes
+    return await email_apply_fixes(args)
+
+
+@tool(
+    "apply_fixes_youtube",
+    "Apply surgical fixes to YouTube script based on quality_check feedback and user requests.",
+    {"post": str, "issues_json": str}
+)
+async def apply_fixes_youtube(args):
+    """Apply fixes tool for YouTube scripts"""
+    from agents.youtube_sdk_agent import apply_fixes as youtube_apply_fixes
+    return await youtube_apply_fixes(args)
+
+
+@tool(
+    "apply_fixes_instagram",
+    "Apply surgical fixes to Instagram caption based on quality_check feedback and user requests.",
+    {"post": str, "issues_json": str}
+)
+async def apply_fixes_instagram(args):
+    """Apply fixes tool for Instagram captions"""
+    from agents.instagram_sdk_agent import apply_fixes as instagram_apply_fixes
+    return await instagram_apply_fixes(args)
+
+
+# ================== CALENDAR / APPROVAL TOOLS ==================
+
+@tool(
+    "send_to_calendar",
+    "Save approved draft to Airtable calendar. Use after user approves content in co-writing mode.",
+    {"post": str, "platform": str, "thread_ts": str, "channel_id": str, "user_id": str, "score": int}
+)
+async def send_to_calendar(args):
+    """
+    Send approved content to Airtable calendar
+
+    This is called either:
+    1. When user reacts with 📅 emoji (handled by reaction_added event)
+    2. When user explicitly says "send to calendar" or "schedule it"
+    """
+    post = args.get('post', '')
+    platform = args.get('platform', 'linkedin')
+    thread_ts = args.get('thread_ts', '')
+    channel_id = args.get('channel_id', '')
+    user_id = args.get('user_id', '')
+    score = args.get('score', 0)
+
+    try:
+        # First, ensure draft is stored in slack_threads table for reaction handler
+        from slack_bot.memory import SlackThreadMemory
+        from integrations.supabase_client import get_supabase_client
+
+        supabase = get_supabase_client()
+        memory = SlackThreadMemory(supabase)
+
+        # Check if thread record exists
+        existing_thread = memory.get_thread(thread_ts)
+
+        if existing_thread:
+            # Update existing thread with latest draft
+            memory.update_draft(thread_ts, post, score)
+        else:
+            # Create new thread record
+            memory.create_thread(
+                thread_ts=thread_ts,
+                channel_id=channel_id,
+                user_id=user_id,
+                platform=platform,
+                initial_draft=post,
+                initial_score=score
+            )
+
+        # Now save to Airtable calendar
+        from integrations.airtable_client import get_airtable_client
+
+        airtable = get_airtable_client()
+
+        # Extract hook/preview from post (first 200 chars)
+        hook_preview = post[:200] + "..." if len(post) > 200 else post
+
+        result = airtable.create_content_record(
+            content=post,
+            platform=platform,
+            post_hook=hook_preview,
+            status='Draft',  # Use 'Draft' to match SDK agents (user can change in Airtable)
+            suggested_edits=f"Quality Score: {score}/100"
+        )
+
+        if result.get('success'):
+            airtable_url = result.get('url', '[URL not available]')
+            record_id = result.get('record_id', '[ID not available]')
+
+            # Update thread status to scheduled
+            memory.update_status(thread_ts, 'scheduled')
+
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"""✅ **Added to content calendar!**
+
+📊 **Airtable Record:** {airtable_url}
+📝 **Record ID:** {record_id}
+📅 **Platform:** {platform.capitalize()}
+⭐ **Quality Score:** {score}/100
+
+The content is now scheduled in your Airtable calendar. You can edit the posting date and make final tweaks there."""
+                }]
+            }
+        else:
+            error_msg = result.get('error', 'Unknown error')
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"❌ Failed to save to calendar: {error_msg}\n\nPlease check your Airtable configuration."
+                }]
+            }
+
+    except Exception as e:
+        import traceback
+        print(f"❌ send_to_calendar error: {e}")
+        print(traceback.format_exc())
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ Error saving to calendar: {str(e)}\n\nPlease try again or contact support."
+            }]
+        }
 
 
 async def _delegate_bulk_workflow(platform: str, topics: list, context: str, count: int, style: str):
@@ -541,6 +1038,81 @@ These workflows enforce brand voice, writing rules, and quality standards.
 - When in doubt, ask: "Would you like me to create [specific content] or discuss [topic]?"
 - Don't jump into content creation without clear intent from the user
 
+**CO-WRITING WORKFLOW (NEW):**
+
+When user requests content creation, you now have TWO OPTIONS:
+
+1. **CO-WRITE MODE (Collaborative)**: Write together with user feedback
+2. **AUTO-PUBLISH MODE (Fast)**: Create and send directly to calendar
+
+ASK THE USER:
+"Do you want to write this together now, or have me put it directly in the content calendar?"
+
+CO-WRITE MODE WORKFLOW:
+1. Call generate_post_{platform}(topic, context) to create initial draft
+2. Call quality_check_{platform}(post) to evaluate with 5-axis rubric
+3. Print BOTH the post AND the quality analysis to user
+4. Wait for user feedback OR 📅 calendar emoji reaction
+5. If user gives feedback → call apply_fixes_{platform}(post, issues, user_feedback)
+6. If user reacts with 📅 OR says "send to calendar" → call send_to_calendar(post, platform, thread_ts, channel_id, user_id, score)
+7. Repeat steps 2-6 until user approves or schedules
+
+AUTO-PUBLISH MODE WORKFLOW:
+1. Call delegate_to_workflow(platform, topic, context, count)
+2. SDK agent handles entire workflow internally (generate → quality_check → iterate → save)
+3. Print only the Airtable link when complete
+4. Content automatically saved to calendar with quality score
+
+TOOLS AVAILABLE FOR CO-WRITING:
+- generate_post_linkedin/twitter/instagram/email/youtube - Create initial draft using WRITE_LIKE_HUMAN_RULES
+- quality_check_linkedin/twitter/instagram/email/youtube - Evaluate with 5-axis rubric (Hook, Body, Proof, CTA, Format)
+- apply_fixes_linkedin/twitter/instagram/email/youtube - Make surgical improvements based on quality feedback
+- send_to_calendar - Save approved draft to Airtable calendar with quality score
+
+CO-WRITING EXAMPLE:
+User: "Let's write a LinkedIn post about how AI agents are changing content marketing"
+CMO: "Do you want to write this together now, or have me put it directly in the content calendar?"
+User: "Let's write it together"
+CMO: *calls generate_post_linkedin(topic="AI agents changing content marketing", context="...")*
+CMO: *calls quality_check_linkedin(post="[draft]")*
+CMO: "Here's the first draft:
+
+[DRAFT TEXT]
+
+Quality Analysis:
+- Hook (4/5): Strong opening but could be more specific
+- Body (3/5): Needs concrete example
+- Proof (2/5): Missing specific data/numbers
+- CTA (4/5): Good engagement trigger
+- Format (5/5): Perfect LinkedIn structure
+
+Overall Score: 72/100
+
+What would you like to adjust? Or react with 📅 to send to calendar as-is."
+
+User: "Add a specific example about Nike's AI content team"
+CMO: *calls apply_fixes_linkedin(post="[draft]", issues="Add Nike AI content team example", feedback="User requested Nike case study")*
+CMO: *calls quality_check_linkedin(post="[revised draft]")*
+CMO: "Updated draft:
+
+[REVISED DRAFT]
+
+New Score: 88/100 - Much stronger with Nike example!
+
+Ready to schedule? React with 📅 or say 'send to calendar'"
+
+User: *reacts with 📅*
+CMO: *calls send_to_calendar(...)*
+CMO: "✅ Added to content calendar! [Airtable URL]"
+
+KEY CO-WRITING PRINCIPLES:
+- ALWAYS show both draft AND quality analysis together
+- Wait for user input after each revision
+- Make it conversational - explain what you improved and why
+- Offer to iterate as many times as needed
+- When score reaches 85+, suggest scheduling
+- Respect user's final decision (they might want 72/100 post)
+
 **QUALITY STANDARDS:**
 - You iterate on content until it reaches high quality (85+ score)
 - You remember conversations within each Slack thread (and when asked about other conversations)
@@ -551,7 +1123,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         # Create MCP server with our tools
         self.mcp_server = create_sdk_mcp_server(
             name="slack_tools",
-            version="1.0.0",
+            version="2.3.0",
             tools=[
                 web_search,
                 search_knowledge_base,
@@ -559,11 +1131,30 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 get_content_calendar,
                 get_thread_context,
                 analyze_content_performance,
-                delegate_to_workflow  # NEW: Delegate to subagent workflows
+                delegate_to_workflow,  # Delegate to subagent workflows
+                send_to_calendar,  # Save approved drafts to calendar
+                # Generate post tools for co-writing (one per platform)
+                generate_post_linkedin,
+                generate_post_twitter,
+                generate_post_email,
+                generate_post_youtube,
+                generate_post_instagram,
+                # Quality check tools for co-writing (one per platform)
+                quality_check_linkedin,
+                quality_check_twitter,
+                quality_check_email,
+                quality_check_youtube,
+                quality_check_instagram,
+                # Apply fixes tools for co-writing (one per platform)
+                apply_fixes_linkedin,
+                apply_fixes_twitter,
+                apply_fixes_email,
+                apply_fixes_youtube,
+                apply_fixes_instagram
             ]
         )
 
-        print("🚀 Claude Agent SDK initialized with 7 tools (including workflow delegation)")
+        print("🚀 Claude Agent SDK initialized with 23 tools (8 general + 15 co-writing tools for 5 platforms)")
 
     def _get_or_create_session(self, thread_ts: str) -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""

@@ -71,9 +71,18 @@ archive/
 # Test tools
 DEPLOYMENT_TESTS.md
 WHITE_GLOVE_DEPLOYMENT.md
-DEV_CONTEXT.md 
-ROADMAP.md 
-SDK_DOCS.md 
+DEV_CONTEXT.md
+ROADMAP.md
+SDK_DOCS.md
 test_*.py
 *_test.py
 tests/
+
+# Testing infrastructure (added 2024-10-21)
+TESTING_CHECKLIST.md
+TEST_SUMMARY.md
+run_tests.sh
+
+# All-caps documentation files
+AGENT_INSTRUCTIONS.md
+README.md

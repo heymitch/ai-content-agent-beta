@@ -732,7 +732,7 @@ Trust the prompts - they include PGA writing style examples."""
 
             print(f"\n📝 Saving content (subject: '{subject_preview[:50]}...')")
             result = airtable.create_content_record(
-                content=output,  # Pass raw output, cleaning happens inside
+                content=clean_output,  # Save the CLEAN extracted email, not raw output
                 platform='email',
                 post_hook=subject_preview,
                 status='Draft',

@@ -1,7 +1,7 @@
 """
-LinkedIn SDK Agent - Tier 2 Orchestrator
+Instagram SDK Agent - Tier 2 Orchestrator
 Uses Claude Agent SDK with persistent memory and delegates to specialized tools.
-Enforces ALL rules from LinkedIn_AI_Pro-Checklist.pdf
+Enforces Instagram-specific rules: 2,200 char limit, preview optimization, visual pairing
 """
 
 from claude_agent_sdk import (
@@ -33,20 +33,20 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
 @tool(
     "generate_5_hooks",
-    "Generate 5 LinkedIn hooks",
+    "Generate 5 Instagram hooks optimized for 125-char preview",
     {"topic": str, "context": str, "target_audience": str}
 )
 async def generate_5_hooks(args):
     """Generate 5 hooks - prompt loaded JIT"""
     from anthropic import Anthropic
-    from prompts.linkedin_tools import GENERATE_HOOKS_PROMPT
+    from prompts.instagram_tools import GENERATE_HOOKS_PROMPT
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     topic = args.get('topic', '')
     context = args.get('context', '')
-    audience = args.get('target_audience', 'professionals')
+    audience = args.get('target_audience', 'Instagram users')
 
-    json_example = '[{{"type": "question", "text": "...", "chars": 45}}, ...]'
+    json_example = '[{{"type": "question", "text": "...", "chars": 82}}, ...]'
     prompt = GENERATE_HOOKS_PROMPT.format(
         topic=topic,
         context=context,
@@ -69,51 +69,15 @@ async def generate_5_hooks(args):
 
 
 @tool(
-    "inject_proof_points",
-    "Add metrics and proof points",
-    {"draft": str, "topic": str, "industry": str}
-)
-async def inject_proof_points(args):
-    """Inject proof - prompt loaded JIT"""
-    from anthropic import Anthropic
-    from prompts.linkedin_tools import INJECT_PROOF_PROMPT, WRITE_LIKE_HUMAN_RULES
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-
-    draft = args.get('draft', '')
-    topic = args.get('topic', '')
-    industry = args.get('industry', 'SaaS')
-
-    prompt = INJECT_PROOF_PROMPT.format(
-        write_like_human_rules=WRITE_LIKE_HUMAN_RULES,
-        draft=draft,
-        topic=topic,
-        industry=industry
-    )
-
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return {
-        "content": [{
-            "type": "text",
-            "text": response.content[0].text
-        }]
-    }
-
-
-@tool(
-    "create_human_draft",
-    "Generate LinkedIn draft with quality self-assessment",
+    "create_caption_draft",
+    "Generate Instagram caption with quality self-assessment",
     {"topic": str, "hook": str, "context": str}
 )
-async def create_human_draft(args):
-    """Create draft with JSON output including scores"""
+async def create_caption_draft(args):
+    """Create caption draft with JSON output including scores"""
     import json
     from anthropic import Anthropic
-    from prompts.linkedin_tools import CREATE_HUMAN_DRAFT_PROMPT
+    from prompts.instagram_tools import CREATE_CAPTION_DRAFT_PROMPT, WRITE_LIKE_HUMAN_RULES
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     topic = args.get('topic', '')
@@ -121,14 +85,15 @@ async def create_human_draft(args):
     context = args.get('context', '')
 
     # Lazy load prompt
-    prompt = CREATE_HUMAN_DRAFT_PROMPT.format(
+    prompt = CREATE_CAPTION_DRAFT_PROMPT.format(
+        write_like_human_rules=WRITE_LIKE_HUMAN_RULES,
         topic=topic,
         hook=hook,
         context=context
     )
 
     response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",  # Use Sonnet for quality self-assessment
+        model="claude-sonnet-4-5-20250929",  # Use Sonnet for quality
         max_tokens=3000,
         messages=[{"role": "user", "content": prompt}]
     )
@@ -139,7 +104,7 @@ async def create_human_draft(args):
     try:
         json_result = json.loads(response_text)
         # Validate schema
-        if "post_text" in json_result and "self_assessment" in json_result:
+        if "caption_text" in json_result or "post_text" in json_result:
             return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
     except json.JSONDecodeError:
         pass
@@ -149,7 +114,7 @@ async def create_human_draft(args):
         "content": [{
             "type": "text",
             "text": json.dumps({
-                "post_text": response_text,
+                "caption_text": response_text,
                 "self_assessment": {"total": 0, "notes": "JSON parsing failed, returning raw text"}
             }, indent=2)
         }]
@@ -157,128 +122,74 @@ async def create_human_draft(args):
 
 
 @tool(
-    "validate_format",
-    "Validate LinkedIn post format",
-    {"post": str, "post_type": str}
+    "condense_to_limit",
+    "Ensure caption is under 2,200 characters while preserving impact",
+    {"caption": str, "target_length": int}
 )
-async def validate_format(args):
-    """Validate format - prompt loaded JIT"""
+async def condense_to_limit(args):
+    """Condense caption to fit Instagram's character limit"""
     from anthropic import Anthropic
-    from prompts.linkedin_tools import VALIDATE_FORMAT_PROMPT
+    from prompts.instagram_tools import CONDENSE_TO_LIMIT_PROMPT
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
-    post = args.get('post', '')
-    post_type = args.get('post_type', 'standard')
+    caption = args.get('caption', '')
+    target_length = args.get('target_length', 2200)
+    current_length = len(caption)
 
-    prompt = VALIDATE_FORMAT_PROMPT.format(
-        post=post,
-        post_type=post_type
+    # If already under limit, return as-is
+    if current_length <= target_length:
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "caption": caption,
+                    "original_length": current_length,
+                    "target_length": target_length,
+                    "condensed": False,
+                    "note": "Already under limit"
+                }, indent=2)
+            }]
+        }
+
+    prompt = CONDENSE_TO_LIMIT_PROMPT.format(
+        caption=caption,
+        current_length=current_length,
+        target_length=target_length
     )
 
     response = client.messages.create(
         model="claude-sonnet-4-5-20250929",
-        max_tokens=2000,
+        max_tokens=2500,
         messages=[{"role": "user", "content": prompt}]
     )
 
-    return {
-        "content": [{
-            "type": "text",
-            "text": response.content[0].text
-        }]
-    }
-
-
-@tool(
-    "search_viral_patterns",
-    "Search for viral LinkedIn patterns in your niche",
-    {"topic": str, "industry": str, "days_back": int}
-)
-async def search_viral_patterns(args):
-    """Research what's working on LinkedIn right now"""
-    topic = args.get('topic', '')
-    industry = args.get('industry', '')
-    days = args.get('days_back', 7)
-
-    # This would connect to LinkedIn API or scraping service
-    # For now, return strategic patterns from the checklist
-
-    patterns = {
-        "trending_hooks": [
-            "Question format posts get 2.3x more engagement",
-            "Posts with specific numbers get 45% more saves",
-            "Story openers increase dwell time by 60%"
-        ],
-        "content_pillars": {
-            "Acquisition": ["Cold outreach", "Paid ads", "Content marketing"],
-            "Activation": ["Onboarding", "First value", "Time to wow"],
-            "Retention": ["Churn prevention", "Engagement", "Loyalty"]
-        },
-        "winning_formats": [
-            "Carousel with 7 slides (Big Promise → Stakes → Framework → Example → Checklist → Quick Win → CTA)",
-            "Short post (80 words) with counterintuitive take",
-            "Long post (350 words) with mini case study"
-        ],
-        "engagement_triggers": [
-            "What's your experience with [topic]?",
-            "Share your biggest [challenge] below",
-            "Comment '[keyword]' for the template"
-        ]
-    }
+    condensed_caption = response.content[0].text
 
     return {
         "content": [{
             "type": "text",
-            "text": json.dumps(patterns, indent=2)
-        }]
-    }
-
-
-@tool(
-    "score_and_iterate",
-    "Score post quality",
-    {"post": str, "target_score": int, "iteration": int}
-)
-async def score_and_iterate(args):
-    """Score post - prompt loaded JIT"""
-    from anthropic import Anthropic
-    from prompts.linkedin_tools import SCORE_ITERATE_PROMPT
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-
-    post = args.get('post', '')
-    target = args.get('target_score', 85)
-    iteration = args.get('iteration', 1)
-
-    prompt = SCORE_ITERATE_PROMPT.format(
-        draft=post,
-        target_score=target,
-        iteration=iteration
-    )
-
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=1500,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return {
-        "content": [{
-            "type": "text",
-            "text": response.content[0].text
+            "text": json.dumps({
+                "caption": condensed_caption,
+                "original_length": current_length,
+                "new_length": len(condensed_caption),
+                "target_length": target_length,
+                "condensed": True,
+                "chars_saved": current_length - len(condensed_caption)
+            }, indent=2)
         }]
     }
 
 
 @tool(
     "quality_check",
-    "Score post on 5 axes and return surgical fixes",
+    "Score Instagram caption on 5 axes and return surgical fixes",
     {"post": str}
 )
 async def quality_check(args):
-    """Evaluate post with 5-axis rubric + surgical feedback + web_search for fabrications"""
+    """Evaluate caption with 5-axis rubric + surgical feedback + web_search for fabrications"""
     import json
     from anthropic import Anthropic
-    from prompts.linkedin_tools import QUALITY_CHECK_PROMPT
+    from prompts.instagram_tools import QUALITY_CHECK_PROMPT
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     post = args.get('post', '')
@@ -348,17 +259,18 @@ async def quality_check(args):
     {"post": str, "issues_json": str}
 )
 async def apply_fixes(args):
-    """Apply surgical fixes without rewriting the whole post"""
+    """Apply surgical fixes without rewriting the whole caption"""
     import json
     from anthropic import Anthropic
-    from prompts.linkedin_tools import APPLY_FIXES_PROMPT
+    from prompts.instagram_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     post = args.get('post', '')
     issues_json = args.get('issues_json', '[]')
 
-    # Use new APPLY_FIXES_PROMPT
+    # Use APPLY_FIXES_PROMPT
     prompt = APPLY_FIXES_PROMPT.format(
+        write_like_human_rules=WRITE_LIKE_HUMAN_RULES,
         post=post,
         issues_json=issues_json
     )
@@ -393,18 +305,16 @@ async def apply_fixes(args):
     }
 
 
+# ================== INSTAGRAM SDK AGENT CLASS ==================
 
-
-# ================== LINKEDIN SDK AGENT CLASS ==================
-
-class LinkedInSDKAgent:
+class InstagramSDKAgent:
     """
-    Tier 2: LinkedIn-specific SDK Agent with persistent memory
+    Tier 2: Instagram-specific SDK Agent with persistent memory
     Orchestrates Tier 3 tools and maintains platform-specific context
     """
 
     def __init__(self, user_id: str = "default", isolated_mode: bool = False):
-        """Initialize LinkedIn SDK Agent with memory and tools
+        """Initialize Instagram SDK Agent with memory and tools
 
         Args:
             user_id: User identifier for session management
@@ -414,81 +324,88 @@ class LinkedInSDKAgent:
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
 
-        # LinkedIn-specific base prompt with quality thresholds
-        base_prompt = """You are a LinkedIn content creation agent. Your goal: posts that score 18+ out of 25 without needing 3 rounds of revision.
+        # Instagram-specific base prompt with quality thresholds
+        base_prompt = """You are an Instagram caption creation agent. Your goal: captions that score 20+ out of 25 and stop the scroll.
 
 AVAILABLE TOOLS (5-tool workflow):
 
-1. mcp__linkedin_tools__generate_5_hooks
+1. mcp__instagram_tools__generate_5_hooks
    Input: {"topic": str, "context": str, "audience": str}
-   Returns: JSON array with 5 hooks (question/bold/stat/story/mistake formats)
+   Returns: JSON array with 5 hooks optimized for 125-char preview
    When to use: Always call first to generate hook options
 
-2. mcp__linkedin_tools__create_human_draft
+2. mcp__instagram_tools__create_caption_draft
    Input: {"topic": str, "hook": str, "context": str}
-   Returns: JSON with {post_text, self_assessment: {hook: 0-5, audience: 0-5, headers: 0-5, proof: 0-5, cta: 0-5, total: 0-25}}
-   What it does: Creates LinkedIn post using 127-line WRITE_LIKE_HUMAN_RULES (cached)
-   Quality: Trained on Nicolas Cole, Dickie Bush examples - produces human-sounding content
+   Returns: JSON with {caption_text, self_assessment: {hook: 0-5, visual_pairing: 0-5, readability: 0-5, proof: 0-5, cta_hashtags: 0-5, total: 0-25}}
+   What it does: Creates Instagram caption using WRITE_LIKE_HUMAN_RULES with Instagram adaptations
    When to use: After selecting best hook from generate_5_hooks
 
-3. mcp__linkedin_tools__inject_proof_points
-   Input: {"draft": str, "topic": str, "industry": str}
-   Returns: Enhanced draft with metrics from topic/context (NO fabrication)
-   What it does: Adds specific numbers/dates/names ONLY from provided context
-   When to use: After create_human_draft, before quality_check
+3. mcp__instagram_tools__condense_to_limit
+   Input: {"caption": str, "target_length": int}
+   Returns: Condensed caption under 2,200 chars (preserves hook, proof, CTA, hashtags)
+   When to use: If draft exceeds 2,200 characters
 
-4. mcp__linkedin_tools__quality_check
+4. mcp__instagram_tools__quality_check
    Input: {"post": str}
-   Returns: JSON with {scores: {hook/audience/headers/proof/cta/total, ai_deductions}, decision: accept/revise/reject, issues: [{axis, severity, original, fix, impact}], searches_performed: [...]}
-   What it does: 
+   Returns: JSON with {scores: {hook/visual_pairing/readability/proof/cta_hashtags/total, ai_deductions}, decision: accept/revise/reject, issues: [{axis, severity, original, fix, impact}], character_count, preview_length}
+   What it does:
    - Evaluates 5-axis rubric (0-5 each, total 0-25)
-   - AUTO-DETECTS AI tells with -2pt deductions: contrast framing, rule of three, cringe questions
-   - WEB SEARCHES to verify names/companies/titles for fabrication detection
-   - Returns SURGICAL fixes (specific text replacements, not full rewrites)
-   When to use: After inject_proof_points to evaluate quality
-   
-   CRITICAL UNDERSTANDING:
-   - decision="accept" (score ≥20): Post is high quality, no changes needed
-   - decision="revise" (score 18-19): Good but could be better, surgical fixes provided
-   - decision="reject" (score <18): Multiple issues, surgical fixes provided
-   - issues array has severity: critical/high/medium/low
-   
-   AI TELL SEVERITIES:
-   - Contrast framing: ALWAYS severity="critical" (must fix)
-   - Rule of three: ALWAYS severity="critical" (must fix)
-   - Jargon (leveraging, seamless, robust): ALWAYS severity="high" (must fix)
-   - Fabrications: ALWAYS severity="critical" (flag for user, don't block)
-   - Generic audience: severity="high" (good to fix)
-   - Weak CTA: severity="medium" (nice to fix)
+   - Checks first 125 chars (preview optimization)
+   - Verifies 2,200 char limit
+   - AUTO-DETECTS AI tells with -2pt deductions
+   - WEB SEARCHES to verify claims
+   - Returns SURGICAL fixes
+   When to use: After create_caption_draft or condense_to_limit
 
-5. mcp__linkedin_tools__apply_fixes
+5. mcp__instagram_tools__apply_fixes
    Input: {"post": str, "issues_json": str}
-   Returns: JSON with {revised_post, changes_made: [{issue_addressed, original, revised, impact}], estimated_new_score: int}
-   What it does: 
-   - Applies 3-5 SURGICAL fixes (doesn't rewrite whole post)
-   - PRESERVES all specifics: numbers, names, dates, emotional language, contractions
+   Returns: JSON with {revised_post, changes_made: [{issue_addressed, original, revised, impact}], estimated_new_score, character_count}
+   What it does:
+   - Applies 3-5 SURGICAL fixes
+   - PRESERVES voice, numbers, names, emotional language
    - Targets exact problems from issues array
-   - Uses WRITE_LIKE_HUMAN_RULES to ensure fixes sound natural
-   When to use: When quality_check returns issues that need fixing"""
+   When to use: When quality_check returns issues that need fixing
+
+INSTAGRAM-SPECIFIC QUALITY AXES:
+- Hook (0-5): First 125 chars create curiosity gap
+- Visual Pairing (0-5): Adds context image/Reel can't show
+- Readability (0-5): Line breaks, emojis, mobile-optimized
+- Proof (0-5): Specific numbers, verifiable claims
+- CTA + Hashtags (0-5): Engagement trigger + 3-5 strategic tags
+
+CRITICAL CONSTRAINTS:
+- 2,200 character HARD LIMIT (includes hashtags)
+- First 125 chars appear in preview (must work standalone)
+- Visual pairing (assumes accompanying image/Reel)
+- Mobile formatting (line breaks every 2-3 sentences)
+
+LEAN WORKFLOW:
+1. generate_5_hooks
+2. Select best hook
+3. create_caption_draft
+4. If >2,200 chars → condense_to_limit
+5. quality_check
+6. If issues → apply_fixes
+7. Return final caption and STOP"""
 
         # Compose base prompt + client context (if exists)
         from integrations.prompt_loader import load_system_prompt
         self.system_prompt = load_system_prompt(base_prompt)
 
-        # Create MCP server with LinkedIn-specific tools (LEAN 5-TOOL WORKFLOW)
+        # Create MCP server with Instagram-specific tools (LEAN 5-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
-            name="linkedin_tools",
-            version="4.0.0",
+            name="instagram_tools",
+            version="1.0.0",
             tools=[
                 generate_5_hooks,
-                create_human_draft,
-                inject_proof_points,
-                quality_check,  # Combined: AI patterns + fact-check
-                apply_fixes     # Combined: Fix everything in one pass
+                create_caption_draft,
+                condense_to_limit,
+                quality_check,
+                apply_fixes
             ]
         )
 
-        print("🎯 LinkedIn SDK Agent initialized with 5 lean tools (write-like-human rules embedded)")
+        print("🎯 Instagram SDK Agent initialized with 5 lean tools")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
@@ -499,11 +416,11 @@ AVAILABLE TOOLS (5-tool workflow):
                 os.environ.pop('CLAUDE_CODE_ENTRYPOINT', None)
                 os.environ.pop('CLAUDE_SESSION_ID', None)
                 os.environ.pop('CLAUDE_WORKSPACE', None)
-                os.environ['CLAUDE_HOME'] = '/tmp/linkedin_agent'
+                os.environ['CLAUDE_HOME'] = '/tmp/instagram_agent'
 
             options = ClaudeAgentOptions(
-                mcp_servers={"linkedin_tools": self.mcp_server},
-                allowed_tools=["mcp__linkedin_tools__*"],
+                mcp_servers={"instagram_tools": self.mcp_server},
+                allowed_tools=["mcp__instagram_tools__*"],
                 system_prompt=self.system_prompt,
                 model="claude-sonnet-4-5-20250929",
                 permission_mode="bypassPermissions",
@@ -512,51 +429,49 @@ AVAILABLE TOOLS (5-tool workflow):
 
             self.sessions[session_id] = ClaudeSDKClient(options=options)
             mode_str = " (isolated test mode)" if self.isolated_mode else ""
-            print(f"📝 Created LinkedIn session: {session_id}{mode_str}")
+            print(f"📝 Created Instagram session: {session_id}{mode_str}")
 
         return self.sessions[session_id]
 
-    async def create_post(
+    async def create_caption(
         self,
         topic: str,
         context: str = "",
-        post_type: str = "standard",  # standard, carousel, video
         target_score: int = 85,
         session_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Create a LinkedIn post following ALL checklist rules
+        Create an Instagram caption following all Instagram rules
 
         Args:
             topic: Main topic/angle
-            context: Additional requirements, CTAs, etc.
-            post_type: standard, carousel, or video
+            context: Additional requirements, visual description, etc.
             target_score: Minimum quality score (default 85)
             session_id: Session for conversation continuity
 
         Returns:
-            Dict with final post, score, hooks tested, iterations
+            Dict with final caption, score, hooks tested, iterations
         """
 
         # Use session ID or create new one
         if not session_id:
-            session_id = f"linkedin_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            session_id = f"instagram_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY LinkedIn {post_type} post using LEAN WORKFLOW.
+        creation_prompt = f"""Create a HIGH-QUALITY Instagram caption using LEAN WORKFLOW.
 
 Topic: {topic}
 Context: {context}
 
 LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__linkedin_tools__generate_5_hooks
-2. Select best hook, then call mcp__linkedin_tools__create_human_draft
-3. Call mcp__linkedin_tools__inject_proof_points
-4. Call mcp__linkedin_tools__quality_check (gets ALL issues: AI patterns + fabrications)
-5. Call mcp__linkedin_tools__apply_fixes (fixes everything in ONE pass)
-6. Return final post and STOP
+1. Call mcp__instagram_tools__generate_5_hooks
+2. Select best hook, then call mcp__instagram_tools__create_caption_draft
+3. If >2,200 chars → call mcp__instagram_tools__condense_to_limit
+4. Call mcp__instagram_tools__quality_check (gets ALL issues: AI patterns + fabrications + char limit)
+5. Call mcp__instagram_tools__apply_fixes (fixes everything in ONE pass)
+6. Return final caption and STOP
 
 DO NOT:
 - Call quality_check more than once
@@ -568,15 +483,15 @@ Trust the prompts - they include write-like-human rules."""
 
         try:
             # Connect if needed
-            print(f"🔗 Connecting LinkedIn SDK client...")
+            print(f"🔗 Connecting Instagram SDK client...")
             await client.connect()
 
             # Send the creation request
-            print(f"📤 Sending LinkedIn creation prompt...")
+            print(f"📤 Sending Instagram creation prompt...")
             await client.query(creation_prompt)
-            print(f"⏳ LinkedIn agent processing (this takes 30-60s)...")
+            print(f"⏳ Instagram agent processing (this takes 30-60s)...")
 
-            # Collect the response - use LAST message (matches Twitter/YouTube/Email agents)
+            # Collect the response - use LAST message
             final_output = ""
             message_count = 0
 
@@ -621,11 +536,11 @@ Trust the prompts - they include write-like-human rules."""
             return await self._parse_output(final_output)
 
         except Exception as e:
-            print(f"❌ LinkedIn SDK Agent error: {e}")
+            print(f"❌ Instagram SDK Agent error: {e}")
             return {
                 "success": False,
                 "error": str(e),
-                "post": None
+                "caption": None
             }
 
     async def _parse_output(self, output: str) -> Dict[str, Any]:
@@ -638,7 +553,7 @@ Trust the prompts - they include write-like-human rules."""
             return {
                 "success": False,
                 "error": "No content generated",
-                "post": None
+                "caption": None
             }
 
         # Extract structured content using Haiku (replaces fragile regex)
@@ -649,20 +564,20 @@ Trust the prompts - they include write-like-human rules."""
         try:
             extracted = await extract_structured_content(
                 raw_output=output,
-                platform='linkedin'
+                platform='instagram'
             )
 
             clean_output = extracted['body']
             hook_preview = extracted['hook']
 
-            print(f"✅ Extracted: {len(clean_output)} chars body")
+            print(f"✅ Extracted: {len(clean_output)} chars caption")
             print(f"✅ Hook: {hook_preview[:80]}...")
 
         except ValueError as e:
-            # Agent requested clarification instead of completing post
+            # Agent requested clarification instead of completing caption
             print(f"⚠️ Extraction detected agent clarification: {e}")
             is_clarification = True
-            clean_output = ""  # Empty body - no post was created
+            clean_output = ""  # Empty body - no caption was created
             hook_preview = "Agent requested clarification (see Suggested Edits)"
 
         except Exception as e:
@@ -680,7 +595,7 @@ Trust the prompts - they include write-like-human rules."""
         validation_formatted = None
         try:
             from integrations.validation_utils import run_all_validators, format_validation_for_airtable
-            validation_json = await run_all_validators(clean_output, 'linkedin')
+            validation_json = await run_all_validators(clean_output, 'instagram')
             # Format for human-readable Airtable display
             validation_formatted = format_validation_for_airtable(validation_json)
         except Exception as e:
@@ -706,7 +621,7 @@ Trust the prompts - they include write-like-human rules."""
             print(f"\n📝 Saving content (hook: '{hook_preview[:50]}...')")
             result = airtable.create_content_record(
                 content=clean_output,  # Save the CLEAN extracted post, not raw output
-                platform='linkedin',
+                platform='instagram',
                 post_hook=hook_preview,
                 status='Draft',
                 suggested_edits=validation_formatted  # Human-readable validation report
@@ -749,7 +664,7 @@ Trust the prompts - they include write-like-human rules."""
 
             print(f"\n📝 Saving to Supabase...")
             supabase_result = supabase.table('generated_posts').insert({
-                'platform': 'linkedin',
+                'platform': 'instagram',
                 'post_hook': hook_preview,
                 'body_content': clean_output,  # Save clean content
                 'content_type': self._detect_content_type(clean_output),
@@ -760,7 +675,7 @@ Trust the prompts - they include write-like-human rules."""
                 'iterations': 3,  # Would track from actual process
                 'slack_thread_ts': getattr(self, 'session_id', None),
                 'user_id': self.user_id,
-                'created_by_agent': 'linkedin_sdk_agent',
+                'created_by_agent': 'instagram_sdk_agent',
                 'embedding': embedding
             }).execute()
 
@@ -781,8 +696,8 @@ Trust the prompts - they include write-like-human rules."""
 
         return {
             "success": True,
-            "post": clean_output,  # The clean post content (metadata stripped)
-            "hook": hook_preview,  # First 200 chars for Slack preview
+            "caption": clean_output,  # The clean caption (metadata stripped)
+            "hook": hook_preview,  # First 125 chars for preview
             "score": score,
             "hooks_tested": 5,
             "iterations": 3,
@@ -790,15 +705,16 @@ Trust the prompts - they include write-like-human rules."""
             "google_doc_url": google_doc_url or "[Coming Soon]",
             "supabase_id": supabase_id,
             "session_id": self.user_id,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "character_count": len(clean_output)
         }
 
     def _detect_content_type(self, content: str) -> str:
-        """Detect content type from post structure"""
+        """Detect content type from caption structure"""
         content_lower = content.lower()
         lines = [l.strip() for l in content.split('\n') if l.strip()]
 
-        # Check for numbered lists (listicle/framework)
+        # Check for numbered lists (tips/steps)
         if any(line.startswith(('1.', '2.', '3.', '1/', '2/', '3/')) for line in lines):
             return 'listicle'
 
@@ -806,125 +722,53 @@ Trust the prompts - they include write-like-human rules."""
         if any(word in content_lower for word in ['i was', 'i spent', 'i lost', 'here\'s what happened']):
             return 'story'
 
-        # Check for hot take patterns
-        if content.startswith(('everyone', 'nobody', 'stop', 'you\'re', 'you don\'t')):
-            return 'hot_take'
+        # Check for tutorial/how-to
+        if any(phrase in content_lower for phrase in ['how to', 'step by step', 'here\'s how']):
+            return 'tutorial'
 
-        # Check for comparison/contrast
-        if any(phrase in content_lower for phrase in ['vs', 'not x, it\'s y', 'instead of']):
-            return 'comparison'
+        # Check for carousel indicators
+        if any(phrase in content_lower for phrase in ['swipe', 'slide', 'carousel']):
+            return 'carousel'
 
-        return 'thought_leadership'  # Default
-
-    async def review_post(
-        self,
-        post: str,
-        session_id: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Review an existing post against checklist criteria"""
-
-        if not session_id:
-            session_id = "review_session"
-
-        client = self.get_or_create_session(session_id)
-
-        review_prompt = f"""Review this LinkedIn post against ALL checklist rules:
-
-{post}
-
-Use these tools:
-1. validate_format to check structure
-2. score_and_iterate to get quality score
-3. Provide specific improvements based on violations
-
-Be harsh but constructive. We need 85+ quality."""
-
-        try:
-            await client.connect()
-            await client.query(review_prompt)
-
-            review_output = ""
-            async for msg in client.receive_response():
-                if hasattr(msg, 'text'):
-                    review_output = msg.text
-
-            return {
-                "success": True,
-                "review": review_output
-            }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-
-    async def batch_create(
-        self,
-        topics: List[str],
-        post_type: str = "standard",
-        session_id: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """Create multiple posts in one session (maintains context)"""
-
-        if not session_id:
-            session_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-        results = []
-        for i, topic in enumerate(topics, 1):
-            print(f"Creating post {i}/{len(topics)}: {topic[:50]}...")
-
-            result = await self.create_post(
-                topic=topic,
-                context=f"Post {i} of {len(topics)} in series",
-                post_type=post_type,
-                session_id=session_id  # Same session = maintains context
-            )
-
-            results.append(result)
-
-            # The agent remembers previous posts in the batch
-            # and can maintain consistency
-
-        return results
+        return 'engagement'  # Default for Instagram
 
 
 # ================== INTEGRATION FUNCTION ==================
 
-async def create_linkedin_post_workflow(
+async def create_instagram_caption_workflow(
     topic: str,
     context: str = "",
-    style: str = "thought_leadership"
+    style: str = "engagement"
 ) -> str:
     """
-    Main entry point for LinkedIn content creation
+    Main entry point for Instagram caption creation
     Called by the main CMO agent's delegate_to_workflow tool
     Returns structured response with hook preview and links
     """
 
-    agent = LinkedInSDKAgent()
+    agent = InstagramSDKAgent()
 
-    # Map style to post type
-    post_type = "carousel" if "visual" in style.lower() else "standard"
-
-    result = await agent.create_post(
+    result = await agent.create_caption(
         topic=topic,
-        context=f"{context} | Style: {style}",
-        post_type=post_type,
+        context=context,
         target_score=85
     )
 
     if result['success']:
         # Return structured response for Slack
-        return f"""✅ **LinkedIn Post Created**
+        char_count = result.get('character_count', 0)
+        char_status = f"{char_count}/2,200 chars" if char_count <= 2200 else f"⚠️ {char_count}/2,200 OVER LIMIT"
 
-**Hook Preview:**
-_{result.get('hook', result['post'][:200])}..._
+        return f"""✅ **Instagram Caption Created**
+
+**Hook Preview (first 125 chars):**
+_{result.get('hook', result['caption'][:125])}..._
 
 **Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Length:** {char_status}
 
-**Full Post:**
-{result['post']}
+**Full Caption:**
+{result['caption']}
 
 ---
 📊 **Airtable Record:** {result.get('airtable_url', '[Coming Soon]')}
@@ -936,15 +780,13 @@ _{result.get('hook', result['post'][:200])}..._
 
 
 if __name__ == "__main__":
-    # Test the LinkedIn SDK Agent
+    # Test the Instagram SDK Agent
     async def test():
-        agent = LinkedInSDKAgent()
+        agent = InstagramSDKAgent()
 
-        result = await agent.create_post(
-            topic="Why your AI doesn't have your best interests at heart",
-            context="Focus on ownership vs renting intelligence",
-            post_type="standard",
-            target_score=85
+        result = await agent.create_caption(
+            topic="New productivity app launch",
+            context="FocusFlow - AI that schedules deep work and kills meeting bloat",
         )
 
         print(json.dumps(result, indent=2))
