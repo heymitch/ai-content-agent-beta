@@ -6,6 +6,17 @@ Adapted from Email SDK Agent for YouTube video scripts.
 """
 
 from textwrap import dedent
+
+# ==================== LOAD EDITOR-IN-CHIEF STANDARDS ====================
+# Load comprehensive Editor-in-Chief standards for quality_check
+from pathlib import Path
+EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
+try:
+    with open(EDITOR_FILE_PATH, "r", encoding="utf-8") as f:
+        EDITOR_IN_CHIEF_RULES = f.read()
+except FileNotFoundError:
+    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
+    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
 from tools.pattern_matching import format_youtube_examples_for_prompt
 
 # ==================== GLOBAL WRITING RULES (CACHED) ====================
