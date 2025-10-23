@@ -25,6 +25,9 @@ import asyncio
 from datetime import datetime
 from typing import Dict, Any
 
+# Add parent directory to path to import project modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Color codes for output
 GREEN = '\033[92m'
 RED = '\033[91m'
