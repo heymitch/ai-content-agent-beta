@@ -454,119 +454,81 @@ Output JSON:
 
 # ==================== QUALITY CHECK ====================
 
-QUALITY_CHECK_PROMPT = dedent("""You are evaluating an email newsletter. Your job: determine if this gets opened, read, and acted on.
+QUALITY_CHECK_PROMPT = dedent(f"""You are evaluating an email newsletter using Editor-in-Chief standards.
+
+═══════════════════════════════════════════════════════════════
+EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
+═══════════════════════════════════════════════════════════════
+
+{EDITOR_IN_CHIEF_RULES}
+
+═══════════════════════════════════════════════════════════════
+END OF EDITOR-IN-CHIEF STANDARDS
+═══════════════════════════════════════════════════════════════
+
+YOUR TASK:
+1. Read the email below
+2. Scan sentence-by-sentence for EVERY violation listed in Editor-in-Chief standards above
+3. Create ONE surgical issue per violation found
+4. Use EXACT replacement strategies from the standards (don't make up your own)
 
 Email to evaluate:
-{post}
+{{post}}
 
-Evaluate on these axes (0-5):
+WORKFLOW:
 
-1. SUBJECT LINE POWER
-   - Is it specific with concrete details?
-   - Does it create curiosity without clickbait?
-   - Is it under 60 chars?
+STEP 1: SCAN FOR VIOLATIONS
+Go through the email sentence-by-sentence and find:
+- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y")
+- Masked contrast patterns ("Instead of X", "but rather")
+- Section summaries ("In summary", "In conclusion")
+- Promotional puffery ("stands as", "testament")
+- Overused conjunctions ("moreover", "furthermore")
+- Vague attributions without sources
+- Em-dash overuse
+- Words needing substitution ("leverages", "encompasses", "facilitates")
+- Formal greetings/closings ("I hope this email finds you well")
 
-   Score 5: Specific + curiosity + <60 chars
-   Score 3: Generic but clear
-   Score 0: Vague or clickbait
+STEP 2: CREATE SURGICAL ISSUES
+For EACH violation found, create ONE issue:
+{{
+  "axis": "ai_tells",
+  "severity": "high" | "medium" | "low",
+  "pattern": "contrast_direct" | "puffery" | "word_substitution" | etc,
+  "original": "[EXACT text - word-for-word quote]",
+  "fix": "[EXACT replacement using Editor-in-Chief examples]",
+  "impact": "[How this improves the email]"
+}}
 
-2. PREVIEW TEXT HOOK
-   - Does it extend the subject line?
-   - Does it add new context?
-   - Is it 80-120 chars?
+STEP 3: USE REPLACEMENT STRATEGIES FROM STANDARDS
+Use EXACT patterns from Editor-in-Chief:
 
-   Score 5: Extends subject + adds context + optimal length
-   Score 3: Adds context but repeats
-   Score 0: Repeats subject or generic
+For contrast framing:
+❌ "Success isn't about working harder but working smarter."
+✅ "Success comes from working smarter and more strategically."
 
-3. EMAIL STRUCTURE
-   - Does the intro hook in 1-2 sentences?
-   - Do sections flow naturally?
-   - Is white space used for readability?
+For word substitutions:
+leverages → uses | encompasses → includes | facilitates → enables
 
-   Score 5: Hook intro + clear sections + white space
-   Score 3: Decent structure but dense
-   Score 0: Wall of text, no structure
+STEP 4: SCORE THE EMAIL
+Subject Line (0-5): Specific + curiosity + <60 chars?
+Preview Hook (0-5): Extends subject + adds context?
+Structure (0-5): Hook intro + clear sections + white space?
+Proof Points (0-5): Specific names/numbers (2+)?
+CTA Clarity (0-5): Specific action + clear next step?
 
-4. PROOF POINTS
-   - Are there specific names/numbers?
-   - Do they feel real (not fabricated)?
-   - Are there 2+ concrete specifics?
+Deduct 2 points per major AI tell.
 
-   Score 5: Multiple specific names/numbers (2+)
-   Score 3: One vague number
-   Score 0: No specifics
+STEP 5: VERIFY FACTS (use web_search)
+Search for student names, collaboration details, news claims, stats.
+If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
+Only use "FABRICATED" if provably false.
 
-5. CTA CLARITY
-   - Is the action specific?
-   - Does it invite participation?
-   - Is it clear what happens next?
-
-   Score 5: Specific action + clear next step
-   Score 3: Vague but friendly
-   Score 0: Missing or passive
-
-MINIMUM THRESHOLD: 18/25
-
-**BURSTINESS CHECK (GPTZero bypass):**
-Count sentence lengths in email body (ignore subject/preview):
-- Short (≤10 words): Need 30%+ of sentences
-- Medium (10-20 words): Need 40%+ of sentences
-- Long (≥20 words): Need 20%+ of sentences
-- Fragments (≤5 words): Need 10%+ of sentences
-
-**If burstiness is LOW (sentences all 10-15 words):**
-- Deduct 2 points from total score
-- Add issue: "Low burstiness - all sentences similar length (AI tell)"
-- Suggest: "Rewrite with varied lengths: 5w, 15w, 25w, 3w pattern"
-
-**How to calculate:**
-1. Split email body by periods
-2. Count words per sentence
-3. Calculate % in each bucket
-4. Flag if any bucket is <10% or if 80%+ sentences are 10-15 words
-
-**AI TELLS TO FLAG (AUTO-DEDUCT 2 POINTS EACH):**
-
-1. **CONTRAST FRAMING** - Any "not X, it's Y" structure:
-   - "Smart operators eliminate X. Dumb operators eliminate Y."
-   - "It's not about X. It's about Y."
-   - "This isn't X, it's Y."
-   → FLAG and suggest rewriting positively
-
-2. **RULE OF THREE** - Three parallel structures in sequence:
-   - "Same X. Same Y. Same Z." (three parallel "Same" fragments)
-   - "Bold. Daring. Transformative." (three adjectives)
-   - "No X. No Y. Just Z." (three parallel negatives)
-   - "[Verb]. [Verb]. [Verb]." (three parallel imperatives/fragments)
-   → FLAG and suggest combining two or varying structure
-
-3. **STACCATO OPENINGS** - Multiple fragments at start:
-   - "Six months later? Product velocity tanked. Technical debt piled up."
-   → FLAG and suggest complete sentences
-
-4. **FORMAL GREETINGS/CLOSINGS**:
-   - "I hope this email finds you well"
-   - "Thank you for your time"
-   → FLAG as non-PGA style
-
-**DETECTION STRATEGY:**
-- Scan for 3+ sentences with identical grammatical structure in a row
-- Look for repeated words/patterns ("Same X. Same Y. Same Z.")
-- Count fragments vs complete sentences (fragments OK but not at start)
-
-**VERIFICATION CHECK:**
-Use web_search tool to verify specific claims:
-- Student names + results (e.g., "Sujoy made $5k")
-- Collaboration details (e.g., "450 subs with Matthew Brown")
-- News stories, events, product launches: "Rick Beato YouTube AI filters"
-- Industry stats (e.g., "40% open rate is standard")
-
-If verified → Note as "verified claim"
-If NOT verified:
-  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
-  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
-  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
+CRITICAL RULES:
+✅ Create ONE issue per violation
+✅ Quote EXACT text in "original"
+✅ Use EXACT fixes from Editor-in-Chief standards
+✅ Be comprehensive - find EVERY violation
 
 Output JSON:
 {{
@@ -576,19 +538,25 @@ Output JSON:
     "structure": 5,
     "proof_points": 2,
     "cta_clarity": 4,
-    "total": 18
+    "total": 18,
+    "ai_deductions": -4
   }},
-  "decision": "revise",  // "accept" (≥20) | "revise" (18-19) | "reject" (<18)
+  "decision": "revise",
+  "searches_performed": ["query 1", "query 2"],
   "issues": [
     {{
-      "axis": "proof_points",
+      "axis": "ai_tells",
       "severity": "high",
-      "problem": "No specific numbers or names",
-      "fix": "Add concrete example from user's context (e.g., student win, collab result)"
+      "pattern": "contrast_direct",
+      "original": "[exact quote from email]",
+      "fix": "[exact fix from Editor-in-Chief examples]",
+      "impact": "[specific improvement]"
     }}
   ],
-  "surgical_summary": "2 fixes needed: Add specific proof point (high priority), strengthen preview text to extend subject line (medium priority)"
+  "surgical_summary": "Found [number] violations. Applying all fixes would raise score from [current] to [projected]."
 }}
+
+Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
 """)
 
 # ==================== APPLY FIXES ====================
