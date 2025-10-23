@@ -75,7 +75,7 @@ async function bootstrap() {
   const client = new Client({
     connectionString: DB_URL,
     ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 15000,
+    connectionTimeoutMillis: 30000, // Increased from 15s to 30s for slower networks
     // Disable prepared statements for Transaction pooler compatibility
     statement_timeout: 60000
   });
