@@ -177,8 +177,13 @@ async function bootstrap() {
 
   } catch (err) {
     console.log('');
-    log('❌', 'Bootstrap failed:', colors.red);
+    log('⚠️', 'Bootstrap skipped (connection failed):', colors.yellow);
     console.error(err.message);
+    console.log('');
+    console.log('⏭️  Continuing to start app anyway...');
+    console.log('');
+    console.log('💡 If this is a new deployment, fix the connection and run:');
+    console.log('   npm run bootstrap');
     console.log('');
     console.log('Troubleshooting:');
     console.log('  1. Verify SUPABASE_DB_URL format:');
@@ -188,7 +193,8 @@ async function bootstrap() {
     console.log('     CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
     console.log('     CREATE EXTENSION IF NOT EXISTS vector;');
     console.log('');
-    process.exit(1);
+    // Exit with success so npm start continues
+    process.exit(0);
   } finally {
     await client.end();
   }
