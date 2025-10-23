@@ -1065,15 +1065,20 @@ CRITICAL AI TELLS (AUTO-DEDUCT 2 POINTS EACH):
 - Rule of Three: "Same X. Same Y. Over Z%." (three parallel fragments)
 - Cringe questions: "The truth?" / "The result?" / "Sound familiar?"
 
-FABRICATION CHECK (use web_search):
+VERIFICATION CHECK (use web_search):
 - Names + titles + companies: "James Chen, Head of Growth at Clearbit"
+- News stories, events, product launches: "Rick Beato YouTube AI filters"
 - If found in post → web_search to verify
-- If NOT verified → FLAG AS FABRICATED (severity: critical)
+- If verified → Note as "verified claim"
+- If NOT verified:
+  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
+  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
+  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
 
 SEARCH STRATEGY:
 - Max 3 searches for efficiency
-- Search: "[Full Name] [Company] [Title]"
-- If no results → Mark as fabricated
+- Search: "[Full Name] [Company] [Title]" or "[Topic] [Event/News]"
+- If no results → Check if it's newsworthy before flagging
 
 Output JSON:
 {{

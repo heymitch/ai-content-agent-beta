@@ -544,13 +544,18 @@ Count sentence lengths in email body (ignore subject/preview):
 - Look for repeated words/patterns ("Same X. Same Y. Same Z.")
 - Count fragments vs complete sentences (fragments OK but not at start)
 
-**FABRICATION CHECK:**
-Use web_search tool to verify ANY specific claims that seem fabricated:
+**VERIFICATION CHECK:**
+Use web_search tool to verify specific claims:
 - Student names + results (e.g., "Sujoy made $5k")
 - Collaboration details (e.g., "450 subs with Matthew Brown")
+- News stories, events, product launches: "Rick Beato YouTube AI filters"
 - Industry stats (e.g., "40% open rate is standard")
 
-If you can't verify a specific claim → flag as "LIKELY_FABRICATED" in issues.
+If verified → Note as "verified claim"
+If NOT verified:
+  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
+  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
+  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
 
 Output JSON:
 {{

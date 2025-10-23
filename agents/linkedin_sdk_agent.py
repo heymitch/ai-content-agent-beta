@@ -275,40 +275,84 @@ async def score_and_iterate(args):
     {"post": str}
 )
 async def quality_check(args):
-    """Evaluate post with 5-axis rubric + surgical feedback + web_search for fabrications"""
+    """Evaluate post with 5-axis rubric + surgical feedback + Tavily search for fabrications"""
     import json
     from anthropic import Anthropic
     from prompts.linkedin_tools import QUALITY_CHECK_PROMPT
+    from tavily import TavilyClient
+
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    tavily = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
 
     post = args.get('post', '')
     prompt = QUALITY_CHECK_PROMPT.format(post=post)
 
-    # Give Claude web_search tool for fact checking
+    # Define Tavily search tool for Claude
+    tavily_tool = {
+        "name": "web_search",
+        "description": "Search the web for current information to verify claims, names, companies, and news stories. Returns recent, relevant results.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (e.g., 'Rick Beato YouTube AI filters', 'James Chen Clearbit')"
+                }
+            },
+            "required": ["query"]
+        }
+    }
+
     messages = [{"role": "user", "content": prompt}]
 
-    # Tool loop: handle web_search requests
+    # Tool loop: handle Tavily search requests
     max_iterations = 5
     for iteration in range(max_iterations):
         response = client.messages.create(
             model="claude-sonnet-4-5-20250929",
             max_tokens=3000,
-            tools=[{
-                "type": "web_search_20250305",
-                "name": "web_search",
-                "max_uses": 3
-            }],
+            tools=[tavily_tool],
             messages=messages
         )
 
         # Check if Claude wants to use a tool
         if response.stop_reason == "tool_use":
-            # Add assistant message with tool use
+            # Extract tool use from response
+            tool_use_block = next((block for block in response.content if block.type == "tool_use"), None)
+
+            if tool_use_block and tool_use_block.name == "web_search":
+                # Execute Tavily search
+                query = tool_use_block.input["query"]
+                try:
+                    tavily_results = tavily.search(query, max_results=3)
+                    search_output = "\n\n".join([
+                        f"**{r.get('title', 'No title')}**\n{r.get('content', 'No content')}\nSource: {r.get('url', 'No URL')}"
+                        for r in tavily_results.get('results', [])
+                    ])
+                except Exception as e:
+                    search_output = f"Search error: {str(e)}"
+
+                # Add assistant message with tool use, then tool result
+                messages.append({
+                    "role": "assistant",
+                    "content": response.content
+                })
+                messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_block.id,
+                        "content": search_output
+                    }]
+                })
+                # Continue loop to get final response
+                continue
+
+            # Unknown tool - shouldn't happen
             messages.append({
                 "role": "assistant",
                 "content": response.content
             })
-            # Continue loop to get final response
             continue
 
         # Got final text response

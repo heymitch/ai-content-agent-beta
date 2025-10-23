@@ -358,13 +358,18 @@ MINIMUM THRESHOLD: 18/25
 - Rule of Three (three parallel fragments)
 - Staccato fragments ("500 subs. 3 months. One change.")
 
-**FABRICATION CHECK:**
-Use web_search tool to verify ANY specific claims that seem fabricated:
+**VERIFICATION CHECK:**
+Use web_search tool to verify specific claims:
 - Creator names + growth numbers (e.g., "Alex 500→5k")
 - Workshop/event details (e.g., "50+ creators")
-- Timeframes (e.g., "3 months")
+- News stories, events, product launches: "Rick Beato YouTube AI filters"
+- Industry data/timeframes (e.g., "3 months to 5k subs")
 
-If you can't verify a specific claim from user context → flag as "LIKELY_FABRICATED" in issues.
+If verified → Note as "verified claim"
+If NOT verified:
+  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
+  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
+  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
 
 **TIMING ACCURACY CHECK:**
 - Verify timing markers are present

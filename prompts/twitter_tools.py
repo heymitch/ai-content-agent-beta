@@ -839,15 +839,20 @@ CRITICAL: 280 CHARACTER VALIDATION (MANDATORY):
 - If ANY tweet exceeds 280 characters → AUTO-DEDUCT 5 points AND flag as "high" severity issue
 - Example issue format: {{"axis": "brevity", "severity": "high", "original": "Tweet 3 (312 chars)", "fix": "Split into two tweets or cut 32 chars"}}
 
-FABRICATION CHECK (use web_search):
-- Names + titles + companies mentioned in thread
-- If found → web_search to verify
-- If NOT verified → FLAG AS FABRICATED (severity: critical)
+VERIFICATION CHECK (use web_search):
+- Names + titles + companies: "James Chen, Head of Growth at Clearbit"
+- News stories, events, product launches: "Rick Beato YouTube AI filters"
+- If found in thread → web_search to verify
+- If verified → Note as "verified claim"
+- If NOT verified:
+  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
+  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
+  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
 
 SEARCH STRATEGY:
 - Max 3 searches for efficiency
-- Search: "[Full Name] [Company] [Title]"
-- If no results → Mark as fabricated
+- Search: "[Full Name] [Company] [Title]" or "[Topic] [Event/News]"
+- If no results → Check if it's newsworthy before flagging
 
 Output JSON:
 {{

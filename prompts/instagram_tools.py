@@ -230,10 +230,14 @@ AI TELL DETECTION (auto-deduct 2 points each):
 -2 pts: Cringe questions ("The truth?" / "Sound familiar?")
 -2 pts: Buzzwords (game-changer, unlock, revolutionary, leverage)
 
-FABRICATION CHECK (use web_search tool):
-- Search any specific claims (names, companies, stats)
-- If unverifiable, mark severity="critical" in issues
-- Don't block post, but flag for user review
+VERIFICATION CHECK (use web_search tool):
+- Search any specific claims (names, companies, stats, news stories)
+- Example: "Rick Beato YouTube AI filters" or "James Chen Clearbit"
+- If verified → Note as "verified claim"
+- If NOT verified:
+  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
+  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
+  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
 
 RETURN FORMAT (JSON):
 {{
