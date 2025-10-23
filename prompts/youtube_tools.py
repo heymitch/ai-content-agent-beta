@@ -310,12 +310,44 @@ Output JSON:
 
 # ==================== QUALITY CHECK ====================
 
-QUALITY_CHECK_PROMPT = dedent("""You are evaluating a YouTube video script. Your job: determine if this hooks viewers and keeps them watching.
+QUALITY_CHECK_PROMPT = dedent(f"""You are evaluating a YouTube video script using Editor-in-Chief standards.
+
+═══════════════════════════════════════════════════════════════
+EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
+═══════════════════════════════════════════════════════════════
+
+{EDITOR_IN_CHIEF_RULES}
+
+═══════════════════════════════════════════════════════════════
+END OF EDITOR-IN-CHIEF STANDARDS
+═══════════════════════════════════════════════════════════════
+
+YOUR TASK:
+1. Read the script below
+2. Scan sentence-by-sentence for EVERY violation listed in Editor-in-Chief standards above
+3. Create ONE surgical issue per violation found
+4. Use EXACT replacement strategies from the standards (don't make up your own)
 
 Script to evaluate:
-{post}
+{{post}}
 
-Evaluate on these axes (0-5):
+WORKFLOW:
+
+STEP 1: SCAN FOR VIOLATIONS
+Go through the script sentence-by-sentence and find Editor-in-Chief violations:
+- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y")
+- Masked contrast patterns ("Instead of X", "but rather")
+- Section summaries ("In summary", "In conclusion")
+- Promotional puffery ("stands as", "testament")
+- Overused conjunctions ("moreover", "furthermore")
+- Vague attributions without sources
+- Em-dash overuse
+- Words needing substitution ("leverages", "encompasses", "facilitates")
+
+STEP 2: CREATE SURGICAL ISSUES
+For EACH violation found, create ONE issue with EXACT text and EXACT fix from Editor-in-Chief examples.
+
+STEP 3: SCORE THE SCRIPT - Evaluate on these axes (0-5):
 
 1. VIDEO HOOK POWER
    - Does it grab attention in first 3 seconds?
@@ -364,28 +396,27 @@ Evaluate on these axes (0-5):
 
 MINIMUM THRESHOLD: 18/25
 
-**AI TELLS TO FLAG:**
-- Contrast framing ("It's not X, it's Y")
-- Rule of Three (three parallel fragments)
-- Staccato fragments ("500 subs. 3 months. One change.")
-
-**VERIFICATION CHECK:**
-Use web_search tool to verify specific claims:
+STEP 4: VERIFY FACTS (use web_search)
+Search for:
 - Creator names + growth numbers (e.g., "Alex 500→5k")
 - Workshop/event details (e.g., "50+ creators")
-- News stories, events, product launches: "Rick Beato YouTube AI filters"
+- News stories, events (e.g., "Rick Beato YouTube AI filters")
 - Industry data/timeframes (e.g., "3 months to 5k subs")
 
-If verified → Note as "verified claim"
-If NOT verified:
-  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
-  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
-  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
+If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
+Only use "FABRICATED" if provably false.
 
-**TIMING ACCURACY CHECK:**
+STEP 5: CHECK TIMING ACCURACY (YouTube-specific)
 - Verify timing markers are present
 - Check if timing adds up (sum of sections = total duration)
 - Verify word count matches estimated duration (2.5 words/sec)
+
+CRITICAL RULES:
+✅ Create ONE issue per Editor-in-Chief violation
+✅ Quote EXACT text in "original"
+✅ Use EXACT fixes from Editor-in-Chief standards (don't improvise)
+✅ Be comprehensive - find EVERY violation
+✅ Deduct 2 points per major AI tell
 
 Output JSON:
 {{
@@ -395,24 +426,30 @@ Output JSON:
     "script_flow": 5,
     "proof_density": 2,
     "cta_payoff": 4,
-    "total": 18
+    "total": 18,
+    "ai_deductions": -4
   }},
   "timing_accuracy": {{
     "has_markers": true,
     "sections_add_up": true,
     "word_count_matches": true
   }},
-  "decision": "revise",  // "accept" (≥20) | "revise" (18-19) | "reject" (<18)
+  "decision": "revise",
+  "searches_performed": ["query 1", "query 2"],
   "issues": [
     {{
-      "axis": "proof_density",
+      "axis": "ai_tells",
       "severity": "high",
-      "problem": "Only one vague number, need 2+ specific from user context",
-      "fix": "Add concrete examples from TOPIC/CONTEXT (e.g., 'Alex 500→5k', '50+ creators')"
+      "pattern": "contrast_direct",
+      "original": "[exact quote from script]",
+      "fix": "[exact fix from Editor-in-Chief examples]",
+      "impact": "[specific improvement]"
     }}
   ],
-  "surgical_summary": "2 fixes needed: Add specific proof points from user context (high priority), tighten pattern interrupt with surprising stat (medium priority)"
+  "surgical_summary": "Found [number] violations. Applying all fixes would raise score from [current] to [projected]."
 }}
+
+Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
 """)
 
 # ==================== APPLY FIXES ====================
