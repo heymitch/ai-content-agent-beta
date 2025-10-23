@@ -4,7 +4,18 @@ Detailed prompts stored here to minimize SDK context window usage.
 Only loaded when tools are actually called.
 """
 
+from pathlib import Path
 from textwrap import dedent
+
+# ==================== LOAD EDITOR-IN-CHIEF STANDARDS ====================
+# Load comprehensive Editor-in-Chief standards for quality_check
+EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
+try:
+    with open(EDITOR_FILE_PATH, 'r', encoding='utf-8') as f:
+        EDITOR_IN_CHIEF_RULES = f.read()
+except FileNotFoundError:
+    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
+    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
 
 # ==================== GLOBAL WRITING RULES (CACHED) ====================
 # Source: write-like-a-human.md - COMPLETE VERSION (not summarized)
@@ -1009,76 +1020,90 @@ Return as JSON:
 
 # ==================== QUALITY CHECK (COMBINED: AI CRINGE + FACT CHECK) ====================
 
-QUALITY_CHECK_PROMPT = dedent("""You are evaluating a LinkedIn post. Your job: determine if this would get saved/shared or scrolled past.
+QUALITY_CHECK_PROMPT = dedent(f"""You are evaluating a LinkedIn post using Editor-in-Chief standards.
 
-Post: {post}
+═══════════════════════════════════════════════════════════════
+EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
+═══════════════════════════════════════════════════════════════
 
-Evaluate on these axes (0-5):
+{EDITOR_IN_CHIEF_RULES}
 
-1. HOOK QUALITY
-   - Does it use a proven framework? (question/bold statement/specific stat/story/mistake)
-   - Is it specific with concrete details?
-   - Does the preview end on a cliffhanger?
+═══════════════════════════════════════════════════════════════
+END OF EDITOR-IN-CHIEF STANDARDS
+═══════════════════════════════════════════════════════════════
 
-   Score 5: Proven framework + specific detail + cliffhanger
-   Score 3: Framework but vague
-   Score 0: Generic statement
+YOUR TASK:
+1. Read the post below
+2. Scan sentence-by-sentence for EVERY violation listed in Editor-in-Chief standards above
+3. Create ONE surgical issue per violation found
+4. Use EXACT replacement strategies from the standards (don't make up your own)
 
-2. AUDIENCE SPECIFICITY
-   - Is the role specific? (Not "marketers" but "B2B marketers")
-   - Is the stage specific? (Not "founders" but "seed-stage founders")
-   - Is the problem specific? (Not "need help" but "stuck at $1M ARR")
+Post to evaluate:
+{{post}}
 
-   Score 5: Role + stage + problem
-   Score 3: Role + stage
-   Score 0: Generic ("founders", "entrepreneurs")
+WORKFLOW:
 
-3. HEADER TANGIBILITY
-   - Do headers include metrics/outcomes/timeframes?
-   - Are they skimmable and actionable?
-   - Avoid generic ("What I learned") and cringe questions ("The truth?")
+STEP 1: SCAN FOR VIOLATIONS
+Go through the post line-by-line and find:
+- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y", "Rather than X")
+- Masked contrast patterns ("Instead of X", "but rather")
+- Formulaic headers ("THE X:", "HERE'S HOW:", Title Case In Headings)
+- Section summaries ("In summary", "In conclusion")
+- Promotional puffery ("stands as", "testament", "rich heritage")
+- Overused conjunctions ("moreover", "furthermore")
+- Vague attributions ("industry reports says" without source)
+- Em-dash overuse (multiple — in formulaic patterns)
+- Words needing substitution ("leverages", "encompasses", "facilitates")
 
-   Score 5: Metric/outcome/timeframe OR specific activity
-   Score 3: Action without metric
-   Score 0: Generic or cringe question
+STEP 2: CREATE SURGICAL ISSUES
+For EACH violation found, create ONE issue:
+{{
+  "axis": "ai_tells",
+  "severity": "high" | "medium" | "low",
+  "pattern": "contrast_direct" | "contrast_masked" | "title_case" | "formulaic_header" | "puffery" | "word_substitution",
+  "original": "[EXACT text from post - word-for-word quote]",
+  "fix": "[EXACT replacement using Editor-in-Chief examples - don't paraphrase]",
+  "impact": "[How this improves the post]"
+}}
 
-4. NUMERIC PROOF
-   - Are there concrete numbers? ($15K, 41 to 23 days, 73%)
-   - Are they specific? (Not "significant improvement")
-   - Do they feel real? (Not fabricated)
+STEP 3: USE REPLACEMENT STRATEGIES FROM STANDARDS
+When creating fixes, use the EXACT patterns from Editor-in-Chief standards:
 
-   Score 5: Multiple specific numbers (2+)
-   Score 3: One vague number
-   Score 0: No numbers
+For contrast framing, use THIS example:
+❌ "Success isn't about working harder but working smarter."
+✅ "Success comes from working smarter and more strategically."
 
-5. ENGAGEMENT TRIGGER
-   - Does CTA ask a specific question?
-   - Does it invite participation?
-   - Avoid passive CTAs ("DM me", "Link in bio")
+For word substitutions, use THESE:
+leverages → uses
+encompasses → includes
+facilitates → enables
+utilized → used
 
-   Score 5: Active engagement trigger
-   Score 3: Weak question
-   Score 0: Passive or missing
+For formulaic headers, use sentence case and tangible metrics.
 
-CRITICAL AI TELLS (AUTO-DEDUCT 2 POINTS EACH):
-- Contrast framing: "It's not X, it's Y" / "This isn't about X" / "not just X, but Y" / "rather than"
-- Rule of Three: "Same X. Same Y. Over Z%." (three parallel fragments)
-- Cringe questions: "The truth?" / "The result?" / "Sound familiar?"
+STEP 4: SCORE THE POST
+Hook (0-5): Framework + specific + cliffhanger?
+Audience (0-5): Role + stage + problem?
+Headers (0-5): Tangible metrics/outcomes?
+Proof (0-5): Concrete numbers?
+CTA (0-5): Specific engagement trigger?
 
-VERIFICATION CHECK (use web_search):
-- Names + titles + companies: "James Chen, Head of Growth at Clearbit"
-- News stories, events, product launches: "Rick Beato YouTube AI filters"
-- If found in post → web_search to verify
-- If verified → Note as "verified claim"
-- If NOT verified:
-  * Personal anecdotes/client stories → FLAG AS "NEEDS VERIFICATION" (severity: medium)
-  * News reporting/industry events → FLAG AS "ADD SOURCE CITATION" (severity: low, suggest adding link)
-  * Only flag as "FABRICATED" if claim is clearly false or contradicts verified info
+Deduct 2 points per major AI tell (contrast framing, rule of three, etc).
 
-SEARCH STRATEGY:
-- Max 3 searches for efficiency
-- Search: "[Full Name] [Company] [Title]" or "[Topic] [Event/News]"
-- If no results → Check if it's newsworthy before flagging
+STEP 5: VERIFY FACTS (use web_search)
+Search for:
+- Names and companies mentioned
+- News events and claims
+- Statistics and data points
+
+If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
+Only use "FABRICATED" if provably false.
+
+CRITICAL RULES:
+✅ Create ONE issue per violation (8 violations = 8 issues)
+✅ Quote EXACT text from post in "original"
+✅ Use EXACT fixes from Editor-in-Chief standards (don't improvise)
+✅ Be comprehensive - find EVERY violation
 
 Output JSON:
 {{
@@ -1089,32 +1114,26 @@ Output JSON:
     "proof": 5,
     "cta": 4,
     "total": 18,
-    "ai_deductions": 0
+    "ai_deductions": -6
   }},
-  "decision": "revise",  // accept (≥20) | revise (18-19) | reject (<18)
+  "decision": "revise",
   "searches_performed": ["query 1", "query 2"],
   "issues": [
     {{
-      "axis": "audience",
+      "axis": "ai_tells",
       "severity": "high",
-      "original": "founders",
-      "fix": "seed-stage B2B SaaS founders stuck at <$1M ARR with activation issues",
-      "impact": "Raises audience score from 2 to 5"
-    }},
-    {{
-      "axis": "hook",
-      "severity": "medium",
-      "original": "It's not about X, it's about Y",
-      "fix": "Focus on Y directly",
-      "impact": "Removes AI tell (contrast framing)"
+      "pattern": "contrast_direct",
+      "original": "[exact quote from post]",
+      "fix": "[exact fix from Editor-in-Chief examples]",
+      "impact": "[specific improvement]"
     }}
   ],
-  "surgical_summary": "3 specific fixes would move this from score 18 to 21+",
-  "threshold": 18,
-  "meets_threshold": true
+  "surgical_summary": "Found [number] violations across [patterns]. Applying all fixes would raise score from [current] to [projected].",
+  "threshold": 20,
+  "meets_threshold": false
 }}
 
-Be surgical: don't rewrite the whole thing. Give 3-5 specific fixes that would move this from revise to accept.
+Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
 """)
 
 # ==================== CREATE CAROUSEL SLIDES ====================
