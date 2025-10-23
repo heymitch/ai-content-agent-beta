@@ -98,7 +98,6 @@ async def test_env_vars(results: TestResults):
         'SUPABASE_KEY': 'Supabase API key',
         'SUPABASE_DB_URL': 'Supabase direct DB access',
         'SLACK_BOT_TOKEN': 'Slack bot token',
-        'SLACK_APP_TOKEN': 'Slack app token',
         'AIRTABLE_ACCESS_TOKEN': 'Airtable API',
         'AIRTABLE_BASE_ID': 'Airtable base',
         'AIRTABLE_TABLE_NAME': 'Airtable table'
@@ -106,7 +105,8 @@ async def test_env_vars(results: TestResults):
 
     optional_vars = {
         'OPENAI_API_KEY': 'OpenAI (for embeddings)',
-        'AYRSHARE_API_KEY': 'Auto-publishing'
+        'AYRSHARE_API_KEY': 'Auto-publishing',
+        'SLACK_APP_TOKEN': 'Slack app token (only for socket mode)'
     }
 
     all_set = True
@@ -276,10 +276,10 @@ async def test_rag_search(results: TestResults):
             from slack_bot.agent_tools import search_past_posts
 
             search_results = search_past_posts(
-                query="content strategy marketing",
                 user_id="test_deployment",
-                min_score=0,
-                limit=5
+                platform="linkedin",
+                days_back=30,
+                min_score=0
             )
 
             if "Error" in search_results:
@@ -309,21 +309,20 @@ async def test_slack_connection(results: TestResults):
     print(f"{BLUE}{'='*70}{RESET}")
 
     try:
-        from slack_bolt import App
+        from slack_sdk import WebClient
 
         bot_token = os.getenv('SLACK_BOT_TOKEN')
-        app_token = os.getenv('SLACK_APP_TOKEN')
 
-        if not bot_token or not app_token:
-            results.add_fail("Slack config", "Missing SLACK_BOT_TOKEN or SLACK_APP_TOKEN")
+        if not bot_token:
+            results.add_fail("Slack config", "Missing SLACK_BOT_TOKEN")
             return
 
-        print("\n1. Initializing Slack app...")
-        app = App(token=bot_token)
-        print(f"   {GREEN}✓{RESET} App initialized")
+        print("\n1. Initializing Slack client...")
+        client = WebClient(token=bot_token)
+        print(f"   {GREEN}✓{RESET} Client initialized")
 
         print("\n2. Testing auth.test endpoint...")
-        auth_response = app.client.auth_test()
+        auth_response = client.auth_test()
 
         if auth_response['ok']:
             print(f"   {GREEN}✓{RESET} Bot authenticated successfully")
@@ -351,23 +350,19 @@ async def test_slack_threads(results: TestResults):
 
     try:
         from slack_bot.claude_agent_handler import ClaudeAgentHandler
-        from integrations.supabase_client import get_supabase_client
 
         print("\n1. Initializing Claude Agent Handler...")
-        supabase = get_supabase_client()
-        handler = ClaudeAgentHandler(supabase_client=supabase)
+        handler = ClaudeAgentHandler()
         print(f"   {GREEN}✓{RESET} Handler initialized")
 
-        print("\n2. Testing thread session creation...")
+        print("\n2. Testing thread session structure...")
         test_thread_ts = f"test_{datetime.now().timestamp()}"
 
-        # Simulate getting or creating a session
-        session_key = f"test_channel_{test_thread_ts}"
-
-        if session_key not in handler.thread_clients:
-            print(f"   {GREEN}✓{RESET} Session doesn't exist (as expected)")
+        # Check that session tracking exists
+        if hasattr(handler, '_thread_sessions'):
+            print(f"   {GREEN}✓{RESET} Thread session tracking available")
         else:
-            print(f"   {GREEN}✓{RESET} Session management working")
+            print(f"   {YELLOW}⚠{RESET} Thread session tracking structure may have changed")
 
         print("\n3. Checking thread isolation...")
         # Each thread should have isolated context
