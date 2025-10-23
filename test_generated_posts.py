@@ -94,7 +94,7 @@ I would greatly appreciate hearing your perspective."""
     agent = LinkedInSDKAgent(user_id="test_user_123")
 
     print("\n🔄 Parsing post output (simulating agent creation)...")
-    result = agent._parse_output(sample_post)
+    result = await agent._parse_output(sample_post)
 
     print("\n" + "="*60)
     print("RESULTS:")
