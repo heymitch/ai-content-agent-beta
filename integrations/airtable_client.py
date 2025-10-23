@@ -95,7 +95,8 @@ class AirtableContentCalendar:
             'linkedin': 'Linkedin',
             'twitter': 'X/Twitter',  # Exact match for Airtable field option
             'email': 'Email',  # Add this option to Airtable Platform field
-            'youtube': 'Youtube'
+            'youtube': 'Youtube',
+            'instagram': 'Instagram'  # Add Instagram support
         }
         airtable_platform = platform_mapping.get(platform.lower(), platform.capitalize())
 
