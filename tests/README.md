@@ -2,9 +2,37 @@
 
 Run these tests before deploying to client environments to verify all integrations are working correctly.
 
-## Quick Start
+## Test Files Overview
 
-**Run all tests in one command:**
+### Integration Tests (Run Before Every Deployment)
+
+**`pre_deploy_test.py`** - Main integration test suite
+- Tests actual integrations (Supabase, Airtable, Slack, RAG)
+- No dependencies (just Python standard library)
+- Safe to run in production environments
+- **This is what you run before client deployments**
+
+```bash
+python tests/pre_deploy_test.py
+```
+
+### Unit Tests (For Development Only)
+
+These require `pytest` and are for development/testing new features:
+
+- **`test_instagram_sdk.py`** - Tests Instagram SDK agent tools (generate_5_hooks, create_caption_draft, etc.)
+- **`test_cowriting_workflow.py`** - Tests CMO co-writing tools (generate_post_*, quality_check_*, apply_fixes_*)
+- **`test_validation_integration.py`** - Tests validation workflow
+
+**To run unit tests (development only):**
+```bash
+pytest tests/test_instagram_sdk.py -v
+pytest tests/test_cowriting_workflow.py -v
+```
+
+## Quick Start (Pre-Deployment)
+
+**Run all integration tests in one command:**
 
 ```bash
 python tests/pre_deploy_test.py
@@ -13,7 +41,7 @@ python tests/pre_deploy_test.py
 This will test:
 - ✅ Environment variables (API keys, tokens, URLs)
 - ✅ Supabase connection & database operations
-- ✅ Airtable connection & record creation
+- ✅ Airtable connection & record creation (tests actual tools!)
 - ✅ RAG search (embeddings + vector similarity)
 - ✅ Slack API connection
 - ✅ Slack thread session management
