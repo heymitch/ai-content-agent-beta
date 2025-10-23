@@ -1159,15 +1159,23 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
     def _get_or_create_session(self, thread_ts: str) -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""
         if thread_ts not in self._thread_sessions:
-            # CRITICAL: Prevent Claude SDK from loading ANY external configs
+            # Load brand context from .claude/CLAUDE.md if it exists
             import os
-            os.environ['CLAUDE_HOME'] = '/tmp/empty_claude_home'  # Point to empty dir
+            claude_md_path = os.path.join(os.getcwd(), '.claude', 'CLAUDE.md')
+            brand_context = ""
+            if os.path.exists(claude_md_path):
+                with open(claude_md_path, 'r') as f:
+                    brand_context = f.read()
+                    print(f"📄 Loaded brand context from .claude/CLAUDE.md ({len(brand_context)} chars)")
 
-            # Configure options for this thread with EXPLICIT CMO system prompt
+            # Combine brand context with CMO system prompt
+            full_system_prompt = brand_context + "\n\n" + self.system_prompt if brand_context else self.system_prompt
+
+            # Configure options for this thread with CMO system prompt + brand context
             options = ClaudeAgentOptions(
                 mcp_servers={"tools": self.mcp_server},
                 allowed_tools=["mcp__tools__*"],
-                system_prompt=self.system_prompt,  # FORCE our CMO prompt, not Claude Code's
+                system_prompt=full_system_prompt,  # CMO prompt + brand context from .claude/CLAUDE.md
                 model="claude-sonnet-4-5-20250929",  # Claude Sonnet 4.5 - latest
                 permission_mode="bypassPermissions",
                 continue_conversation=True  # KEY: Maintain context across messages
