@@ -353,16 +353,17 @@ async def apply_fixes(args):
     """Apply surgical fixes without rewriting the whole thread"""
     import json
     from anthropic import Anthropic
-    from prompts.twitter_tools import APPLY_FIXES_PROMPT
+    from prompts.twitter_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     post = args.get('post', '')
     issues_json = args.get('issues_json', '[]')
 
-    # Use APPLY_FIXES_PROMPT
+    # Use APPLY_FIXES_PROMPT with WRITE_LIKE_HUMAN_RULES
     prompt = APPLY_FIXES_PROMPT.format(
         post=post,
-        issues_json=issues_json
+        issues_json=issues_json,
+        write_like_human_rules=WRITE_LIKE_HUMAN_RULES
     )
 
     response = client.messages.create(

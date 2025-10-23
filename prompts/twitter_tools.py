@@ -610,6 +610,10 @@ Issues from quality_check:
 
 CRITICAL RULES:
 
+0. **WRITE LIKE A HUMAN** - You must follow these rules when applying fixes:
+
+{write_like_human_rules}
+
 1. **BE SURGICAL** - Fix ONLY what's listed in issues
    - Don't rewrite tweets that aren't broken
    - Don't change the voice or structure
