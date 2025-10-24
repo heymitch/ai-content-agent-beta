@@ -7,8 +7,15 @@ Reference: https://www.anthropic.com/engineering/effective-context-engineering-f
 
 import time
 import re
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
+from datetime import datetime
 from agents.context_manager import ContextManager
+
+# Global registry of context managers (plan_id -> ContextManager)
+_context_managers: Dict[str, ContextManager] = {}
+
+# Global registry of batch plans (plan_id -> plan dict)
+_batch_plans: Dict[str, Dict[str, Any]] = {}
 
 
 async def execute_sequential_batch(
@@ -366,3 +373,144 @@ def extract_hook_from_result(result: str) -> str:
     # Last fallback: Extract first 100 chars of result
     clean_result = re.sub(r'[_*`#]', '', result)
     return clean_result[:100]
+
+
+# ============= CMO Agent Tool Helper Functions =============
+
+def create_batch_plan(posts: List[Dict[str, Any]], description: str) -> Dict[str, Any]:
+    """
+    Create a batch plan and store it in the global registry
+
+    Args:
+        posts: List of post specs [{"platform": "...", "topic": "...", "context": "..."}]
+        description: High-level description of the batch
+
+    Returns:
+        Plan dict with ID
+    """
+    plan_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    plan = {
+        'id': plan_id,
+        'description': description,
+        'posts': posts,
+        'created_at': datetime.now().isoformat()
+    }
+
+    # Store plan in global registry
+    _batch_plans[plan_id] = plan
+
+    # Create context manager for this plan
+    _context_managers[plan_id] = ContextManager(plan_id)
+
+    print(f"📋 Created batch plan: {plan_id} with {len(posts)} posts")
+
+    return plan
+
+
+async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[str, Any]:
+    """
+    Execute a single post from a batch plan
+
+    Args:
+        plan_id: ID from create_batch_plan
+        post_index: Which post to create (0-indexed)
+
+    Returns:
+        {
+            'success': bool,
+            'score': int,
+            'platform': str,
+            'hook': str,
+            'airtable_url': str,
+            'learnings_summary': str,
+            'error': str (if failed)
+        }
+    """
+    # Get plan from registry
+    plan = _batch_plans.get(plan_id)
+    if not plan:
+        return {'error': f"Plan {plan_id} not found"}
+
+    # Get context manager
+    context_mgr = _context_managers.get(plan_id)
+    if not context_mgr:
+        return {'error': f"Context manager not found for plan {plan_id}"}
+
+    # Validate post index
+    if post_index < 0 or post_index >= len(plan['posts']):
+        return {'error': f"Invalid post_index {post_index}. Plan has {len(plan['posts'])} posts."}
+
+    post_spec = plan['posts'][post_index]
+
+    # Get learnings from previous posts
+    learnings = context_mgr.get_compacted_learnings()
+    target_score = context_mgr.get_target_score()
+
+    print(f"\n📝 Executing post {post_index + 1}/{len(plan['posts'])}")
+    print(f"   Platform: {post_spec['platform']}")
+    print(f"   Target score: {target_score}+")
+
+    try:
+        # Execute post using SDK agent
+        result = await _execute_single_post(
+            platform=post_spec['platform'],
+            topic=post_spec['topic'],
+            context=post_spec.get('context', ''),
+            style=post_spec.get('style', ''),
+            learnings=learnings,
+            target_score=target_score
+        )
+
+        # Extract metadata
+        score = extract_score_from_result(result)
+        airtable_url = extract_airtable_url_from_result(result)
+        hook = extract_hook_from_result(result)
+
+        # Update context manager
+        await context_mgr.add_post_summary({
+            'post_num': post_index + 1,
+            'score': score,
+            'hook': hook,
+            'platform': post_spec['platform'],
+            'airtable_url': airtable_url,
+            'what_worked': f"Score: {score}/25"
+        })
+
+        # Get learnings summary
+        stats = context_mgr.get_stats()
+        learnings_summary = f"Average score: {stats['avg_score']:.1f}/25. Recent scores: {stats['recent_scores']}"
+
+        print(f"   ✅ Success: Score {score}/25")
+
+        return {
+            'success': True,
+            'score': score,
+            'platform': post_spec['platform'],
+            'hook': hook,
+            'airtable_url': airtable_url,
+            'learnings_summary': learnings_summary
+        }
+
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def get_context_manager(plan_id: str) -> Optional[ContextManager]:
+    """
+    Get context manager for a plan
+
+    Args:
+        plan_id: ID from create_batch_plan
+
+    Returns:
+        ContextManager instance or None
+    """
+    return _context_managers.get(plan_id)

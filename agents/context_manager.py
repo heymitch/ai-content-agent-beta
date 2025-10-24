@@ -179,10 +179,23 @@ Posts analyzed:
         else:
             quality_trend = "too early to tell"
 
+        # Get recent learnings text (last compacted summary or recent posts)
+        recent_learnings = "Building quality patterns..."
+        if self.learnings:
+            last_learning = self.learnings[-1]
+            if last_learning.get('compacted'):
+                recent_learnings = last_learning['summary'][:300] + "..."
+            else:
+                recent_learnings = f"Post {last_learning['post_num']}: Score {last_learning['score']}/25"
+
         return {
             'total_posts': self.total_posts,
+            'posts_since_compact': self.posts_since_compact,
             'avg_score': avg_score,
+            'average_score': avg_score,  # Alias for consistency
+            'scores': self.scores,  # Full score list
             'learnings': self.get_compacted_learnings(),
+            'recent_learnings': recent_learnings,
             'recent_scores': recent_scores,
             'quality_trend': quality_trend,
             'lowest_score': min(self.scores),

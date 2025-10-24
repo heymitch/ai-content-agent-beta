@@ -24,6 +24,12 @@ from slack_bot.agent_tools import (
     get_thread_context as _get_context_func,
     analyze_content_performance as _analyze_perf_func
 )
+from agents.batch_orchestrator import (
+    execute_sequential_batch,
+    create_batch_plan,
+    execute_single_post_from_plan
+)
+from agents.context_manager import ContextManager
 
 
 # Define tools using @tool decorator as per docs
@@ -774,6 +780,289 @@ async def apply_fixes_instagram(args):
     return await instagram_apply_fixes(args)
 
 
+# ================== BATCH ORCHESTRATION TOOLS ==================
+
+@tool(
+    "plan_content_batch",
+    "Create a structured plan for N posts across platforms. Returns plan ID for tracking.",
+    {"posts": list, "description": str}
+)
+async def plan_content_batch(args):
+    """
+    Create a batch content plan
+
+    Args:
+        posts: List of post specs [{"platform": "linkedin", "topic": "...", "context": "..."}]
+        description: High-level description of the batch (e.g., "Week of AI content")
+
+    Returns:
+        Plan summary with ID
+    """
+    posts_list = args.get('posts', [])
+    description = args.get('description', 'Content batch')
+
+    if not posts_list or len(posts_list) == 0:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No posts provided. Please specify at least one post in the batch."
+            }]
+        }
+
+    try:
+        plan = create_batch_plan(posts_list, description)
+
+        # Format plan summary
+        summary = f"""✅ **Batch Plan Created**
+
+📋 **Plan ID:** {plan['id']}
+📝 **Description:** {plan['description']}
+📊 **Total Posts:** {len(plan['posts'])}
+
+**Posts:**
+"""
+
+        for i, post_spec in enumerate(plan['posts'], 1):
+            summary += f"\n{i}. {post_spec['platform'].capitalize()}: {post_spec['topic'][:60]}..."
+
+        summary += f"""
+
+**Estimated Time:** {len(plan['posts']) * 1.5:.0f} minutes (sequential execution)
+
+Use execute_post_from_plan to create each post with accumulated learnings."""
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": summary
+            }]
+        }
+
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ Error creating plan: {str(e)}"
+            }]
+        }
+
+
+@tool(
+    "execute_post_from_plan",
+    "Execute a single post from the batch plan. Accumulates learnings from previous posts.",
+    {"plan_id": str, "post_index": int}
+)
+async def execute_post_from_plan(args):
+    """
+    Execute one post from a batch plan
+
+    Args:
+        plan_id: ID from plan_content_batch
+        post_index: Which post to create (0-indexed)
+
+    Returns:
+        Post result with updated learnings
+    """
+    plan_id = args.get('plan_id', '')
+    post_index = args.get('post_index', 0)
+
+    if not plan_id:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No plan_id provided. Create a plan first with plan_content_batch."
+            }]
+        }
+
+    try:
+        result = await execute_single_post_from_plan(plan_id, post_index)
+
+        if result.get('error'):
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"❌ {result['error']}"
+                }]
+            }
+
+        # Format result
+        output = f"""✅ **Post {post_index + 1} Complete**
+
+📊 **Quality Score:** {result.get('score', 'N/A')}/25
+🎯 **Platform:** {result.get('platform', 'unknown').capitalize()}
+📝 **Hook Preview:** {result.get('hook', 'N/A')[:100]}...
+📎 **Airtable:** {result.get('airtable_url', 'N/A')}
+
+**Learnings Applied:**
+{result.get('learnings_summary', 'First post in batch - no prior learnings')}
+
+**Next:** Execute post {post_index + 2} to continue the batch."""
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": output
+            }]
+        }
+
+    except Exception as e:
+        import traceback
+        print(f"❌ execute_post_from_plan error: {e}")
+        print(traceback.format_exc())
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ Error executing post: {str(e)}"
+            }]
+        }
+
+
+@tool(
+    "compact_learnings",
+    "Compress learnings from last 10 posts into key insights. Call every 10 posts.",
+    {"plan_id": str}
+)
+async def compact_learnings(args):
+    """
+    Compact context manager learnings
+
+    Args:
+        plan_id: ID from plan_content_batch
+
+    Returns:
+        Compaction summary
+    """
+    plan_id = args.get('plan_id', '')
+
+    if not plan_id:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No plan_id provided."
+            }]
+        }
+
+    try:
+        # Get context manager for this plan
+        from agents.batch_orchestrator import get_context_manager
+
+        context_mgr = get_context_manager(plan_id)
+
+        if not context_mgr:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"❌ No context manager found for plan {plan_id}"
+                }]
+            }
+
+        # Run compaction
+        await context_mgr.compact()
+
+        stats = context_mgr.get_stats()
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"""✅ **Learnings Compacted**
+
+📊 **Stats:**
+- Total posts: {stats['total_posts']}
+- Average score: {stats['average_score']:.1f}/25
+- Posts since last compact: {stats['posts_since_compact']}
+
+Context compressed from ~20k tokens to ~2k tokens.
+Quality insights preserved for next batch of posts."""
+            }]
+        }
+
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ Error compacting learnings: {str(e)}"
+            }]
+        }
+
+
+@tool(
+    "checkpoint_with_user",
+    "Send checkpoint update to user at 10/20/30/40 post intervals. Shows progress stats.",
+    {"plan_id": str, "posts_completed": int}
+)
+async def checkpoint_with_user(args):
+    """
+    Send checkpoint update
+
+    Args:
+        plan_id: ID from plan_content_batch
+        posts_completed: Number of posts finished
+
+    Returns:
+        Checkpoint message
+    """
+    plan_id = args.get('plan_id', '')
+    posts_completed = args.get('posts_completed', 0)
+
+    if not plan_id:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No plan_id provided."
+            }]
+        }
+
+    try:
+        from agents.batch_orchestrator import get_context_manager
+
+        context_mgr = get_context_manager(plan_id)
+
+        if not context_mgr:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"❌ No context manager found for plan {plan_id}"
+                }]
+            }
+
+        stats = context_mgr.get_stats()
+
+        # Calculate quality trend
+        if len(stats['scores']) >= 2:
+            first_score = stats['scores'][0]
+            recent_avg = sum(stats['scores'][-5:]) / len(stats['scores'][-5:])
+            trend = "📈 Improving" if recent_avg > first_score else "📊 Stable"
+        else:
+            trend = "🆕 Just started"
+
+        checkpoint_msg = f"""🎯 **Checkpoint: {posts_completed} Posts Complete**
+
+📊 **Progress Stats:**
+- Average quality: {stats['average_score']:.1f}/25
+- Quality trend: {trend}
+- Estimated time remaining: {(stats['total_posts'] - posts_completed) * 1.5:.0f} min
+
+**Recent Learnings:**
+{stats.get('recent_learnings', 'Building quality patterns...')}
+
+Continue creating posts - quality is improving with each iteration!"""
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": checkpoint_msg
+            }]
+        }
+
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ Error creating checkpoint: {str(e)}"
+            }]
+        }
+
+
 # ================== CALENDAR / APPROVAL TOOLS ==================
 
 @tool(
@@ -1028,7 +1317,53 @@ BULK REQUESTS (automatically detected):
 - "Create 5 LinkedIn posts about..." → count=5
 - "Generate my week of content" → count=7
 - "Make 10 Twitter threads" → count=10
-- Bulk processing uses queue (3 posts at a time for quality)
+- Bulk processing uses sequential execution with learning accumulation
+
+**BATCH ORCHESTRATION WORKFLOW (NEW - For 5+ Posts):**
+
+When user requests multiple posts (5+), use the batch orchestration tools for quality improvement over time:
+
+1. **plan_content_batch**: Create structured plan
+   - Input: List of post specs [{"platform": "linkedin", "topic": "...", "context": "..."}]
+   - Returns: plan_id for tracking
+   - Example: plan_content_batch(posts=[...], description="Week of AI content")
+
+2. **execute_post_from_plan**: Execute posts sequentially
+   - Call once per post with plan_id and post_index (0-indexed)
+   - Each post gets learnings from previous posts
+   - Quality improves over the batch (post 1 score 20 → post 50 score 23)
+   - Example: execute_post_from_plan(plan_id="batch_123", post_index=0)
+
+3. **compact_learnings**: Every 10 posts
+   - Compresses context from 20k tokens → 2k tokens
+   - Preserves key quality insights
+   - Example: compact_learnings(plan_id="batch_123")
+
+4. **checkpoint_with_user**: Every 10 posts
+   - Shows progress stats, quality trend, time remaining
+   - Example: checkpoint_with_user(plan_id="batch_123", posts_completed=10)
+
+BATCH WORKFLOW EXAMPLE:
+User: "Create 15 LinkedIn posts about AI, productivity, and remote work"
+CMO: *calls plan_content_batch with 15 post specs*
+CMO: "✅ Batch plan created! ID: batch_20250124_143052. Creating post 1/15..."
+CMO: *calls execute_post_from_plan(plan_id, 0)*
+CMO: "✅ Post 1 complete (score 20/25). Creating post 2/15..."
+CMO: *calls execute_post_from_plan(plan_id, 1)*
+[... continues through all 15 posts ...]
+CMO: *calls checkpoint_with_user every 10 posts*
+CMO: "✅ All 15 posts complete! Average score: 22/25. Quality improved by 3 points over batch."
+
+WHEN TO USE BATCH ORCHESTRATION:
+- Use for 5+ posts when user wants consistent quality improvement
+- Use when user says "week of content", "month of posts", "content plan"
+- Provides visibility: User sees each post complete with quality feedback
+- Sequential execution: 1 post at a time, ~90 seconds per post
+
+WHEN TO USE DELEGATE_TO_WORKFLOW:
+- Use for 1-4 posts (faster, less overhead)
+- Use when user wants quick turnaround
+- Less visibility: Posts created in background, delivered as batch
 
 These workflows enforce brand voice, writing rules, and quality standards.
 
@@ -1123,7 +1458,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         # Create MCP server with our tools
         self.mcp_server = create_sdk_mcp_server(
             name="slack_tools",
-            version="2.3.0",
+            version="2.4.0",
             tools=[
                 web_search,
                 search_knowledge_base,
@@ -1133,6 +1468,11 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 analyze_content_performance,
                 delegate_to_workflow,  # Delegate to subagent workflows
                 send_to_calendar,  # Save approved drafts to calendar
+                # Batch orchestration tools (NEW in v2.4.0)
+                plan_content_batch,
+                execute_post_from_plan,
+                compact_learnings,
+                checkpoint_with_user,
                 # Generate post tools for co-writing (one per platform)
                 generate_post_linkedin,
                 generate_post_twitter,
@@ -1154,7 +1494,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             ]
         )
 
-        print("🚀 Claude Agent SDK initialized with 23 tools (8 general + 15 co-writing tools for 5 platforms)")
+        print("🚀 Claude Agent SDK initialized with 27 tools (8 general + 4 batch + 15 co-writing tools for 5 platforms)")
 
     def _get_or_create_session(self, thread_ts: str) -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""
