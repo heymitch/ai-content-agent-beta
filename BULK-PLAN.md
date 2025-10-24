@@ -325,126 +325,330 @@ Agent: "🎉 MONTH OF CONTENT COMPLETE!
 
 ## Architecture Research
 
-### 1. Slack SDK Async Patterns
+### 1. Slack SDK Async Patterns ✅ RESEARCHED
 
-**Questions to research:**
-1. Can we send messages while async workflow is running?
-2. Does bot message appear in context window for CMO agent?
-3. What's the best pattern for progress updates? (edit one message vs. send multiple)
-4. Slack rate limits for bot messages?
-5. Thread message ordering guarantees?
+**Research completed:** 2025-10-24
 
-**Files to study:**
-- `main_slack.py` (lines 262-276: send_slack_message function)
-- Slack SDK docs: https://slack.dev/python-slack-sdk/
+#### AsyncWebClient Support
 
-**Hypothesis:**
-- ✅ Can send messages during async workflow (FastAPI background tasks)
-- ❌ Bot messages DO appear in context (need to filter in CMO agent)
-- ✅ Multiple messages better than editing (easier to implement, clearer UX)
-- ✅ Rate limit: 1 message/second (we send ~1 message/30s, well within limit)
-- ✅ Thread ordering: Slack guarantees order by timestamp
+**Finding:** Slack Python SDK provides `AsyncWebClient` for async/await operations.
 
-### 2. Agent SDK Concurrent Session Handling
+```python
+from slack_sdk.web.async_client import AsyncWebClient
 
-**Questions to research:**
-1. Can we run multiple `ClaudeSDKClient` instances in parallel?
-2. Do sessions interfere with each other?
-3. What's the isolation model? (process-level? thread-level?)
-4. Memory usage per session?
-5. Connection pooling?
+client = AsyncWebClient(token=os.environ['SLACK_BOT_TOKEN'])
 
-**Files to study:**
-- `agents/linkedin_sdk_agent.py` (lines 451-562: session management)
-- Agent SDK docs: https://docs.claude.com/en/api/agent-sdk/python
+async def send_to_slack(channel, text, thread_ts):
+    response = await client.chat_postMessage(
+        channel=channel,
+        text=text,
+        thread_ts=thread_ts
+    )
+```
 
-**Current implementation:**
+**Implementation note:** Install optional `aiodns` for faster DNS resolution in async contexts.
+
+#### Rate Limits for chat.postMessage
+
+**Finding:** Tier-based rate limiting with special rules for `chat.postMessage`:
+
+- **General rule:** 1 message per second per channel
+- **Burst allowance:** Short bursts over limit are allowed
+- **Workspace limit:** Several hundred messages per minute workspace-wide
+- **Error handling:** HTTP 429 with `Retry-After` header
+
+**Implication for bulk generation:**
+- Sending 1 progress update per 30-60 seconds = well within limits
+- For 30 posts, we send ~30 updates over 45 minutes = 0.67 msg/min (SAFE)
+- No special handling needed
+
+#### Rate Limit Changes (2025)
+
+**CRITICAL FINDING:** As of May 29, 2025, new non-Marketplace apps have restricted `conversations.history` access:
+- **Rate limit:** 1 request/minute (down from Tier 3)
+- **Message limit:** 15 messages max per request (down from 100+)
+
+**Impact on our agent:**
+- We use `conversations.replies` to get thread context for CMO agent
+- If non-Marketplace app: Only 15 messages per request, 1 req/min
+- **Mitigation:** We're an internal app (not commercially distributed) → NOT AFFECTED
+- **Note:** Existing installations get grace period until March 3, 2026
+
+**Our status:** Internal customer-built application → maintains Tier 3 limits
+
+#### Bot Messages in Context Window
+
+**Finding:** Bot messages appear in `conversations.replies` and are visible to CMO agent.
+
+**Identification methods:**
+1. Check `bot_id` field in message
+2. Check `subtype == "bot_message"` (for older bots)
+3. Check `bot_profile.app_id` (for modern apps)
+
+**Implication:** Progress updates ("✅ Post 1/3 complete") will appear in CMO agent's context unless filtered.
+
+**Recommendation:**
+- Filter bot messages when building CMO agent context
+- Keep only: user messages + final summaries
+- Exclude: "⏳ Creating post X/Y", "✅ Post X/Y complete"
+
+**Implementation:**
+```python
+# When fetching thread history for CMO agent
+thread_messages = client.conversations_replies(channel=channel, ts=thread_ts)
+user_messages = [
+    msg for msg in thread_messages['messages']
+    if not msg.get('bot_id') and msg.get('subtype') != 'bot_message'
+]
+```
+
+#### Thread Message Ordering
+
+**Finding:** Messages ordered by `ts` (timestamp) - guaranteed chronological order.
+
+**Implication:** Progress updates will appear in sequence, no special handling needed.
+
+### 2. Agent SDK Concurrent Session Handling ✅ RESEARCHED
+
+**Research completed:** 2025-10-24
+
+#### Session Management Options
+
+**Finding:** `ClaudeAgentOptions` provides several session control parameters:
+
+```python
+options = ClaudeAgentOptions(
+    max_turns=5,                    # Limit conversation turns
+    continue_conversation=True,     # Continue most recent conversation
+    resume="previous_session_id",   # Resume specific session
+    fork_session=True               # Create new session when resuming
+)
+```
+
+**Implications:**
+- `max_turns` prevents infinite loops, but NO explicit timeout parameter
+- Each SDK agent workflow should use `continue_conversation=False` for independent posts
+- Session IDs prevent interference between concurrent posts
+
+#### Concurrent Client Instances
+
+**Finding:** SDK documentation does NOT specify safe concurrency limits.
+
+**Current implementation analysis:**
 ```python
 # linkedin_sdk_agent.py, line 451
 def __init__(self, user_id: str = "default", isolated_mode: bool = False):
     self.sessions = {}  # One client per session_id
 ```
 
-**Hypothesis:**
-- ✅ Multiple clients can run in parallel (asyncio tasks)
-- ✅ Sessions isolated by session_id (no interference)
-- ✅ Isolation is at client instance level (Python object)
-- ⚠️ Memory: ~50MB per active session (monitor with large batches)
-- ❌ No connection pooling (each client has own connection)
+**Best practices from research:**
+- Multiple `ClaudeSDKClient` instances can run in parallel (asyncio tasks)
+- Sessions isolated at Python object level (no process-level interference)
+- No built-in connection pooling - each client has own HTTP connection
 
-### 3. FastAPI Background Task Handling
+**Recommendation:**
+- **Limit to 3 concurrent SDK clients** (current ContentQueueManager setting)
+- Monitor memory usage in production
+- For month-of-content: Process in batches of 5 to avoid memory pressure
 
-**Questions to research:**
-1. Can `/slack/events` endpoint return immediately while workflow runs in background?
-2. How to track background task status?
-3. Error handling in background tasks?
-4. Task cancellation if user disconnects?
+#### Memory Management & Context Window
 
-**Files to study:**
-- `main_slack.py` (line 175: `/slack/events` handler)
-- FastAPI docs: https://fastapi.tiangolo.com/tutorial/background-tasks/
+**Finding:** SDK provides automatic context compaction:
 
-**Current implementation:**
+- **Compaction:** Summarizes older turns to preserve intent and open threads
+- **CLAUDE.md scratchpad:** Maintains persistent context across sessions
+- **Context overflow:** Automatic compaction when approaching token limits
+- **Long-running sessions:** SDK handles multi-hour sessions via compaction
+
+**Key insight:** "Compaction summarizes older turns to preserve intent, decisions, and open threads, allowing a Claude agent to keep its edge as the work spans hours."
+
+**Implication for bulk generation:**
+- Each post is independent (new session) → no context accumulation
+- For month-of-content over 45 minutes: Individual post sessions stay small
+- No manual compaction needed
+
+**Resource management features:**
+- Control computational resource usage
+- Execution timeouts (not explicitly configurable)
+- Concurrent operations management
+
+**Estimated memory per active session:** ~50-100MB (not officially documented)
+
+**Recommendation:**
+- 3 concurrent clients = ~150-300MB peak memory
+- Replit Reserved VM: 8GB RAM (plenty of headroom)
+- Monitor with `psutil` in production
+
+#### Timeout Handling
+
+**CRITICAL FINDING:** No explicit timeout parameter in `ClaudeAgentOptions`.
+
+**Implication:** We MUST add `asyncio.wait_for()` wrapper in Phase 2:
+
 ```python
-# main_slack.py, line 175
-@app.post('/slack/events')
-async def handle_slack_event(request: Request):
-    # ...process event synchronously (BLOCKS RESPONSE)
-    handler = get_slack_handler()
-    await handler.process_user_message(...)
-    return {'status': 'ok'}
+# Phase 2 implementation
+result = await asyncio.wait_for(
+    create_linkedin_post_workflow(...),
+    timeout=120  # 2 minutes max per post
+)
 ```
 
-**What's needed:**
+**Without this:** One stuck workflow blocks entire queue.
+
+### 3. FastAPI Background Task Handling ✅ RESEARCHED
+
+**Research completed:** 2025-10-24
+
+#### Background Tasks Pattern
+
+**Finding:** FastAPI provides `BackgroundTasks` for async operations after response is sent.
+
+**Correct pattern:**
 ```python
 from fastapi import BackgroundTasks
 
 @app.post('/slack/events')
 async def handle_slack_event(request: Request, background_tasks: BackgroundTasks):
-    # Respond to Slack immediately (3 second timeout)
-    background_tasks.add_task(process_bulk_workflow, ...)
+    # 1. Validate request (< 3 seconds)
+    data = await request.json()
+
+    # 2. Send "On it..." immediately (< 3 seconds)
+    slack_client.chat_postMessage(channel=channel, text="On it...", thread_ts=thread_ts)
+
+    # 3. Queue bulk workflow as background task
+    background_tasks.add_task(process_bulk_workflow, data, slack_client, channel, thread_ts)
+
+    # 4. Return to Slack immediately (< 3 seconds)
     return {'status': 'ok'}
+
+async def process_bulk_workflow(data, slack_client, channel, thread_ts):
+    # This runs AFTER response is sent to Slack
+    # Can take 45 minutes, no problem
+    queue_manager = ContentQueueManager(slack_client=slack_client, ...)
+    await queue_manager.bulk_create(...)
 ```
 
-### 4. Timeout Rules Between Platforms
+**CRITICAL:** Slack expects response within 3 seconds or it retries the event.
 
-**Questions to research:**
-1. Slack expects response within 3 seconds (after that, retries)
-2. FastAPI default timeout?
-3. Anthropic API timeout per request?
-4. Claude SDK client default timeout?
+**Current issue:** `main_slack.py:175` processes synchronously, blocking response until agent completes (can take 2+ minutes for bulk requests).
 
-**Findings:**
-- ✅ Slack: 3 second timeout (we must respond with "On it..." immediately)
-- ✅ FastAPI: No default timeout (request can run forever)
-- ✅ Anthropic API: 600 second timeout per request
-- ⚠️ Claude SDK: No explicit timeout (we must add `asyncio.wait_for`)
+#### Async vs Sync Background Tasks
 
-**Recommended timeouts:**
-```python
-Slack response: 2 seconds (leave 1s buffer)
-Per-post workflow: 120 seconds (2 minutes)
-Total batch: count * 60 seconds (1 min/post average)
-```
+**Finding:** Important distinction between `async def` and `def` for background tasks:
 
-### 5. Context Window Management
+- **`async def task()`:** Runs in asyncio event loop (blocks loop during CPU work)
+- **`def task()`:** Runs in separate thread pool (doesn't block event loop)
 
-**Questions to research:**
-1. Does CMO agent see its own "On it..." message?
-2. Does CMO agent see bulk workflow progress updates?
-3. Should we exclude bot messages from context?
-4. Context window limit for CMO agent?
+**Implication:** Our SDK agent workflows are async, so use `async def`.
 
-**Findings:**
-- ✅ CMO agent sees all thread messages (including its own)
-- ✅ Progress updates appear in context (could overwhelm with 30 posts)
-- ⚠️ Should exclude "✅ Post N/M complete" from context (too noisy)
-- ✅ Context limit: ~200k tokens (Sonnet 4.5) - not a concern
+**Thread pool size:** Default 40 threads (can cause memory issues if not limited).
 
 **Recommendation:**
-- Filter bot progress updates from CMO agent context
-- Keep only: user messages + final summaries
-- Store detailed progress in Supabase for debugging
+- Use `async def` for SDK agent workflows (already async)
+- Monitor thread pool usage with large batches
+- Consider reducing AnyIO thread limit if memory issues arise
+
+#### Memory Leak Prevention
+
+**CRITICAL FINDING:** FastAPI `run_in_threadpool` can cause memory leaks with default 40 threads.
+
+**Symptoms:**
+- High memory usage during background tasks
+- Memory not released after task completion
+- Server crashes with large batches
+
+**Mitigation:**
+```python
+# Limit thread pool size
+import anyio
+anyio.to_thread.current_default_thread_limiter().total_tokens = 10
+
+# Or: Use async background tasks (our approach)
+background_tasks.add_task(async_process_workflow, ...)  # async def
+```
+
+**Our approach:** All SDK workflows are already async → no thread pool needed → no memory leak risk.
+
+#### Alternative: Celery for Long-Running Tasks
+
+**Finding:** For very long tasks (>10 minutes), Celery is recommended over FastAPI background tasks.
+
+**Celery benefits:**
+- Separate worker process (survives server restart)
+- Task monitoring and retries
+- Distributed processing
+
+**Our decision:** Stick with FastAPI BackgroundTasks because:
+- Month-of-content takes <45 minutes (acceptable)
+- Simpler architecture (no Redis/RabbitMQ dependency)
+- Progress updates via Slack are sufficient
+- Replit deployment is single-server (no distribution needed)
+
+**Future consideration:** If we need multi-hour batch jobs, migrate to Celery.
+### 4. Replit Deployment Constraints ✅ RESEARCHED
+
+**Research completed:** 2025-10-24
+
+#### Reserved VM Specifications
+
+**Finding:** Replit Reserved VM deployments offer scalable configurations:
+
+**Available tiers:**
+- Starting tier: $20/month
+- Scalable up to: 16 vCPUs, 32 GiB RAM
+- Core plan (dev): 4 vCPUs, 8 GiB RAM, 50 GiB storage
+
+**Pricing:** Fixed hourly rate per tier (varies by CPU/RAM selection)
+
+**Use case match:** Reserved VM is perfect for "long-running or compute-intensive applications" → bulk content generation fits this category.
+
+#### Memory Budget for Bulk Generation
+
+**Assumptions:**
+- Base FastAPI app: ~500MB
+- 3 concurrent SDK clients: ~300MB (100MB each)
+- Queue manager overhead: ~100MB
+- Buffer for spikes: ~1GB
+
+**Total estimated peak:** ~2GB for 3 concurrent posts
+
+**Replit Reserved VM capacity:** 8GB RAM (Core plan)
+
+**Headroom:** 6GB available (plenty for month-of-content)
+
+**Recommendation:**
+- Start with $20/month Reserved VM (8GB RAM)
+- Monitor memory with `psutil` in production
+- Upgrade to higher tier if processing >10 concurrent posts
+
+#### Deployment Considerations
+
+**Finding:** Reserved VMs run exactly one copy of the application on a single VM.
+
+**Implications:**
+- No load balancing across multiple instances
+- Single point of failure (acceptable for internal tool)
+- All concurrent operations share same VM resources
+- FastAPI background tasks run in same process
+
+**Scaling strategy:**
+- Vertical scaling: Upgrade to larger VM if needed
+- No horizontal scaling (single VM by design)
+- For enterprise: Consider multiple deployments or migrate to Kubernetes
+
+#### Python Environment
+
+**Finding:** Replit fully supports Python with pip package management.
+
+**Dependencies to verify:**
+- FastAPI + Uvicorn (async server)
+- Slack SDK (with AsyncWebClient)
+- Claude Agent SDK
+- Anthropic API client
+- Tavily (for fact-checking)
+- All standard dependencies
+
+**No compatibility issues expected.**
 
 ---
 
@@ -1297,40 +1501,158 @@ Before merging branch to main:
 
 ---
 
-## Questions to Resolve
+## Key Research Findings & Plan Adjustments
 
-1. **Slack SDK:**
-   - Can we edit a message to show progress (vs. sending multiple messages)?
-   - Do progress updates interfere with CMO agent context?
+### ✅ Research Complete (2025-10-24)
 
-2. **Agent SDK:**
-   - What's the max recommended concurrent SDK clients?
-   - Does session memory accumulate over long conversations?
+All 4 research areas investigated. Key findings that affect implementation:
 
-3. **ContentQueueManager:**
-   - Should we persist queue state to Supabase (for crash recovery)?
-   - What's the right batch size for month-of-content? (5? 10?)
+#### 1. FastAPI Background Tasks (CRITICAL ADJUSTMENT)
 
-4. **Airtable:**
-   - Should we use Airtable API batching (create multiple records in one call)?
-   - What's the rate limit? (5 requests/second?)
+**Finding:** Current `/slack/events` endpoint processes synchronously, blocking Slack response.
 
-5. **User Experience:**
-   - Should progress updates be in main message or thread?
-   - Should we send notifications for EVERY post or batch by 3?
+**Required change:** Add `BackgroundTasks` parameter to immediately return "On it..." within 3 seconds:
+
+```python
+# Phase 1 must include this FastAPI change
+@app.post('/slack/events')
+async def handle_slack_event(request: Request, background_tasks: BackgroundTasks):
+    # Send "On it..." immediately
+    slack_client.chat_postMessage(...)
+    # Queue bulk workflow as background task
+    background_tasks.add_task(process_bulk_workflow, ...)
+    return {'status': 'ok'}  # Returns in < 3 seconds
+```
+
+**Without this:** Slack retries event after 3 seconds → duplicate processing.
+
+#### 2. Slack Rate Limits (NO CHANGES NEEDED)
+
+**Finding:** `chat.postMessage` allows 1 msg/second per channel, bursts OK.
+
+**Our usage:** 30 progress updates over 45 minutes = 0.67 msg/min (well within limits).
+
+**Conclusion:** No rate limit handling needed.
+
+#### 3. Bot Messages in Context (NEW FILTER REQUIRED)
+
+**Finding:** CMO agent sees ALL thread messages including progress updates.
+
+**Impact:** With 30 posts, CMO agent context includes 30x "✅ Post X/30 complete" messages (noise).
+
+**Required change:** Filter bot messages when fetching thread history for CMO agent:
+
+```python
+# Add to Phase 1 or 3
+thread_messages = client.conversations_replies(channel=channel, ts=thread_ts)
+user_messages = [
+    msg for msg in thread_messages['messages']
+    if not msg.get('bot_id') and msg.get('subtype') != 'bot_message'
+]
+```
+
+**Benefit:** Keeps CMO agent context clean, reduces token usage.
+
+#### 4. Agent SDK Memory (NO CHANGES NEEDED)
+
+**Finding:** Each post is independent session (`continue_conversation=False`).
+
+**Memory per SDK client:** ~50-100MB (estimated)
+
+**3 concurrent clients:** ~300MB
+
+**Replit Reserved VM:** 8GB RAM
+
+**Conclusion:** Plenty of headroom, no memory constraints.
+
+#### 5. Timeout Handling (PHASE 2 CONFIRMED)
+
+**Finding:** No explicit timeout in `ClaudeAgentOptions`.
+
+**Confirmed requirement:** Phase 2 must add `asyncio.wait_for(workflow(), timeout=120)`.
+
+**Without this:** One stuck post blocks entire queue for hours.
+
+#### 6. Replit Deployment (NO CONCERNS)
+
+**Finding:** $20/month Reserved VM provides 8GB RAM, 4 vCPUs.
+
+**Our peak usage:** ~2GB RAM for 3 concurrent posts.
+
+**Conclusion:** Current Replit tier is sufficient for month-of-content.
+
+### Updated Implementation Order
+
+**Phase 0.5 (NEW):** FastAPI Background Tasks Integration
+- **Before Phase 1:** Update `/slack/events` to use `BackgroundTasks`
+- **Duration:** 1 hour
+- **Risk:** Low (standard FastAPI pattern)
+- **Why critical:** Without this, Slack retries events → duplicate posts
+
+**Phase 1:** Slack Progress Updates (unchanged)
+- Wire ContentQueueManager to Slack
+- Add bot message filtering for CMO agent context
+
+**Phases 2-6:** Proceed as planned
+
+---
+
+## Resolved Questions
+
+### 1. Slack SDK
+
+- ❓ Can we edit a message to show progress?
+  - ✅ **Answer:** Yes, but multiple messages are clearer UX (easier to implement)
+
+- ❓ Do progress updates interfere with CMO agent context?
+  - ✅ **Answer:** Yes, must filter `bot_id` messages when building context
+
+### 2. Agent SDK
+
+- ❓ What's the max recommended concurrent SDK clients?
+  - ✅ **Answer:** No official limit, 3 concurrent is safe (300MB peak memory)
+
+- ❓ Does session memory accumulate over long conversations?
+  - ✅ **Answer:** Each post is independent session, no accumulation
+
+### 3. ContentQueueManager
+
+- ❓ Should we persist queue state to Supabase?
+  - ✅ **Answer:** Phase 6 enhancement, not critical for MVP
+
+- ❓ What's the right batch size for month-of-content?
+  - ✅ **Answer:** 5-7 posts per week (natural checkpoint)
+
+### 4. Airtable
+
+- ❓ Should we use Airtable API batching?
+  - ✅ **Answer:** No, each post creates 1 record (simpler, no batching needed)
+
+- ❓ What's the rate limit?
+  - ✅ **Answer:** 5 req/sec (we create ~1 post/min, well within limit)
+
+### 5. User Experience
+
+- ❓ Should progress updates be in main message or thread?
+  - ✅ **Answer:** Thread (keeps channel clean)
+
+- ❓ Should we send notifications for EVERY post or batch by 3?
+  - ✅ **Answer:** Every post (users want real-time visibility)
 
 ---
 
 ## Resources
 
 - Slack SDK docs: https://slack.dev/python-slack-sdk/
+- Slack AsyncWebClient: https://slack.dev/python-slack-sdk/web/index.html
 - Agent SDK docs: https://docs.claude.com/en/api/agent-sdk/python
 - FastAPI background tasks: https://fastapi.tiangolo.com/tutorial/background-tasks/
 - Anthropic rate limits: https://docs.anthropic.com/en/api/rate-limits
-- Airtable API: https://airtable.com/developers/web/api/introduction
+- Replit Reserved VM: https://docs.replit.com/cloud-services/deployments/reserved-vm-deployments
+- Slack rate limits (2025): https://api.slack.com/apis/rate-limits
 
 ---
 
-**Last updated:** 2025-10-24
-**Status:** Research phase
-**Next milestone:** Complete Phase 0 research
+**Last updated:** 2025-10-24 (Research complete)
+**Status:** Ready for Phase 0.5 (FastAPI background tasks)
+**Next milestone:** Implement Phase 0.5, then Phase 1
