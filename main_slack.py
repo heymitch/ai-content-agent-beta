@@ -4,7 +4,7 @@ Clean implementation with only essential Slack functionality
 """
 
 from anthropic import Anthropic, RateLimitError
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from supabase import create_client, Client
 import os
 import json
@@ -173,8 +173,8 @@ def health_check():
 # ============= SLACK EVENT HANDLERS =============
 
 @app.post('/slack/events')
-async def handle_slack_event(request: Request):
-    """Handle Slack events with proper async support"""
+async def handle_slack_event(request: Request, background_tasks: BackgroundTasks):
+    """Handle Slack events with proper async support and FastAPI background tasks"""
     # Get raw body for signature verification
     body_bytes = await request.body()
     body_text = body_bytes.decode('utf-8')
@@ -440,10 +440,10 @@ async def handle_slack_event(request: Request):
                     thread_ts=thread_ts
                 )
 
-        # Create background task
-        asyncio.create_task(process_message())
+        # Use FastAPI BackgroundTasks for proper lifecycle management
+        background_tasks.add_task(process_message)
 
-        # Return immediately to beat 3-second timeout
+        # Return immediately to beat Slack's 3-second timeout
         return {'status': 'processing'}
     # Handle reaction events
     elif event_type == 'reaction_added':
