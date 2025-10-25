@@ -198,37 +198,11 @@ class ContentQueueManager:
                 logger.warning(f"Failed to send Slack progress message: {e}")
 
         try:
-            # Import the appropriate workflow
-            if job.platform == "linkedin":
-                from agents.linkedin_sdk_agent import create_linkedin_post_workflow
-                result = await create_linkedin_post_workflow(
-                    topic=job.topic,
-                    context=job.context,
-                    style=job.style
-                )
-            elif job.platform == "twitter":
-                from agents.twitter_sdk_agent import create_twitter_thread_workflow
-                result = await create_twitter_thread_workflow(
-                    topic=job.topic,
-                    context=job.context,
-                    style=job.style
-                )
-            elif job.platform == "email":
-                from agents.email_sdk_agent import create_email_workflow
-                result = await create_email_workflow(
-                    topic=job.topic,
-                    context=job.context,
-                    style=job.style
-                )
-            elif job.platform in ["youtube", "video"]:
-                from agents.youtube_sdk_agent import create_youtube_workflow
-                result = await create_youtube_workflow(
-                    topic=job.topic,
-                    context=job.context,
-                    script_type=job.style
-                )
-            else:
-                raise ValueError(f"Unknown platform: {job.platform}")
+            # NEW: Wrap workflow execution in timeout (120 seconds = 2 minutes)
+            result = await asyncio.wait_for(
+                self._execute_workflow(job),
+                timeout=120
+            )
 
             # Success!
             job.status = ContentStatus.COMPLETED
@@ -259,8 +233,63 @@ class ContentQueueManager:
                 except Exception as e:
                     logger.warning(f"Failed to send Slack success message: {e}")
 
+        except asyncio.TimeoutError:
+            # Handle timeout as failure
+            timeout_error = Exception(f"Timeout: Post took >2 minutes (platform: {job.platform})")
+            logger.error(f"⏱️ Job {job.id} timed out after 120 seconds")
+
+            # Send Slack notification about timeout
+            if self.slack_client:
+                try:
+                    self.slack_client.chat_postMessage(
+                        channel=self.slack_channel,
+                        thread_ts=self.slack_thread_ts,
+                        text=f"⚠️ Post {self.stats['total_completed'] + 1}/{self.stats['total_queued']} timed out (>2 min)\n"
+                             f"Retrying..."
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send Slack timeout message: {e}")
+
+            await self._handle_job_failure(job, timeout_error)
+
         except Exception as e:
             await self._handle_job_failure(job, e)
+
+    async def _execute_workflow(self, job: ContentJob):
+        """Execute the appropriate platform workflow for a job"""
+        # Import the appropriate workflow
+        if job.platform == "linkedin":
+            from agents.linkedin_sdk_agent import create_linkedin_post_workflow
+            result = await create_linkedin_post_workflow(
+                topic=job.topic,
+                context=job.context,
+                style=job.style
+            )
+        elif job.platform == "twitter":
+            from agents.twitter_sdk_agent import create_twitter_thread_workflow
+            result = await create_twitter_thread_workflow(
+                topic=job.topic,
+                context=job.context,
+                style=job.style
+            )
+        elif job.platform == "email":
+            from agents.email_sdk_agent import create_email_workflow
+            result = await create_email_workflow(
+                topic=job.topic,
+                context=job.context,
+                style=job.style
+            )
+        elif job.platform in ["youtube", "video"]:
+            from agents.youtube_sdk_agent import create_youtube_workflow
+            result = await create_youtube_workflow(
+                topic=job.topic,
+                context=job.context,
+                script_type=job.style
+            )
+        else:
+            raise ValueError(f"Unknown platform: {job.platform}")
+
+        return result
 
     async def _handle_job_failure(self, job: ContentJob, error: Exception):
         """Handle failed job with retry logic"""
