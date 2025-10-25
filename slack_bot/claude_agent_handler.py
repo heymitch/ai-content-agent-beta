@@ -33,6 +33,10 @@ from agents.batch_orchestrator import (
 )
 from agents.context_manager import ContextManager
 
+# NEW: Global variable to store current handler instance for tool access
+# This allows tools to access slack_client and conversation context
+_current_handler = None
+
 
 # Define tools using @tool decorator as per docs
 @tool(
@@ -403,13 +407,32 @@ async def delegate_to_workflow(args):
             style=args.get('style', 'thought_leadership')
         )
     else:
-        # Multiple posts - use queue manager
+        # Multiple posts - use queue manager with Slack progress updates
+        # NEW: Get Slack context from global handler
+        global _current_handler
+        slack_client = None
+        channel = None
+        thread_ts = None
+
+        if _current_handler and _current_handler.slack_client:
+            # Get conversation context for current thread
+            # Find the current thread by checking which thread has been most recently accessed
+            if _current_handler._conversation_context:
+                # Get the most recent context (last item)
+                latest_context = list(_current_handler._conversation_context.values())[-1]
+                slack_client = _current_handler.slack_client
+                channel = latest_context['channel']
+                thread_ts = latest_context['thread_ts']
+
         result = await _delegate_bulk_workflow(
             platform=args.get('platform', 'linkedin'),
             topics=args.get('topics', [args.get('topic')] * count),
             context=args.get('context', ''),
             count=count,
-            style=args.get('style', 'thought_leadership')
+            style=args.get('style', 'thought_leadership'),
+            slack_client=slack_client,  # NEW: Pass Slack client
+            channel=channel,  # NEW: Pass channel
+            thread_ts=thread_ts  # NEW: Pass thread_ts
         )
 
     return {
@@ -1194,15 +1217,27 @@ The content is now scheduled in your Airtable calendar. You can edit the posting
         }
 
 
-async def _delegate_bulk_workflow(platform: str, topics: list, context: str, count: int, style: str):
+async def _delegate_bulk_workflow(
+    platform: str,
+    topics: list,
+    context: str,
+    count: int,
+    style: str,
+    slack_client=None,  # NEW: Pass Slack client for progress updates
+    channel: str = None,  # NEW: Channel ID
+    thread_ts: str = None  # NEW: Thread timestamp
+):
     """Handle bulk content generation using queue manager"""
     from agents.content_queue import ContentQueueManager, ContentJob
     from datetime import datetime
 
-    # Create queue manager
+    # Create queue manager with Slack integration
     queue_manager = ContentQueueManager(
         max_concurrent=3,  # Process 3 at a time
-        max_retries=2
+        max_retries=2,
+        slack_client=slack_client,  # NEW: Pass Slack client
+        slack_channel=channel,  # NEW: Pass channel
+        slack_thread_ts=thread_ts  # NEW: Pass thread_ts
     )
 
     # Prepare jobs
@@ -1239,15 +1274,19 @@ class ClaudeAgentHandler:
     Maintains one client per Slack thread for conversation continuity
     """
 
-    def __init__(self, memory_handler=None):
+    def __init__(self, memory_handler=None, slack_client=None):
         """Initialize the Claude Agent with SDK"""
         self.memory = memory_handler
+        self.slack_client = slack_client  # NEW: Store slack_client for progress updates
 
         # Thread-based session management (thread_ts -> ClaudeSDKClient)
         self._thread_sessions = {}
 
         # Track which sessions are already connected (thread_ts -> bool)
         self._connected_sessions = set()
+
+        # Track current conversation context for tools (thread_ts -> {channel, thread_ts})
+        self._conversation_context = {}  # NEW: For Slack progress updates
 
         # System prompt for the agent
         self.system_prompt = """You are CMO, a senior content strategist with 8+ years building brands from zero to millions of followers. You speak like a real person - direct, insightful, occasionally sarcastic, always helpful. You adapt to conversations but always drives toward actionable outcomes you can "take to your team" (delegate to subagents).
@@ -1613,6 +1652,16 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         Returns:
             Agent's response
         """
+
+        # NEW: Store conversation context for tools to access
+        self._conversation_context[thread_ts] = {
+            'channel': channel_id,
+            'thread_ts': thread_ts
+        }
+
+        # NEW: Set global handler reference so tools can access slack_client
+        global _current_handler
+        _current_handler = self
 
         # Add today's date context to the message (important for recency)
         from datetime import datetime

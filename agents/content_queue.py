@@ -56,7 +56,10 @@ class ContentQueueManager:
         max_concurrent: int = 3,  # Process 3 posts at a time
         max_retries: int = 2,
         retry_delay: int = 5,
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        slack_client = None,  # NEW: Slack WebClient for progress updates
+        slack_channel: str = None,  # NEW: Channel ID for messages
+        slack_thread_ts: str = None  # NEW: Thread timestamp for replies
     ):
         """
         Initialize queue manager
@@ -66,12 +69,20 @@ class ContentQueueManager:
             max_retries: Number of retry attempts for failed posts
             retry_delay: Seconds to wait before retry
             progress_callback: Function to call with progress updates
+            slack_client: Slack WebClient instance for real-time progress updates
+            slack_channel: Slack channel ID to send messages to
+            slack_thread_ts: Thread timestamp to reply in thread
         """
         self.queue = Queue()
         self.semaphore = Semaphore(max_concurrent)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.progress_callback = progress_callback
+
+        # Slack integration for progress updates
+        self.slack_client = slack_client
+        self.slack_channel = slack_channel
+        self.slack_thread_ts = slack_thread_ts
 
         # Track all jobs
         self.jobs: Dict[str, ContentJob] = {}
@@ -174,6 +185,18 @@ class ContentQueueManager:
                 'total': self.stats['total_queued']
             })
 
+        # NEW: Send Slack progress message BEFORE processing
+        if self.slack_client:
+            try:
+                self.slack_client.chat_postMessage(
+                    channel=self.slack_channel,
+                    thread_ts=self.slack_thread_ts,
+                    text=f"⏳ Creating post {self.stats['total_completed'] + 1}/{self.stats['total_queued']}...\n"
+                         f"Topic: {job.topic[:100]}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send Slack progress message: {e}")
+
         try:
             # Import the appropriate workflow
             if job.platform == "linkedin":
@@ -218,6 +241,23 @@ class ContentQueueManager:
             self._update_average_time(elapsed)
 
             logger.info(f"✅ Completed job {job.id} in {elapsed:.1f}s")
+
+            # NEW: Send Slack success message AFTER processing
+            if self.slack_client and result:
+                try:
+                    # Extract Airtable URL and score from result
+                    airtable_url = self._extract_airtable_url(result)
+                    quality_score = self._extract_quality_score(result)
+
+                    self.slack_client.chat_postMessage(
+                        channel=self.slack_channel,
+                        thread_ts=self.slack_thread_ts,
+                        text=f"✅ Post {self.stats['total_completed']}/{self.stats['total_queued']} complete!\n"
+                             f"📊 Airtable: {airtable_url}\n"
+                             f"🎯 Quality Score: {quality_score}/25"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send Slack success message: {e}")
 
         except Exception as e:
             await self._handle_job_failure(job, e)
@@ -300,6 +340,30 @@ class ContentQueueManager:
         """Wait for all queued jobs to complete"""
         await self.queue.join()
         logger.info(f"📊 Final stats: {self.stats}")
+
+    def _extract_airtable_url(self, result: str) -> str:
+        """Extract Airtable URL from result string"""
+        import re
+        try:
+            # Look for Airtable URL pattern
+            match = re.search(r'https://airtable\.com/[a-zA-Z0-9/]+', str(result))
+            if match:
+                return match.group(0)
+            return "N/A"
+        except Exception:
+            return "N/A"
+
+    def _extract_quality_score(self, result: str) -> str:
+        """Extract quality score from result string"""
+        import re
+        try:
+            # Look for score pattern like "Score: 22/25" or "Quality: 22/25"
+            match = re.search(r'(?:Score|Quality):\s*(\d+)/25', str(result))
+            if match:
+                return match.group(1)
+            return "N/A"
+        except Exception:
+            return "N/A"
 
 
 # ================== SLACK INTEGRATION ==================
