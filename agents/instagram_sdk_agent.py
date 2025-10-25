@@ -707,8 +707,13 @@ Trust the prompts - they include write-like-human rules."""
                 print(f"   Record ID: {airtable_record_id}")
                 print(f"   URL: {airtable_url}")
             else:
-                print(f"❌ Airtable save FAILED:")
-                print(f"   Error: {result.get('error')}")
+                # Check if this is a quota error
+                if result.get('is_quota_error'):
+                    print(f"⚠️ Airtable quota exceeded - saving to Supabase only")
+                    print(f"   (Post will still be accessible, just not in Airtable)")
+                else:
+                    print(f"❌ Airtable save FAILED:")
+                    print(f"   Error: {result.get('error')}")
         except Exception as e:
             import traceback
             print(f"❌ EXCEPTION in Airtable save:")

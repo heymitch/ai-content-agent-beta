@@ -1113,6 +1113,73 @@ Continue creating posts - quality is improving with each iteration!"""
         }
 
 
+# ================== BATCH CONTROL TOOLS (Phase 6A) ==================
+# NEW: Cancel and status tools for bulk generation
+
+@tool(
+    "cancel_batch",
+    "Cancel an active bulk content generation job. In-progress posts will complete, queued posts will be cancelled.",
+    {"plan_id": str}
+)
+async def cancel_batch_tool(args):
+    """
+    Cancel batch tool - allows users to stop bulk generation mid-execution
+
+    Args:
+        plan_id: The batch plan ID to cancel
+
+    Returns:
+        Cancellation status
+    """
+    from prompts.batch_tools import cancel_batch
+    plan_id = args.get('plan_id', '')
+
+    if not plan_id:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No plan_id provided. Use get_batch_status() to see active batches."
+            }]
+        }
+
+    result = cancel_batch(plan_id)
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "get_batch_status",
+    "Check status of bulk content generation. Shows progress, completed/failed/pending counts, and time estimates.",
+    {"plan_id": str}
+)
+async def get_batch_status_tool(args):
+    """
+    Get batch status tool - shows real-time progress of bulk generation
+
+    Args:
+        plan_id: Optional - specific batch ID to check. If empty, shows all active batches.
+
+    Returns:
+        Status information with progress bar
+    """
+    from prompts.batch_tools import get_batch_status
+    plan_id = args.get('plan_id', None)
+
+    result = await get_batch_status(plan_id)
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
 # ================== CALENDAR / APPROVAL TOOLS ==================
 
 @tool(
@@ -1663,11 +1730,14 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 apply_fixes_twitter,
                 apply_fixes_email,
                 apply_fixes_youtube,
-                apply_fixes_instagram
+                apply_fixes_instagram,
+                # Batch control tools (NEW Phase 6A)
+                cancel_batch_tool,
+                get_batch_status_tool
             ]
         )
 
-        print("🚀 Claude Agent SDK initialized with 28 tools (9 general + 4 batch + 15 co-writing tools for 5 platforms)")
+        print("🚀 Claude Agent SDK initialized with 30 tools (9 general + 6 batch + 15 co-writing tools for 5 platforms)")
 
     def _get_or_create_session(self, thread_ts: str) -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""

@@ -23,6 +23,7 @@ class ContentStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     RETRYING = "retrying"
+    CANCELLED = "cancelled"  # NEW: For cancelled jobs
 
 
 @dataclass
@@ -87,12 +88,14 @@ class ContentQueueManager:
         # Track all jobs
         self.jobs: Dict[str, ContentJob] = {}
         self.processing = False
+        self.cancelled = False  # NEW: Track if batch was cancelled
 
         # Statistics
         self.stats = {
             'total_queued': 0,
             'total_completed': 0,
             'total_failed': 0,
+            'total_cancelled': 0,  # NEW: Track cancelled jobs
             'average_time': 0
         }
 
@@ -155,6 +158,17 @@ class ContentQueueManager:
 
         try:
             while not self.queue.empty():
+                # Check if batch was cancelled
+                if self.cancelled:
+                    logger.info("⚠️ Batch cancelled - marking remaining jobs as cancelled")
+                    # Cancel all remaining jobs in queue
+                    while not self.queue.empty():
+                        job = await self.queue.get()
+                        job.status = ContentStatus.CANCELLED
+                        self.stats['total_cancelled'] += 1
+                        self.queue.task_done()
+                    break
+
                 # Get next job (blocks if queue is empty)
                 job = await self.queue.get()
 
@@ -167,7 +181,10 @@ class ContentQueueManager:
 
         finally:
             self.processing = False
-            logger.info("✅ Queue processing complete")
+            if self.cancelled:
+                logger.info("🛑 Queue processing cancelled")
+            else:
+                logger.info("✅ Queue processing complete")
 
     async def _process_job(self, job: ContentJob):
         """Process a single content job with retries"""
@@ -341,7 +358,8 @@ class ContentQueueManager:
             'processing': 0,
             'completed': 0,
             'failed': 0,
-            'retrying': 0
+            'retrying': 0,
+            'cancelled': 0  # NEW: Track cancelled jobs
         }
 
         for job in self.jobs.values():
@@ -369,6 +387,27 @@ class ContentQueueManager:
         """Wait for all queued jobs to complete"""
         await self.queue.join()
         logger.info(f"📊 Final stats: {self.stats}")
+
+    def cancel_batch(self):
+        """
+        Cancel the batch execution
+        - In-progress jobs will complete
+        - Queued jobs will be marked as cancelled
+        """
+        if not self.processing:
+            return {
+                'success': False,
+                'message': 'No batch currently running'
+            }
+
+        self.cancelled = True
+        logger.warning("🛑 Batch cancellation requested")
+
+        return {
+            'success': True,
+            'message': 'Batch cancellation initiated. In-progress posts will complete, pending posts will be cancelled.',
+            'stats': self.stats.copy()
+        }
 
     def _extract_airtable_url(self, result: str) -> str:
         """Extract Airtable URL from result string"""
@@ -452,14 +491,36 @@ async def handle_bulk_content_request(
     # Send final summary
     stats = await queue_manager.get_all_status()
 
-    summary = f"""✅ **Bulk Generation Complete**
+    # Calculate success/failure breakdown
+    total_posts = stats['stats']['total_queued']
+    completed = stats['stats']['total_completed']
+    failed = stats['stats']['total_failed']
+    cancelled = stats['stats'].get('total_cancelled', 0)
 
-    📊 Results:
-    - Completed: {stats['stats']['total_completed']}
-    - Failed: {stats['stats']['total_failed']}
-    - Average time: {stats['stats']['average_time']:.1f}s per post
+    # Determine summary emoji and message based on results
+    if cancelled > 0:
+        # Batch was cancelled
+        header = f"🛑 **Batch Cancelled**\n✅ {completed} posts completed\n🚫 {cancelled} posts cancelled"
+    elif failed == 0:
+        # Perfect success
+        header = f"✅ **Batch Complete - All {completed} Posts Created!**"
+    elif completed > 0:
+        # Partial success
+        header = f"⚠️ **Batch Complete - Partial Success**\n✅ {completed}/{total_posts} posts succeeded\n❌ {failed}/{total_posts} posts failed"
+    else:
+        # Complete failure
+        header = f"❌ **Batch Failed - All {failed} Posts Failed**"
 
-    Check Airtable for all generated content!
+    summary = f"""{header}
+
+📊 Stats:
+- Total requested: {total_posts}
+- Successfully created: {completed}
+- Failed: {failed}
+{f'- Cancelled: {cancelled}' if cancelled > 0 else ''}
+- Average time: {stats['stats']['average_time']:.1f}s per post
+
+{f'Check Airtable for {completed} generated posts!' if completed > 0 else 'Please check errors above and try again.'}
     """
 
     slack_client.chat_postMessage(
