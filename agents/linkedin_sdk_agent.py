@@ -768,21 +768,99 @@ Trust the prompts - they include write-like-human rules."""
             clean_output = ""
             hook_preview = "Extraction failed (see Suggested Edits)"
 
-        # Extract score if mentioned in output
-        score = 90  # Default, would parse from actual output
-
-        # Run validators (quality check + optional GPTZero)
-        validation_json = None
+        # Extract quality check results from SDK agent output
+        # The SDK agent already ran quality_check and apply_fixes tools
+        # We just need to extract the quality JSON from its output
+        score = 90  # Default fallback
         validation_formatted = None
+
         try:
-            from integrations.validation_utils import run_all_validators, format_validation_for_airtable
-            validation_json = await run_all_validators(clean_output, 'linkedin')
-            # Format for human-readable Airtable display
-            validation_formatted = format_validation_for_airtable(validation_json)
+            print(f"\n🔍 Extracting quality check results from SDK output...")
+
+            import re
+            import json
+
+            # Look for quality check JSON in the output
+            # Pattern matches: {"scores": {...}, "decision": "...", "issues": [...]}
+            quality_pattern = r'\{[^\{\}]*"scores"[^\{\}]*"decision"[^\{\}]*"issues"[^\{\}]*\}'
+            quality_match = re.search(quality_pattern, output, re.DOTALL)
+
+            if quality_match:
+                try:
+                    quality_json = json.loads(quality_match.group(0))
+                    score = quality_json.get('scores', {}).get('total', 90)
+                    decision = quality_json.get('decision', 'unknown')
+                    issues = quality_json.get('issues', [])
+                    scores_detail = quality_json.get('scores', {})
+
+                    print(f"✅ Extracted quality results: Score {score}/25, Decision: {decision}")
+
+                    # Format for Airtable Suggested Edits field
+                    decision_emoji = {
+                        'accept': '✅',
+                        'revise': '⚠️',
+                        'reject': '❌',
+                        'error': '🔴'
+                    }.get(decision, '❓')
+
+                    validation_formatted = f"""{decision_emoji} **Quality Check: {decision.upper()}**
+
+📊 **Total Score**: {score}/25
+
+**Breakdown**:
+"""
+                    for axis, axis_score in scores_detail.items():
+                        if axis != 'total':
+                            validation_formatted += f"• {axis.replace('_', ' ').title()}: {axis_score}/5\n"
+
+                    if issues:
+                        validation_formatted += f"\n⚠️ **Issues Found** ({len(issues)}):\n"
+                        for i, issue in enumerate(issues, 1):
+                            severity = issue.get('severity', 'medium')
+                            original = issue.get('original', 'N/A')[:100]
+                            fix = issue.get('fix', 'N/A')[:100]
+                            validation_formatted += f"\n{i}. [{severity.upper()}] {original}\n   → {fix}\n"
+                    else:
+                        validation_formatted += "\n✅ **No issues found** - Post is ready to publish!"
+
+                except json.JSONDecodeError as json_err:
+                    print(f"⚠️ JSON parse error in quality data: {json_err}")
+                    raise
+            else:
+                # Quality JSON not found - provide fallback
+                print(f"⚠️ Could not find quality JSON in output")
+                validation_formatted = f"""📝 **Post Created Successfully**
+
+Quality check was performed but results format not recognized.
+
+**Manual Review Checklist**:
+- ✓ Verify all facts/names/companies are accurate
+- ✓ Check for AI writing patterns (contrast framing, rule of three)
+- ✓ Ensure hook format is strong (question/bold/stat/story/mistake)
+- ✓ Confirm proof points are specific
+
+Post length: {len(clean_output)} chars
+Hook: {hook_preview[:80]}..."""
+
         except Exception as e:
-            print(f"⚠️ Validation error (non-fatal): {e}")
-            validation_json = None
-            validation_formatted = None
+            import traceback
+            print(f"⚠️ Error extracting quality data: {e}")
+            print(traceback.format_exc())
+
+            # Provide user-friendly fallback for Airtable
+            validation_formatted = f"""⚠️ **Quality Check Extraction Failed**
+
+Error: {str(e)[:200]}
+
+**Post was created but quality data could not be extracted.**
+
+**Recommended Actions**:
+1. Review for AI writing patterns
+2. Verify all facts and names
+3. Check hook strength
+4. Ensure proof points are specific
+
+Post length: {len(clean_output)} chars"""
 
         # Save to Airtable
         print("\n" + "="*60)

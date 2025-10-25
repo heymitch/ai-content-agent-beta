@@ -2001,10 +2001,18 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             return final_text
 
         except Exception as e:
+            error_str = str(e)
             print(f"❌ Agent error: {e}")
             import traceback
             traceback.print_exc()
-            return f"Sorry, I encountered an error: {str(e)}"
+
+            # Format error message for Slack - hide ugly API details
+            if any(keyword in error_str.lower() for keyword in ['api_error', '500', 'internal server error', 'anthropic']):
+                return "⚠️ Sorry, I encountered an API issue while creating content. Some posts may have been created successfully - please check Airtable. Full error details are in the server logs."
+            else:
+                # Truncate long error messages
+                clean_error = error_str[:400] + "..." if len(error_str) > 400 else error_str
+                return f"Sorry, I encountered an error: {clean_error}"
 
     def _format_for_slack(self, text: str) -> str:
         """Convert markdown to Slack mrkdwn format"""

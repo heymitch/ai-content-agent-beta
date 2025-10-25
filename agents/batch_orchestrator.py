@@ -320,21 +320,26 @@ def extract_score_from_result(result: str) -> int:
     Returns:
         Score as integer (0-25 or 0-100, normalized to 25)
     """
-    # Try to find score pattern
-    score_match = re.search(r'Quality Score[:\s]+(\d+)(?:/(\d+))?', result, re.IGNORECASE)
+    # Try to find score pattern - handle multiple formats
+    # Formats: "Quality Score: 22/25", "Score: 90/100", "score:22/25"
+    score_match = re.search(r'(?:Quality\s+)?Score[:\s]*(\d+)\s*/\s*(\d+)', result, re.IGNORECASE)
 
     if score_match:
         score = int(score_match.group(1))
-        max_score = int(score_match.group(2)) if score_match.group(2) else 25
+        max_score = int(score_match.group(2))
 
         # Normalize to 25-point scale
         if max_score == 100:
             score = int(score / 4)  # Convert 100-point to 25-point
+        elif max_score != 25:
+            # Unexpected max score - normalize proportionally
+            score = int((score / max_score) * 25)
 
         return min(25, max(0, score))
 
     # Fallback: Default to 20 if not found
-    print(f"⚠️ Could not extract score from result, defaulting to 20")
+    print(f"⚠️ Could not extract score from result (first 200 chars): {result[:200]}...")
+    print(f"   Defaulting to 20/25")
     return 20
 
 
@@ -574,13 +579,22 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
         }
 
     except Exception as e:
-        print(f"   ❌ Error: {e}")
+        print(f"   ❌ Post creation error: {e}")
         import traceback
         traceback.print_exc()
 
+        # Return structured error so batch can continue
+        # Include enough info for user to see what went wrong
+        error_msg = str(e)[:300]  # Truncate long errors
+
         return {
             'success': False,
-            'error': str(e)
+            'score': 0,
+            'platform': post_spec['platform'],
+            'hook': f"Post {post_index + 1} failed - {error_msg[:50]}...",
+            'airtable_url': None,
+            'learnings_summary': f"❌ Error (post {post_index + 1}): {error_msg}",
+            'error': error_msg
         }
 
 
