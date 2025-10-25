@@ -40,6 +40,11 @@ from agents.context_manager import ContextManager
 # This allows tools to access slack_client and conversation context
 _current_handler = None
 
+# Global variable to store current Slack context (channel_id, thread_ts, user_id)
+# Populated at the start of each handle_conversation() call
+# Allows tools to access Slack metadata without passing through function signatures
+_current_slack_context = {}
+
 
 # Define tools using @tool decorator as per docs
 @tool(
@@ -882,7 +887,17 @@ async def plan_content_batch(args):
         }
 
     try:
-        plan = create_batch_plan(posts_list, description)
+        # Access global Slack context for metadata
+        context = _current_slack_context
+
+        # Pass Slack metadata to batch plan
+        plan = create_batch_plan(
+            posts_list,
+            description,
+            channel_id=context.get('channel_id'),
+            thread_ts=context.get('thread_ts'),
+            user_id=context.get('user_id')
+        )
 
         # Format plan summary
         summary = f"""✅ **Batch Plan Created**
@@ -1873,6 +1888,14 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         global _current_handler
         _current_handler = self
 
+        # Set global Slack context for tools to access metadata
+        global _current_slack_context
+        _current_slack_context = {
+            'channel_id': channel_id,
+            'thread_ts': thread_ts,
+            'user_id': user_id
+        }
+
         # Add today's date context to the message (important for recency)
         from datetime import datetime
         today = datetime.now().strftime("%B %d, %Y")  # e.g., "October 09, 2025"
@@ -1905,17 +1928,35 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 # The SDK maintains full conversation history internally
                 msg_type = type(msg).__name__
 
-                # Extract text content for logging
+                # Extract text content and log tool calls
                 text_preview = None
                 if hasattr(msg, 'content'):
                     if isinstance(msg.content, list):
                         for block in msg.content:
-                            if isinstance(block, dict) and block.get('type') == 'text':
-                                latest_response = block.get('text', '')
-                                text_preview = latest_response[:150]
+                            # Handle dict-style blocks (raw API format)
+                            if isinstance(block, dict):
+                                block_type = block.get('type')
+                                if block_type == 'text':
+                                    latest_response = block.get('text', '')
+                                    text_preview = latest_response[:150]
+                                elif block_type == 'tool_use':
+                                    tool_name = block.get('name', 'unknown')
+                                    tool_input = block.get('input', {})
+                                    # Create brief preview of args
+                                    args_preview = str(tool_input)[:100]
+                                    print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
+                                elif block_type == 'tool_result':
+                                    result_preview = str(block.get('content', ''))[:100]
+                                    print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
+                            # Handle object-style blocks (SDK format)
                             elif hasattr(block, 'text'):
                                 latest_response = block.text
                                 text_preview = latest_response[:150]
+                            elif hasattr(block, 'name'):  # Likely a tool_use block
+                                tool_name = block.name
+                                tool_input = getattr(block, 'input', {})
+                                args_preview = str(tool_input)[:100]
+                                print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
                     elif hasattr(msg.content, 'text'):
                         latest_response = msg.content.text
                         text_preview = latest_response[:150]

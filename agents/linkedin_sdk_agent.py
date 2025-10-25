@@ -485,16 +485,27 @@ class LinkedInSDKAgent:
     Orchestrates Tier 3 tools and maintains platform-specific context
     """
 
-    def __init__(self, user_id: str = "default", isolated_mode: bool = False):
+    def __init__(
+        self,
+        user_id: str = "default",
+        isolated_mode: bool = False,
+        channel_id: Optional[str] = None,
+        thread_ts: Optional[str] = None
+    ):
         """Initialize LinkedIn SDK Agent with memory and tools
 
         Args:
             user_id: User identifier for session management
             isolated_mode: If True, creates isolated sessions (for testing only)
+            channel_id: Slack channel ID (for Airtable/Supabase saves)
+            thread_ts: Slack thread timestamp (for Airtable/Supabase saves)
         """
         self.user_id = user_id
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
+        # Store Slack metadata for saving to Airtable/Supabase
+        self.channel_id = channel_id
+        self.thread_ts = thread_ts
 
         # LinkedIn-specific base prompt with quality thresholds
         base_prompt = """You are a LinkedIn content creation agent. Your goal: posts that score 18+ out of 25 without needing 3 rounds of revision.
@@ -848,7 +859,8 @@ Trust the prompts - they include write-like-human rules."""
                 'status': 'draft',
                 'quality_score': score,
                 'iterations': 3,  # Would track from actual process
-                'slack_thread_ts': getattr(self, 'session_id', None),
+                'slack_thread_ts': self.thread_ts,  # Use stored Slack metadata
+                'slack_channel_id': self.channel_id,  # NEW: Store channel ID
                 'user_id': self.user_id,
                 'created_by_agent': 'linkedin_sdk_agent',
                 'embedding': embedding
@@ -984,15 +996,30 @@ Be harsh but constructive. We need 85+ quality."""
 async def create_linkedin_post_workflow(
     topic: str,
     context: str = "",
-    style: str = "thought_leadership"
+    style: str = "thought_leadership",
+    channel_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> str:
     """
     Main entry point for LinkedIn content creation
     Called by the main CMO agent's delegate_to_workflow tool
     Returns structured response with hook preview and links
+
+    Args:
+        topic: Main topic for the post
+        context: Additional context
+        style: Content style
+        channel_id: Slack channel ID (for Airtable/Supabase saves)
+        thread_ts: Slack thread timestamp (for Airtable/Supabase saves)
+        user_id: Slack user ID (for Airtable/Supabase saves)
     """
 
-    agent = LinkedInSDKAgent()
+    agent = LinkedInSDKAgent(
+        user_id=user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts
+    )
 
     # Map style to post type
     post_type = "carousel" if "visual" in style.lower() else "standard"

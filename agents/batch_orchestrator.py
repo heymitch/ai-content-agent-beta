@@ -210,7 +210,10 @@ async def _execute_single_post(
     context: str,
     style: str,
     learnings: str,
-    target_score: int
+    target_score: int,
+    channel_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> str:
     """
     Execute one post using EXISTING SDK agent workflows
@@ -223,6 +226,9 @@ async def _execute_single_post(
         style: Content style
         learnings: Compacted learnings from previous posts
         target_score: Target quality score
+        channel_id: Slack channel ID (for Airtable/Supabase)
+        thread_ts: Slack thread timestamp (for Airtable/Supabase)
+        user_id: Slack user ID (for Airtable/Supabase)
 
     Returns:
         Result string from SDK agent (contains post, score, Airtable URL)
@@ -237,13 +243,16 @@ async def _execute_single_post(
 
 Apply the learnings above to improve this post. Focus on what worked well in previous posts."""
 
-    # Call appropriate SDK agent workflow
+    # Call appropriate SDK agent workflow with Slack metadata
     if platform == "linkedin":
         from agents.linkedin_sdk_agent import create_linkedin_post_workflow
         result = await create_linkedin_post_workflow(
             topic=topic,
             context=enhanced_context,
-            style=style or 'thought_leadership'
+            style=style or 'thought_leadership',
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            user_id=user_id
         )
 
     elif platform == "twitter":
@@ -251,7 +260,10 @@ Apply the learnings above to improve this post. Focus on what worked well in pre
         result = await create_twitter_thread_workflow(
             topic=topic,
             context=enhanced_context,
-            style=style or 'tactical'
+            style=style or 'tactical',
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            user_id=user_id
         )
 
     elif platform == "email":
@@ -259,7 +271,10 @@ Apply the learnings above to improve this post. Focus on what worked well in pre
         result = await create_email_workflow(
             topic=topic,
             context=enhanced_context,
-            email_type=style or 'Email_Value'
+            email_type=style or 'Email_Value',
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            user_id=user_id
         )
 
     elif platform == "youtube":
@@ -267,7 +282,10 @@ Apply the learnings above to improve this post. Focus on what worked well in pre
         result = await create_youtube_workflow(
             topic=topic,
             context=enhanced_context,
-            script_type=style or 'educational'
+            script_type=style or 'educational',
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            user_id=user_id
         )
 
     elif platform == "instagram":
@@ -275,7 +293,10 @@ Apply the learnings above to improve this post. Focus on what worked well in pre
         result = await create_instagram_post_workflow(
             topic=topic,
             context=enhanced_context,
-            style=style or 'inspirational'
+            style=style or 'inspirational',
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            user_id=user_id
         )
 
     else:
@@ -377,13 +398,22 @@ def extract_hook_from_result(result: str) -> str:
 
 # ============= CMO Agent Tool Helper Functions =============
 
-def create_batch_plan(posts: List[Dict[str, Any]], description: str) -> Dict[str, Any]:
+def create_batch_plan(
+    posts: List[Dict[str, Any]],
+    description: str,
+    channel_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    user_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Create a batch plan and store it in the global registry
 
     Args:
         posts: List of post specs [{"platform": "...", "topic": "...", "context": "..."}]
         description: High-level description of the batch
+        channel_id: Slack channel ID (for saving to Airtable)
+        thread_ts: Slack thread timestamp (for saving to Airtable)
+        user_id: Slack user ID (for saving to Airtable)
 
     Returns:
         Plan dict with ID and context_quality assessment
@@ -407,7 +437,13 @@ def create_batch_plan(posts: List[Dict[str, Any]], description: str) -> Dict[str
         'description': description,
         'posts': posts,
         'context_quality': context_quality,  # NEW: Track for SDK agents
-        'created_at': datetime.now().isoformat()
+        'created_at': datetime.now().isoformat(),
+        # Store Slack metadata for SDK agents to use when saving to Airtable
+        'slack_metadata': {
+            'channel_id': channel_id,
+            'thread_ts': thread_ts,
+            'user_id': user_id
+        }
     }
 
     # Store plan in global registry
@@ -459,6 +495,12 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     # NEW: Get context quality from plan
     context_quality = plan.get('context_quality', 'medium')
 
+    # NEW: Get Slack metadata from plan
+    slack_metadata = plan.get('slack_metadata', {})
+    channel_id = slack_metadata.get('channel_id')
+    thread_ts = slack_metadata.get('thread_ts')
+    user_id = slack_metadata.get('user_id')
+
     # Get learnings from previous posts
     learnings = context_mgr.get_compacted_learnings()
     target_score = context_mgr.get_target_score()
@@ -474,6 +516,7 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     print(f"   Platform: {post_spec['platform']}")
     print(f"   Context quality: {context_quality}")
     print(f"   Target score: {target_score}+")
+    print(f"   Slack context: channel={channel_id}, thread={thread_ts}, user={user_id}")
 
     # Build enhanced context with quality indicator and learnings
     enhanced_context = f"""{post_spec.get('context', '')}
@@ -486,14 +529,18 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
 **Target quality score:** {target_score}+/25"""
 
     try:
-        # Execute post using SDK agent with enhanced context
+        # Execute post using SDK agent with enhanced context AND Slack metadata
         result = await _execute_single_post(
             platform=post_spec['platform'],
             topic=post_spec['topic'],
             context=enhanced_context,  # Enhanced with quality hints + learnings
             style=post_spec.get('style', ''),
             learnings=learnings,
-            target_score=target_score
+            target_score=target_score,
+            # Pass Slack metadata for Airtable/Supabase saves
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            user_id=user_id
         )
 
         # Extract metadata
