@@ -709,16 +709,33 @@ Trust the prompts - they include write-like-human rules."""
                                         preview = text_content[:300].replace('\n', ' ')
                                         print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
                                         print(f"         PREVIEW: {preview}...")
+                                elif hasattr(block, 'type') and block.type == 'tool_use':
+                                    # Object-style tool_use block
+                                    tool_name = getattr(block, 'name', 'unknown')
+                                    tool_input = str(getattr(block, 'input', {}))[:150]
+                                    print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                    print(f"         Input preview: {tool_input}...")
                         elif hasattr(msg.content, 'text'):
                             text_content = msg.content.text
                             if text_content:
                                 final_output = text_content
+                                preview = text_content[:300].replace('\n', ' ')
                                 print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
+                                print(f"         PREVIEW: {preview}...")
+
+                                # Check for tool_use in content blocks (object style)
+                                if hasattr(msg.content, '__iter__'):
+                                    for item in msg.content:
+                                        if hasattr(item, 'type') and item.type == 'tool_use':
+                                            tool_name = getattr(item, 'name', 'unknown')
+                                            print(f"      🔧 SDK Agent calling tool: {tool_name}")
                     elif hasattr(msg, 'text'):
                         text_content = msg.text
                         if text_content:
                             final_output = text_content
+                            preview = text_content[:300].replace('\n', ' ')
                             print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
+                            print(f"         PREVIEW: {preview}...")
 
             print(f"\n   ✅ Stream complete after {message_count} messages")
             print(f"   📝 Final output: {len(final_output)} chars")
