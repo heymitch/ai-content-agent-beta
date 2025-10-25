@@ -27,6 +27,33 @@ load_dotenv()
 # Detailed prompts loaded just-in-time when tools are called
 
 @tool(
+    "search_company_documents",
+    "Search user-uploaded docs (case studies, testimonials, product docs) for proof points",
+    {"query": str, "match_count": int, "document_type": str}
+)
+async def search_company_documents(args):
+    """Search company documents for context enrichment"""
+    from tools.company_documents import search_company_documents as _search_func
+
+    query = args.get('query', '')
+    match_count = args.get('match_count', 3)
+    document_type = args.get('document_type')
+
+    result = _search_func(
+        query=query,
+        match_count=match_count,
+        document_type=document_type
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
     "generate_5_hooks",
     "Generate 5 email subject lines",
     {"topic": str, "context": str, "target_audience": str}
@@ -65,24 +92,34 @@ async def generate_5_hooks(args):
 
 @tool(
     "inject_proof_points",
-    "Add metrics and proof points to email",
+    "Add metrics and proof points to email. Searches company documents first for real case studies.",
     {"draft": str, "topic": str, "industry": str}
 )
 async def inject_proof_points(args):
-    """Inject proof - prompt loaded JIT"""
+    """Inject proof - searches company docs first, then prompt loaded JIT"""
     from anthropic import Anthropic
     from prompts.email_tools import INJECT_PROOF_PROMPT, WRITE_LIKE_HUMAN_RULES
+    from tools.company_documents import search_company_documents as _search_func
+
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     draft = args.get('draft', '')
     topic = args.get('topic', '')
     industry = args.get('industry', 'Email Marketing')
 
+    # NEW: Search company documents for proof points FIRST
+    proof_context = _search_func(
+        query=f"{topic} case study metrics ROI testimonial",
+        match_count=3,
+        document_type=None
+    )
+
     prompt = INJECT_PROOF_PROMPT.format(
         write_like_human_rules=WRITE_LIKE_HUMAN_RULES,
         draft=draft,
         topic=topic,
-        industry=industry
+        industry=industry,
+        proof_context=proof_context  # NEW: Include company docs
     )
 
     response = client.messages.create(
@@ -561,17 +598,18 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final email when thresh
         # Create MCP server with Email-specific tools (LEAN 5-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
             name="email_tools",
-            version="1.0.0",
+            version="4.1.0",
             tools=[
+                search_company_documents,  # NEW v4.1.0
                 generate_5_hooks,
                 create_human_draft,
-                inject_proof_points,
+                inject_proof_points,  # Enhanced: Now searches company docs first
                 quality_check,  # Combined: AI patterns + fact-check
                 apply_fixes     # Combined: Fix everything in one pass
             ]
         )
 
-        print("📧 Email SDK Agent initialized with 5 lean tools (PGA writing style embedded)")
+        print("📧 Email SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
@@ -638,7 +676,9 @@ Email Type: {email_type}
 LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
 1. Call mcp__email_tools__generate_5_hooks
 2. Select best subject line, then call mcp__email_tools__create_human_draft
-3. Call mcp__email_tools__inject_proof_points
+3. EVALUATE: Does this draft make specific claims, cite examples, or need credibility?
+   - YES (proof needed): Call mcp__email_tools__inject_proof_points
+   - NO (thought leadership/opinion): Skip to step 4
 4. Call mcp__email_tools__quality_check (gets ALL issues: AI patterns + fabrications)
 5. Call mcp__email_tools__apply_fixes (fixes everything in ONE pass)
 6. Return final email and STOP

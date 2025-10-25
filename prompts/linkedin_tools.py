@@ -188,10 +188,13 @@ Draft: {draft}
 Topic: {topic}
 Industry: {industry}
 
+**COMPANY DOCUMENTS SEARCH RESULTS:**
+{proof_context}
+
 **WHERE PROOF CAN COME FROM:**
 1. **TOPIC/CONTEXT** - User explicitly provided: "6 hours → 10 minutes", "March 2024", "50 nodes"
 2. **WEB SEARCH RESULTS** - Verified via web_search tool (future): company metrics, industry benchmarks
-3. **RAG/DATABASE** - Retrieved from user's past posts, testimonials, case studies (future)
+3. **COMPANY DOCUMENTS** - Retrieved from user-uploaded docs (case studies, testimonials, product docs) - SEE ABOVE
 
 **CRITICAL: DO NOT FABRICATE**
 - ❌ Making up dollar amounts: "$1,050", "$29"

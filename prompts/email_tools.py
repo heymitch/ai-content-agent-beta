@@ -248,11 +248,13 @@ Draft: {draft}
 Topic: {topic}
 Industry: {industry}
 
+**COMPANY DOCUMENTS SEARCH RESULTS:**
+{proof_context}
+
 **WHERE PROOF CAN COME FROM:**
 1. **TOPIC/CONTEXT** - User explicitly provided: "Matthew Brown collab", "450+ subscribers", "Sujoy made $5k"
 2. **WEB SEARCH RESULTS** - Verified via web_search tool (future): industry benchmarks
-3. **RAG/DATABASE** - Retrieved from company_documents, case studies (future)
-VITAL RULE: You MAY add RAG-retrieved testimonials from company_documents BUT NEVER from content_examples
+3. **COMPANY DOCUMENTS** - Retrieved from user-uploaded docs (case studies, testimonials, product docs) - SEE ABOVE
 
 
 **CRITICAL: DO NOT FABRICATE**

@@ -107,10 +107,13 @@ Draft: {draft}
 Topic: {topic}
 Industry: {industry}
 
+**COMPANY DOCUMENTS SEARCH RESULTS:**
+{proof_context}
+
 **WHERE PROOF CAN COME FROM:**
 1. **TOPIC/CONTEXT** - User explicitly provided: "Alex 500→5k subs", "workshop with 50+ creators"
 2. **WEB SEARCH RESULTS** - Verified via web_search tool (future): industry benchmarks
-3. **RAG/DATABASE** - Retrieved from user's past content, case studies (future)
+3. **COMPANY DOCUMENTS** - Retrieved from user-uploaded docs (case studies, testimonials, product docs) - SEE ABOVE
 
 **CRITICAL: DO NOT FABRICATE**
 - ❌ Making up creator names: "Sarah grew her channel"

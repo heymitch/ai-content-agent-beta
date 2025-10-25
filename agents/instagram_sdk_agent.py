@@ -32,6 +32,33 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 # Detailed prompts loaded just-in-time when tools are called
 
 @tool(
+    "search_company_documents",
+    "Search user-uploaded docs (case studies, testimonials, product docs) for proof points",
+    {"query": str, "match_count": int, "document_type": str}
+)
+async def search_company_documents(args):
+    """Search company documents for context enrichment"""
+    from tools.company_documents import search_company_documents as _search_func
+
+    query = args.get('query', '')
+    match_count = args.get('match_count', 3)
+    document_type = args.get('document_type')
+
+    result = _search_func(
+        query=query,
+        match_count=match_count,
+        document_type=document_type
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
     "generate_5_hooks",
     "Generate 5 Instagram hooks optimized for 125-char preview",
     {"topic": str, "context": str, "target_audience": str}
@@ -439,8 +466,9 @@ LEAN WORKFLOW:
         # Create MCP server with Instagram-specific tools (LEAN 5-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
             name="instagram_tools",
-            version="1.0.0",
+            version="4.1.0",
             tools=[
+                search_company_documents,  # NEW v4.1.0
                 generate_5_hooks,
                 create_caption_draft,
                 condense_to_limit,
@@ -449,7 +477,7 @@ LEAN WORKFLOW:
             ]
         )
 
-        print("🎯 Instagram SDK Agent initialized with 5 lean tools")
+        print("📸 Instagram SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
