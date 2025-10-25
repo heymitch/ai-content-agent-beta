@@ -838,7 +838,26 @@ async def apply_fixes_instagram(args):
 @tool(
     "plan_content_batch",
     "Create a structured plan for N posts across platforms. Returns plan ID for tracking.",
-    {"posts": list, "description": str}
+    {
+        "type": "object",
+        "properties": {
+            "posts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "platform": {"type": "string", "description": "Platform: linkedin, twitter, email, youtube, or instagram"},
+                        "topic": {"type": "string", "description": "Main topic/angle for the post"},
+                        "context": {"type": "string", "description": "Additional context or background"},
+                        "style": {"type": "string", "description": "Style: thought_leadership, tactical, educational, or storytelling"}
+                    },
+                    "required": ["platform", "topic"]
+                }
+            },
+            "description": {"type": "string", "description": "High-level description of the batch"}
+        },
+        "required": ["posts"]
+    }
 )
 async def plan_content_batch(args):
     """
