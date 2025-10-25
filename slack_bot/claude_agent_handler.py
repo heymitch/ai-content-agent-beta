@@ -16,6 +16,7 @@ import asyncio
 # Import our existing tool functions
 from tools.search_tools import web_search as _web_search_func
 from tools.search_tools import search_knowledge_base as _search_kb_func
+from tools.company_documents import search_company_documents as _search_company_docs_func
 from tools.template_search import search_templates_semantic as _search_templates_func
 from tools.template_search import get_template_by_name as _get_template_func
 from slack_bot.agent_tools import (
@@ -27,7 +28,8 @@ from slack_bot.agent_tools import (
 from agents.batch_orchestrator import (
     execute_sequential_batch,
     create_batch_plan,
-    execute_single_post_from_plan
+    execute_single_post_from_plan,
+    diversify_topics
 )
 from agents.context_manager import ContextManager
 
@@ -64,6 +66,31 @@ async def search_knowledge_base(args):
     match_count = args.get('match_count', 5)
 
     result = _search_kb_func(query=query, match_count=match_count)
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "search_company_documents",
+    "Search user-uploaded company documents (case studies, testimonials, product docs). Use BEFORE asking user for context.",
+    {"query": str, "match_count": int, "document_type": str}
+)
+async def search_company_documents(args):
+    """Search company documents for context enrichment"""
+    query = args.get('query', '')
+    match_count = args.get('match_count', 3)
+    document_type = args.get('document_type')  # Optional: 'case_study', 'testimonial', 'product_doc'
+
+    result = _search_company_docs_func(
+        query=query,
+        match_count=match_count,
+        document_type=document_type
+    )
 
     return {
         "content": [{
@@ -1247,10 +1274,11 @@ Do NOT tell users to "check websites" - YOU search for them.
 **YOUR CAPABILITIES:**
 1. web_search - USE THIS FIRST for any news/events/updates (include year/date in query!)
 2. search_knowledge_base - Internal documentation and brand voice
-3. search_past_posts - Past content you've created
-4. get_content_calendar - Scheduled posts
-5. get_thread_context - Thread history
-6. analyze_content_performance - Performance metrics
+3. search_company_documents - User-uploaded docs (case studies, testimonials, product docs) - USE BEFORE asking for context
+4. search_past_posts - Past content you've created
+5. get_content_calendar - Scheduled posts
+6. get_thread_context - Thread history
+7. analyze_content_performance - Performance metrics
 
 **CONTENT CREATION WORKFLOW:**
 
@@ -1264,6 +1292,54 @@ PHASE 1: Strategic Conversation (BEFORE content creation decision)
   - "What tone: confident, cautious, provocative?"
 - Help user refine thesis and make strategic decisions
 - When user says "create", "write", "draft", "make" + content type → PHASE 2
+
+**SPECIAL: Batch Content Requests (5+ posts)**
+When user requests 5+ posts, PROACTIVELY search company documents BEFORE asking questions:
+
+1. **Immediate Search:**
+   Call search_company_documents(query="[topic] case studies examples testimonials")
+
+2. **Evaluate Results:**
+   - **Rich (3+ docs):** "Found [N] company docs about [topic]. Creating [N]-post plan with this context..."
+   - **Medium (1-2 docs):** "Found [N] doc(s). Quick question: any specific [examples/experiences] to add?"
+   - **Sparse (0 docs + vague topic):** Ask for context anchors OR offer thought leadership
+
+3. **Context Anchor Request (Sparse Context Only):**
+   "I can create [N] posts about [topic], but to avoid generic content, I need context anchors.
+
+   Quick questions (2 minutes):
+
+   1. **Personal Experience:** What's ONE specific way you've used/observed [topic]?
+      Example: 'I replaced 3 workflows with one agent, saved 15 hours/week'
+
+   2. **Specific Examples:** Any companies, people, or products you have opinions on?
+      Example: 'ChatGPT vs Claude' or 'Adobe Firefly vs Midjourney'
+
+   3. **Concrete Observations:** What pattern have you noticed that others miss?
+      Example: 'I see 10 posts a day with the same hook structure'
+
+   Give me 1-2 for each, and I'll create [N] unique posts with variety.
+
+   OR: Say 'skip' and I'll create thought leadership posts (idea-driven, shorter, no proof claims)."
+
+4. **User Response Handling:**
+   - Provides anchors → Distribute across batch, create plan
+   - Says "skip" → Use thought leadership approach (see below)
+   - Provides topic → Use for proof posts
+
+**Thought Leadership Fallback (Sparse Context + Skip):**
+When NO company docs AND user skips questions:
+- Post length: 800-1000 chars (vs 1200-1500)
+- Content type: Idea-driven, opinion-based
+- Framing: "I believe X because Y" (explicit opinion)
+- FORBIDDEN: Hallucinated stats ("Studies show..."), fake examples ("Sarah Chen...")
+- Focus: Frameworks, predictions, contrarian takes, observations
+
+**Context Anchor Distribution:**
+If user provides 3 anchors for 15 posts:
+- Posts 1-5: Anchor 1 (personal experience) with variations
+- Posts 6-10: Anchor 2 (specific examples) with variations
+- Posts 11-15: Anchor 3 (observations) with variations
 
 PHASE 2: Content Creation (AFTER user requests content)
 - User has explicitly requested content creation ("create Twitter thread", "write LinkedIn post", etc.)
@@ -1458,10 +1534,11 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         # Create MCP server with our tools
         self.mcp_server = create_sdk_mcp_server(
             name="slack_tools",
-            version="2.4.0",
+            version="2.5.0",
             tools=[
                 web_search,
                 search_knowledge_base,
+                search_company_documents,  # NEW in v2.5.0: User-uploaded docs for context enrichment
                 search_past_posts,
                 get_content_calendar,
                 get_thread_context,
@@ -1494,7 +1571,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             ]
         )
 
-        print("🚀 Claude Agent SDK initialized with 27 tools (8 general + 4 batch + 15 co-writing tools for 5 platforms)")
+        print("🚀 Claude Agent SDK initialized with 28 tools (9 general + 4 batch + 15 co-writing tools for 5 platforms)")
 
     def _get_or_create_session(self, thread_ts: str) -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""

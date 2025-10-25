@@ -1,0 +1,157 @@
+{
+  "template_id": "linkedin_lead_magnet_v1",
+  "name": "Lead Magnet Post",
+  "platform": "linkedin",
+  "description": "Post that offers a valuable free resource in exchange for engagement, designed to generate leads",
+  "use_when": [
+    "Promoting a free guide, template, or resource",
+    "Building your email list or audience",
+    "Converting LinkedIn engagement to leads",
+    "Launching a new lead magnet or content asset"
+  ],
+  "structure": {
+    "hook": {
+      "word_count": [15, 30],
+      "format": "Attention-grabbing statement that creates curiosity",
+      "guidelines": [
+        "End with a colon (:)",
+        "Include specific numbers or results when possible",
+        "Keep under 140 characters to avoid truncation"
+      ],
+      "examples": [
+        "Yesterday I spent 6.5 hours creating 4 (massive) AI prompts to help you:",
+        "I charge $5,000 to implement this system for my clients. But f*ck it - I'll give you all my prompts & templates for free…"
+      ]
+    },
+    "big_promise": {
+      "word_count": [40, 60],
+      "purpose": "Explain the specific outcome or problem your lead magnet solves",
+      "guidelines": [
+        "Be specific about results or benefits",
+        "Use bullet points for easy scanning",
+        "Include social proof if possible"
+      ]
+    },
+    "reason_why": {
+      "word_count": [40, 60],
+      "purpose": "Explain why you're giving this away (increases conversion)",
+      "guidelines": [
+        "Create urgency with time limits if applicable",
+        "Be authentic about your motivation",
+        "Keep paragraphs under 3 lines for mobile readability"
+      ]
+    },
+    "offer_stack": {
+      "word_count": [60, 100],
+      "format": "Bulleted list of everything included in the lead magnet",
+      "guidelines": [
+        "Make each feature tangible and specific",
+        "Add numbers or dollar values when possible",
+        "Start with 'It includes:' or similar phrase"
+      ]
+    },
+    "cta": {
+      "word_count": [30, 50],
+      "format": "Clear instructions on how to get the lead magnet",
+      "guidelines": [
+        "Use bullet points for steps",
+        "Keep it simple: like, comment, connect",
+        "Specify exact comment text (e.g., 'Comment \"template\"')"
+      ],
+      "examples": [
+        "Want access?\n• Like this post\n• Comment \"welcome\"\n• Send me a connection request (so I can DM you)"
+      ]
+    },
+    "ps": {
+      "word_count": [20, 40],
+      "optional": true,
+      "purpose": "Increase conversion with social proof or handle objections",
+      "format": "Always start with 'PS -'",
+      "guidelines": [
+        "Can show additional social proof",
+        "Can handle a potential objection",
+        "Can tease an additional benefit not mentioned earlier"
+      ]
+    }
+  },
+  "quality_criteria": [
+    {
+      "axis": "hook",
+      "threshold": 4,
+      "description": "Stops scroll with curiosity or bold claim"
+    },
+    {
+      "axis": "clarity",
+      "threshold": 5,
+      "description": "Offer is instantly understandable"
+    },
+    {
+      "axis": "value_perception",
+      "threshold": 4,
+      "description": "Lead magnet seems highly valuable"
+    },
+    {
+      "axis": "urgency",
+      "threshold": 3,
+      "description": "Creates desire to act now"
+    },
+    {
+      "axis": "voice",
+      "threshold": 4,
+      "description": "Clear, direct, conversational"
+    }
+  ],
+  "formatting_guidelines": [
+    "Use short sentences and paragraphs",
+    "Avoid paragraphs longer than 3 lines on mobile",
+    "Use '•' for bullet points (no markdown on LinkedIn)",
+    "Use line breaks and '...' to break up text",
+    "No emojis",
+    "Optimal length: 800-1200 characters"
+  ],
+  "forbidden_patterns": [
+    "Don't use vague descriptions of the lead magnet",
+    "Avoid complex or multi-step CTAs",
+    "Don't forget to specify exact comment text",
+    "No excessive hype without substance"
+  ],
+  "examples": [
+    "I used to believe webinars were stupid. But guess what? I was dead wrong...",
+    "Yesterday I spent 6.5 hours creating 4 (massive) AI prompts to help you:",
+    "I charge $5,000 to implement this system for my clients. But f*ck it - I'll give you all my prompts & templates for free…"
+  ],
+  "copywriting_rules": {
+    "tone": [
+      "Clear, concise, and direct",
+      "Conversational and engaging",
+      "Bold and confident claims when backed by results"
+    ],
+    "structure": [
+      "Hook should create a curiosity gap to get clicks on 'see more'",
+      "Hook can use 2 short punchy single-sentence paragraphs with line break OR 2-3 line paragraph under 140 characters",
+      "Last sentence of hook should always end with a colon (:)",
+      "Big Promise should be specific about outcomes or problems solved",
+      "Reason Why section increases compliance by explaining motivation",
+      "Offer Stack should list all components to increase perceived value",
+      "CTA should clearly list steps to get the lead magnet",
+      "PS section should start with 'PS -' format"
+    ],
+    "forbidden": [
+      "No paragraphs longer than 3 lines when viewed on mobile",
+      "No emojis",
+      "No markdown (LinkedIn doesn't support it)",
+      "No vague descriptions of the lead magnet",
+      "No excessive hype without substance"
+    ],
+    "required_elements": [
+      "Hooks with big numbers or money figures tend to outperform",
+      "Include social proof when explaining outcomes/problems when possible",
+      "Make each feature in the Offer Stack tangible and specific",
+      "Add numbers or dollar values to features when possible",
+      "Keep CTA simple: like, comment, connect",
+      "Specify exact comment text in CTA (e.g., 'Comment \"template\"')",
+      "Total post length between 800-1200 characters",
+      "Use '•' symbol for bullets"
+    ]
+  }
+}

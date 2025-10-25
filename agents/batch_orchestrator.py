@@ -386,14 +386,27 @@ def create_batch_plan(posts: List[Dict[str, Any]], description: str) -> Dict[str
         description: High-level description of the batch
 
     Returns:
-        Plan dict with ID
+        Plan dict with ID and context_quality assessment
     """
     plan_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    # NEW: Analyze context quality across all posts
+    total_context_chars = sum(len(p.get('context', '')) for p in posts)
+    avg_context = total_context_chars / len(posts) if posts else 0
+
+    # Determine context quality level
+    if avg_context < 100:
+        context_quality = "sparse"  # Minimal context, use thought leadership
+    elif avg_context < 300:
+        context_quality = "medium"  # Some context, blend proof + opinion
+    else:
+        context_quality = "rich"  # Rich context, full proof posts
 
     plan = {
         'id': plan_id,
         'description': description,
         'posts': posts,
+        'context_quality': context_quality,  # NEW: Track for SDK agents
         'created_at': datetime.now().isoformat()
     }
 
@@ -403,7 +416,7 @@ def create_batch_plan(posts: List[Dict[str, Any]], description: str) -> Dict[str
     # Create context manager for this plan
     _context_managers[plan_id] = ContextManager(plan_id)
 
-    print(f"📋 Created batch plan: {plan_id} with {len(posts)} posts")
+    print(f"📋 Created batch plan: {plan_id} with {len(posts)} posts (context: {context_quality})")
 
     return plan
 
@@ -443,20 +456,41 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
 
     post_spec = plan['posts'][post_index]
 
+    # NEW: Get context quality from plan
+    context_quality = plan.get('context_quality', 'medium')
+
     # Get learnings from previous posts
     learnings = context_mgr.get_compacted_learnings()
     target_score = context_mgr.get_target_score()
 
+    # NEW: Adjust target score based on context quality
+    if context_quality == "sparse":
+        target_score = min(20, target_score)  # Lower expectations for thought leadership
+        content_type_hint = "Thought Leadership (idea-driven, 800-1000 chars, opinion-based)"
+    else:
+        content_type_hint = "Proof Post (specific examples, 1200-1500 chars, data-driven)"
+
     print(f"\n📝 Executing post {post_index + 1}/{len(plan['posts'])}")
     print(f"   Platform: {post_spec['platform']}")
+    print(f"   Context quality: {context_quality}")
     print(f"   Target score: {target_score}+")
 
+    # Build enhanced context with quality indicator and learnings
+    enhanced_context = f"""{post_spec.get('context', '')}
+
+**Content Type:** {content_type_hint}
+
+**Learnings from previous posts:**
+{learnings}
+
+**Target quality score:** {target_score}+/25"""
+
     try:
-        # Execute post using SDK agent
+        # Execute post using SDK agent with enhanced context
         result = await _execute_single_post(
             platform=post_spec['platform'],
             topic=post_spec['topic'],
-            context=post_spec.get('context', ''),
+            context=enhanced_context,  # Enhanced with quality hints + learnings
             style=post_spec.get('style', ''),
             learnings=learnings,
             target_score=target_score
@@ -514,3 +548,172 @@ def get_context_manager(plan_id: str) -> Optional[ContextManager]:
         ContextManager instance or None
     """
     return _context_managers.get(plan_id)
+
+
+async def diversify_topics(
+    topic: str,
+    count: int,
+    platform: str = "linkedin"
+) -> List[Dict[str, Any]]:
+    """
+    Expand vague topic into N unique angles (thought leadership approach)
+
+    Used when user has NO company docs AND skips context questions
+
+    Distribution:
+    - 40% Thought Leadership (contrarian takes, opinions, predictions)
+    - 35% Tactical/Educational (how-to, frameworks, common mistakes)
+    - 25% Story-Based (personal experiences, lessons learned)
+
+    Args:
+        topic: Vague topic (e.g., "AI", "blockchain", "remote work")
+        count: Number of unique angles to generate
+        platform: Target platform (default "linkedin")
+
+    Returns:
+        List of post specs with diversified angles:
+        [
+            {"platform": "linkedin", "topic": "Why AI isn't a bubble", "context": "Type: thought_leadership...", "style": "thought_leadership"},
+            {"platform": "linkedin", "topic": "AI agents vs chatbots", "context": "Type: educational...", "style": "educational"},
+            ...
+        ]
+    """
+    from anthropic import Anthropic
+    import json
+
+    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+    # Calculate distribution
+    thought_leadership_count = int(count * 0.40)
+    tactical_count = int(count * 0.35)
+    story_count = count - thought_leadership_count - tactical_count  # Remainder
+
+    prompt = f"""Expand "{topic}" into {count} unique {platform} post angles.
+
+IMPORTANT: User has NO company documents and chose thought leadership approach.
+Posts will be 800-1000 chars, idea-driven, opinion-based (NO proof claims).
+
+Distribution:
+- {thought_leadership_count} Thought Leadership: Contrarian takes, bold opinions, predictions, observations
+- {tactical_count} Tactical/Educational: How-tos, frameworks, common mistakes, lessons
+- {story_count} Story-Based: Hypothetical experiences, lessons learned, journey observations
+
+Return JSON array with this structure:
+[
+  {{
+    "angle": "Why AI isn't a bubble (contrarian take)",
+    "type": "thought_leadership"
+  }},
+  {{
+    "angle": "5 AI tools most people ignore",
+    "type": "tactical"
+  }},
+  {{
+    "angle": "My journey from AI skeptic to believer",
+    "type": "story"
+  }}
+]
+
+CRITICAL RULES:
+- Each angle must be SPECIFIC and UNIQUE
+- Avoid generic angles like "The future of AI" or "AI trends"
+- Focus on OPINIONS and IDEAS (not data/proof)
+- Angles should spark curiosity or challenge assumptions
+
+Generate {count} unique angles now:"""
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        # Extract JSON from response
+        response_text = response.content[0].text
+
+        # Find JSON array in response
+        start_idx = response_text.find('[')
+        end_idx = response_text.rfind(']') + 1
+
+        if start_idx == -1 or end_idx == 0:
+            # Fallback: couldn't parse JSON
+            print(f"⚠️ Could not parse JSON from diversify_topics response")
+            angles = _generate_fallback_angles(topic, count)
+        else:
+            json_str = response_text[start_idx:end_idx]
+            angles = json.loads(json_str)
+
+        # Build post specs
+        diversified = []
+        for i, angle_spec in enumerate(angles[:count]):  # Limit to exact count
+            post_type = angle_spec.get('type', 'thought_leadership')
+
+            diversified.append({
+                "platform": platform,
+                "topic": angle_spec['angle'],
+                "context": f"""Type: {post_type}
+
+**Thought Leadership Style:**
+- 800-1000 chars (shorter than proof posts)
+- Idea-driven, opinion-based
+- "I believe X because Y" framing
+- NO hallucinated stats or fake examples
+- Focus on frameworks, predictions, contrarian takes
+
+This is post {i+1}/{count} in the batch.""",
+                "style": "thought_leadership"
+            })
+
+        print(f"✅ Diversified '{topic}' into {len(diversified)} unique angles")
+        return diversified
+
+    except Exception as e:
+        print(f"❌ Error diversifying topics: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # Fallback to simple angle generation
+        return _generate_fallback_angles(topic, count, platform)
+
+
+def _generate_fallback_angles(topic: str, count: int, platform: str = "linkedin") -> List[Dict[str, Any]]:
+    """
+    Fallback angle generation if LLM call fails
+
+    Generates simple angles like:
+    - "The future of [topic]"
+    - "Why [topic] matters"
+    - "Common [topic] mistakes"
+    """
+    angle_templates = [
+        f"Why {topic} isn't what you think",
+        f"The {topic} productivity paradox",
+        f"{topic}: Contrarian take",
+        f"5 {topic} mistakes everyone makes",
+        f"How to actually use {topic}",
+        f"The {topic} framework nobody talks about",
+        f"My {topic} journey (lessons learned)",
+        f"When NOT to use {topic}",
+        f"{topic} ethics without the buzzwords",
+        f"The future of {topic} (prediction)",
+    ]
+
+    fallback = []
+    for i in range(count):
+        template_idx = i % len(angle_templates)
+        fallback.append({
+            "platform": platform,
+            "topic": angle_templates[template_idx],
+            "context": f"""Type: thought_leadership
+
+**Thought Leadership Style:**
+- 800-1000 chars
+- Idea-driven, opinion-based
+- NO hallucinated stats or fake examples
+
+This is post {i+1}/{count} in the batch.""",
+            "style": "thought_leadership"
+        })
+
+    return fallback
