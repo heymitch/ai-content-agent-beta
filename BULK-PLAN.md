@@ -1101,35 +1101,200 @@ Agent: "🎉 Month of content complete! 30 posts in Airtable, ready to schedule.
 **Risk:** High (complex state management, lots of moving parts)
 **Reward:** **MASSIVE - this is the flagship demo**
 
-### Phase 6: Error Recovery & Resilience
+### Phase 6: Error Recovery, Resilience & UX Polish
 
-**Goal:** Graceful degradation, no data loss
+**Goal:** Graceful degradation, no data loss, better user experience
 
-**Enhancements:**
+**AGENT SCOPE BOUNDARY:**
+- **Agent Responsibility:** Strategy → Execution → Airtable Delivery
+- **N8N Responsibility:** Post-Creation Editing → Google Docs Sync → Publishing
+- **Phase 6 Focus:** In-agent improvements only (post-creation edits handled by N8N)
 
-1. **Partial success handling:**
-   - If 2/3 posts succeed, show user the 2 links + error for post 3
-   - Don't block on failures
+---
 
-2. **Airtable quota handling:**
+### Phase 6A: Critical Fixes (4-6 hours)
+
+**Status of Original Phase 6 Items:**
+
+1. **Network retry logic:** ✅ ALREADY DONE (Phase 2)
+   - Implemented in content_queue.py with asyncio.wait_for()
+   - Max 2 retries with 5-second delay
+   - Timeout error handling
+
+2. **Partial success handling:** ⚠️ NEEDS ENHANCEMENT
+   - ✅ Queue continues on failures (doesn't block)
+   - ❌ Missing: Explicit summary to user in Slack
+   - **TODO:** Add batch completion summary: "✅ 5/7 posts succeeded. 2 failed (see errors above)"
+   - **Effort:** 30 minutes
+
+3. **Airtable quota handling:** ❌ TODO
    - If Airtable quota exceeded, save to Supabase only
    - Notify user, continue with remaining posts
+   - **Effort:** 2 hours
 
-3. **Network retry logic:**
-   - Exponential backoff on Anthropic API errors
-   - Max 3 retries per post
+4. **User cancellation:** ❌ TODO (Identified in breaking scenarios)
+   - Add tools: `cancel_batch(plan_id)`, `get_batch_status(plan_id)`
+   - User can stop batch mid-execution
+   - **Effort:** 4 hours
+   - **Priority:** HIGH (users will want this)
 
-4. **Progress persistence:**
+5. **Progress persistence:** ❌ SKIP FOR MVP
    - Save queue state to Supabase every 30s
-   - If server restarts mid-batch, resume from last checkpoint
+   - Resume after server restart
+   - **Decision:** Nice-to-have, defer to Phase 6D
 
-5. **User cancellation:**
-   - Add `/cancel` Slack command
-   - Marks pending jobs as cancelled
-   - Completes in-progress jobs gracefully
+---
 
-**Duration:** 1 day
-**Risk:** Low (safety net for production)
+### Phase 6B: UX Quick Wins (3 hours)
+
+**New improvements from breaking scenarios analysis:**
+
+1. **Platform requirement** (15 min)
+   - Don't assume LinkedIn
+   - System prompt: "Which platform? (linkedin/twitter/email/youtube/instagram)"
+
+2. **Better error messages with next steps** (30 min)
+   - Current: "⚠️ Timed out, retrying..."
+   - Better: "⚠️ Post 5 timed out. Retrying (2/3)... If it fails again, I'll skip and continue."
+   - Include what user should do next
+
+3. **Time estimates in batch plans** (15 min)
+   - When showing plan: "⏱️ Estimated time: 15 minutes (10 posts × 90 sec)"
+   - Set expectations upfront
+
+4. **Explicit approval CTAs** (10 min)
+   - End plans with: "Say 'execute', 'create', or 'go ahead' when ready"
+   - After 2 min silence: "Still there? Say 'execute' to start"
+
+5. **Topic confirmation prompts** (30 min)
+   - "5 posts about AI and productivity" → Agent asks: "5 posts total mixing both, or 10 posts (5 per topic)?"
+
+6. **Vague request handling** (30 min)
+   - "make some posts" → "I need 3 pieces of info: (1) How many? (2) Platform? (3) Topics?"
+
+**Total: ~2.5 hours**
+
+---
+
+### Phase 6C: Advanced Features (4-5 hours)
+
+1. **Duplicate request detection** (2 hours)
+   - Before starting batch, check conversation for active plans
+   - "I'm already creating 5 posts (see above). Continue or cancel?"
+   - Store `{thread_ts: active_plan_id}` in handler
+
+2. **Cancel/status tools** (2-3 hours)
+   - `cancel_batch(plan_id)` - Stop execution, mark pending as cancelled
+   - `get_batch_status(plan_id)` - Show "5/10 created, 3 in progress, 2 pending"
+   - Allow graceful cancellation mid-batch
+
+3. **Ghost recovery** (1 hour)
+   - After 1 hour silence: "Still working on that plan. Say 'status' or 'cancel'"
+   - When user returns: "Welcome back! Here's where we left off: [plan]"
+
+---
+
+### Phase 6D: Nice-to-Have (Future Phases)
+
+1. **Progress persistence to Supabase**
+   - Save queue state every 30s
+   - Resume after server restart
+   - **Decision:** Defer (Replit Reserved VM is stable, low priority)
+
+2. **Exponential backoff on Anthropic API errors**
+   - Current: Fixed 5-second retry delay
+   - Enhancement: 5s → 10s → 20s backoff
+   - **Decision:** Defer (current retry works fine)
+
+**Duration Estimates:**
+- Phase 6A: 4-6 hours
+- Phase 6B: 3 hours
+- Phase 6C: 4-5 hours
+- **Total: ~11-14 hours (1.5-2 days)**
+
+**Risk:** Low (all additive, no breaking changes)
+
+---
+
+### Breaking Scenarios Analysis
+
+**How Non-Technical Users Could Break This System:**
+
+| Scenario | Agent Fix | User Training | Priority | Effort |
+|----------|-----------|---------------|----------|--------|
+| **Vague requests** ("make posts") | ✅ Required clarification | 📚 Examples in docs | HIGH | Low (30min) |
+| **Mid-batch interruption** ("wait stop!") | ✅ Cancel + status tools | 📚 Explain background | HIGH | Medium (4hrs) |
+| **Duplicate requests** (impatient re-ask) | ✅ Duplicate detection | - | HIGH | Medium (2hrs) |
+| **Unrealistic expectations** (100 posts instantly) | ✅ Time estimates | 📚 Set expectations | MEDIUM | Low (15min) |
+| **Platform confusion** (assumes LinkedIn) | ✅ Required platform | - | HIGH | Low (15min) |
+| **Context overload** (500-word dump) | ⚠️ Extraction help | 📚 Structured requests | MEDIUM | Low (30min) |
+| **Approval confusion** (silent after plan) | ✅ Clear CTAs + timeout | - | MEDIUM | Low (10min) |
+| **Error confusion** (doesn't know what to do) | ✅ Better error messages | 📚 Troubleshooting | HIGH | Low (30min) |
+| **Topic confusion** ("AI and productivity") | ✅ Confirmation prompts | - | MEDIUM | Low (30min) |
+| **The Ghost** (disappears 1 hour) | ✅ Timeout prompts | - | LOW | Medium (1hr) |
+| **Confusing revisions** ("change that one") | ⚠️ Ask for post # | 📚 Use numbering | MEDIUM | Low (built-in) |
+| **Style misunderstanding** ("professional") | ⚠️ Ask examples | 📚 How to describe | LOW | Low (prompt) |
+| **The Perfectionist** (endless edits) | ⚠️ Limit + suggest n8n | 📚 N8N for polish | LOW | Low (prompt) |
+| **Multi-user collision** | - | 📚 Thread organization | LOW | - |
+| **Post-creation edits** | ❌ N/A | ✅ N8N + Google Docs | **N/A** | **N/A** |
+
+**Key Insights:**
+- ~70% fixable in agent (mostly prompt engineering)
+- ~20% requires user training/docs
+- ~10% handled by N8N (post-creation edits)
+
+**Biggest Agent Gaps:**
+1. **No cancellation** - Users can't stop mid-batch (HIGH priority)
+2. **Duplicate detection** - Impatient users create duplicates (HIGH priority)
+3. **Platform assumption** - Agent assumes LinkedIn (HIGH priority, easy fix)
+
+**N8N Handles:**
+- All post-creation editing ("make this more casual")
+- Style tweaks after delivery
+- Endless revision loops
+
+---
+
+### Enhanced Testing Checklist
+
+**From Original Plan (Line 1342) + Breaking Scenarios:**
+
+#### **Regression Testing:**
+- [ ] Single post still works (no regression)
+- [ ] Quality scores still accurate
+- [ ] Airtable saves still work
+- [ ] Supabase embeddings still work
+
+#### **Bulk Workflow Testing:**
+- [ ] "Create 3 LinkedIn posts" → 3 separate Airtable rows
+- [ ] "Create 5 Twitter threads" → Progress updates every 30-60s
+- [ ] "Create 2 LinkedIn, 2 Twitter, 1 Email" → All 5 created correctly, mixed platforms
+- [ ] Week of content (7 posts) → Calendar format in Airtable
+- [ ] Month of content (30 posts) → Batched with checkpoints every 10
+
+#### **Error Handling Testing:**
+- [ ] Mock 3-minute workflow → Timeout at 120s → Retry → Skip if still fails
+- [ ] Kill network mid-post → Graceful failure → Retry triggered → User notified
+- [ ] Airtable quota hit → Saves to Supabase only → User notified
+- [ ] 5/7 posts succeed, 2 fail → User gets summary: "5/7 succeeded, 2 failed"
+
+#### **Breaking Scenarios Testing (From Analysis):**
+- [ ] **Vague:** "make posts" → Agent asks: "How many? Which platform? Topics?"
+- [ ] **Interrupt:** Request 10 → After 3 created → "stop" → Agent stops gracefully
+- [ ] **Duplicate:** Request 5 → Wait 30s → Request 5 again → Agent detects: "Already creating 5"
+- [ ] **Platform:** "Create 5 posts" (no platform) → Agent asks: "Which platform?"
+- [ ] **Approval:** Shows plan → User silent 2 min → Agent prompts: "Say 'execute' when ready"
+- [ ] **Topic:** "5 posts about AI and productivity" → Agent asks: "5 total or 10 (5 per topic)?"
+- [ ] **Ghost:** Plan shown → User disappears 1 hour → Returns → Agent: "Welcome back! [shows plan]"
+
+#### **Plan Revision Testing (Phase 4):**
+- [ ] Request 7 posts → Agent shows plan → User: "Change post 3" → Plan updated (still 7) → Execute → 7 total created (not 8)
+- [ ] Request 15 posts → Edit posts 3, 7, 12 → Final plan has 15 posts with edits applied
+
+#### **Stress Testing:**
+- [ ] 50 posts → Verify compaction every 10 posts
+- [ ] 100 posts → Verify checkpoints, time estimate accurate (~2.5 hours)
+- [ ] Cancel at post 25/50 → 25 completed, 25 cancelled, no duplicates
 
 ---
 
