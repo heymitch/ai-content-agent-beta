@@ -86,6 +86,15 @@ def get_slack_handler():
             print("✅ Slack handler initialized (no calendar)")
     return slack_handler
 
+# ============= FASTAPI LIFECYCLE EVENTS =============
+
+@app.on_event("startup")
+async def clear_dev_caches():
+    """Clear handler cache on startup to ensure fresh prompts after code updates"""
+    global slack_handler
+    slack_handler = None
+    print("🔄 Startup: Cleared handler cache (ensures fresh system prompts on hot reload)")
+
 # ============= RATE LIMITING =============
 
 class TokenBucketRateLimiter:

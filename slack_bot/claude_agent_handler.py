@@ -12,6 +12,8 @@ import os
 from typing import Dict, Optional, Any
 import json
 import asyncio
+import hashlib
+import time
 
 # Import our existing tool functions
 from tools.search_tools import web_search as _web_search_func
@@ -1355,6 +1357,10 @@ class ClaudeAgentHandler:
         # Track current conversation context for tools (thread_ts -> {channel, thread_ts})
         self._conversation_context = {}  # NEW: For Slack progress updates
 
+        # Session version tracking for cache invalidation
+        self._session_prompt_versions = {}  # thread_ts -> prompt hash
+        self._session_created_at = {}  # thread_ts -> timestamp
+
         # System prompt for the agent
         self.system_prompt = """You are CMO, a senior content strategist with 8+ years building brands from zero to millions of followers. You speak like a real person - direct, insightful, occasionally sarcastic, always helpful. You adapt to conversations but always drives toward actionable outcomes you can "take to your team" (delegate to subagents).
 
@@ -1712,6 +1718,9 @@ User says "direct to calendar" → BATCH MODE (any count, automated)
 
 If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (November 6, 2023). Search with FULL context."""
 
+        # Calculate prompt version hash for cache invalidation
+        self.prompt_version = hashlib.md5(self.system_prompt.encode()).hexdigest()[:8]
+
         # Create MCP server with our tools
         self.mcp_server = create_sdk_mcp_server(
             name="slack_tools",
@@ -1759,6 +1768,34 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
     def _get_or_create_session(self, thread_ts: str) -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""
+        SESSION_TTL = 3600  # 1 hour session lifetime
+        now = time.time()
+
+        # Check if we need to invalidate existing session
+        if thread_ts in self._thread_sessions:
+            # Check 1: Prompt version changed (code update with new prompt)
+            if thread_ts in self._session_prompt_versions:
+                old_version = self._session_prompt_versions[thread_ts]
+                if old_version != self.prompt_version:
+                    print(f"🔄 Prompt updated ({old_version} → {self.prompt_version}), recreating session for thread {thread_ts[:8]}")
+                    del self._thread_sessions[thread_ts]
+                    self._connected_sessions.discard(thread_ts)
+                    del self._session_prompt_versions[thread_ts]
+                    if thread_ts in self._session_created_at:
+                        del self._session_created_at[thread_ts]
+
+            # Check 2: Session expired (> 1 hour old)
+            if thread_ts in self._session_created_at:
+                age = now - self._session_created_at[thread_ts]
+                if age > SESSION_TTL:
+                    print(f"⏰ Session expired ({int(age/60)} minutes old), recreating session for thread {thread_ts[:8]}")
+                    del self._thread_sessions[thread_ts]
+                    self._connected_sessions.discard(thread_ts)
+                    if thread_ts in self._session_prompt_versions:
+                        del self._session_prompt_versions[thread_ts]
+                    del self._session_created_at[thread_ts]
+
+        # Create new session if needed
         if thread_ts not in self._thread_sessions:
             # Configure options for this thread
             # setting_sources=["project"] tells SDK to automatically load .claude/CLAUDE.md for brand context
@@ -1773,7 +1810,10 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             )
 
             self._thread_sessions[thread_ts] = ClaudeSDKClient(options=options)
-            print(f"✨ Created new session for thread {thread_ts[:8]} with CMO identity")
+            self._session_prompt_versions[thread_ts] = self.prompt_version
+            self._session_created_at[thread_ts] = now
+
+            print(f"✨ Created new session for thread {thread_ts[:8]} with CMO identity (prompt version: {self.prompt_version})")
             print(f"🎭 System prompt starts with: {self.system_prompt[:100]}...")
 
             # DEBUG: Verify which prompt version is loaded
