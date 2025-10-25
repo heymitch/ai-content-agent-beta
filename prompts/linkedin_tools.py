@@ -227,7 +227,17 @@ Return the enhanced draft only (plain text, NO markdown formatting like **bold**
 
 # ==================== CREATE HUMAN DRAFT ====================
 
-CREATE_HUMAN_DRAFT_PROMPT = dedent("""
+CREATE_HUMAN_DRAFT_PROMPT = dedent(f"""
+═══════════════════════════════════════════════════════════════
+WRITE LIKE A HUMAN (COMPREHENSIVE ANTI-SLOP RULES):
+═══════════════════════════════════════════════════════════════
+
+{WRITE_LIKE_HUMAN_RULES}
+
+═══════════════════════════════════════════════════════════════
+END OF ANTI-SLOP RULES
+═══════════════════════════════════════════════════════════════
+
 You are writing a LinkedIn post. Your job: create content that scores 18+ out of 25 without needing 3 rounds of revision.
 
 Evaluate on these axes (0-5):

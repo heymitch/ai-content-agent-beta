@@ -688,17 +688,27 @@ Trust the prompts - they include write-like-human rules."""
                             for block in msg.content:
                                 if isinstance(block, dict):
                                     block_type = block.get('type', 'unknown')
-                                    print(f"      Block type: {block_type}")
                                     if block_type == 'text':
                                         text_content = block.get('text', '')
                                         if text_content:
                                             final_output = text_content
+                                            # NEW: Log preview of message content
+                                            preview = text_content[:300].replace('\n', ' ')
                                             print(f"      ✅ Got text output ({len(text_content)} chars)")
+                                            print(f"         PREVIEW: {preview}...")
+                                    elif block_type == 'tool_use':
+                                        # NEW: Log tool calls from SDK agent
+                                        tool_name = block.get('name', 'unknown')
+                                        tool_input = str(block.get('input', {}))[:150]
+                                        print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                        print(f"         Input preview: {tool_input}...")
                                 elif hasattr(block, 'text'):
                                     text_content = block.text
                                     if text_content:
                                         final_output = text_content
+                                        preview = text_content[:300].replace('\n', ' ')
                                         print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
+                                        print(f"         PREVIEW: {preview}...")
                         elif hasattr(msg.content, 'text'):
                             text_content = msg.content.text
                             if text_content:
@@ -768,99 +778,71 @@ Trust the prompts - they include write-like-human rules."""
             clean_output = ""
             hook_preview = "Extraction failed (see Suggested Edits)"
 
-        # Extract quality check results from SDK agent output
-        # The SDK agent already ran quality_check and apply_fixes tools
-        # We just need to extract the quality JSON from its output
+        # Extract score if mentioned in output
         score = 90  # Default fallback
+
+        # Run EXTERNAL validators (quality check + optional GPTZero)
+        # This is a SECOND QA pass with Editor-in-Chief rules
+        # SDK agent already ran its own quality_check tool during creation
+        # This external check catches AI patterns the agent might have missed
+        validation_json = None
         validation_formatted = None
 
         try:
-            print(f"\n🔍 Extracting quality check results from SDK output...")
+            print(f"\n🔍 Running external validation (Editor-in-Chief rules) for {len(clean_output)} chars...")
 
-            import re
-            import json
+            from integrations.validation_utils import run_all_validators, format_validation_for_airtable
 
-            # Look for quality check JSON in the output
-            # Pattern matches: {"scores": {...}, "decision": "...", "issues": [...]}
-            quality_pattern = r'\{[^\{\}]*"scores"[^\{\}]*"decision"[^\{\}]*"issues"[^\{\}]*\}'
-            quality_match = re.search(quality_pattern, output, re.DOTALL)
+            validation_json = await run_all_validators(clean_output, 'linkedin')
 
-            if quality_match:
+            # Extract score from validation results
+            if validation_json:
+                import json
                 try:
-                    quality_json = json.loads(quality_match.group(0))
-                    score = quality_json.get('scores', {}).get('total', 90)
-                    decision = quality_json.get('decision', 'unknown')
-                    issues = quality_json.get('issues', [])
-                    scores_detail = quality_json.get('scores', {})
+                    val_data = json.loads(validation_json) if isinstance(validation_json, str) else validation_json
+                    score = val_data.get('quality_scores', {}).get('total', score)
+                    print(f"✅ External validation complete: Score {score}/25")
+                except Exception as score_err:
+                    print(f"⚠️ Could not extract score from validation: {score_err}")
+                    pass
 
-                    print(f"✅ Extracted quality results: Score {score}/25, Decision: {decision}")
-
-                    # Format for Airtable Suggested Edits field
-                    decision_emoji = {
-                        'accept': '✅',
-                        'revise': '⚠️',
-                        'reject': '❌',
-                        'error': '🔴'
-                    }.get(decision, '❓')
-
-                    validation_formatted = f"""{decision_emoji} **Quality Check: {decision.upper()}**
-
-📊 **Total Score**: {score}/25
-
-**Breakdown**:
-"""
-                    for axis, axis_score in scores_detail.items():
-                        if axis != 'total':
-                            validation_formatted += f"• {axis.replace('_', ' ').title()}: {axis_score}/5\n"
-
-                    if issues:
-                        validation_formatted += f"\n⚠️ **Issues Found** ({len(issues)}):\n"
-                        for i, issue in enumerate(issues, 1):
-                            severity = issue.get('severity', 'medium')
-                            original = issue.get('original', 'N/A')[:100]
-                            fix = issue.get('fix', 'N/A')[:100]
-                            validation_formatted += f"\n{i}. [{severity.upper()}] {original}\n   → {fix}\n"
-                    else:
-                        validation_formatted += "\n✅ **No issues found** - Post is ready to publish!"
-
-                except json.JSONDecodeError as json_err:
-                    print(f"⚠️ JSON parse error in quality data: {json_err}")
-                    raise
-            else:
-                # Quality JSON not found - provide fallback
-                print(f"⚠️ Could not find quality JSON in output")
-                validation_formatted = f"""📝 **Post Created Successfully**
-
-Quality check was performed but results format not recognized.
-
-**Manual Review Checklist**:
-- ✓ Verify all facts/names/companies are accurate
-- ✓ Check for AI writing patterns (contrast framing, rule of three)
-- ✓ Ensure hook format is strong (question/bold/stat/story/mistake)
-- ✓ Confirm proof points are specific
-
-Post length: {len(clean_output)} chars
-Hook: {hook_preview[:80]}..."""
+            # Format for human-readable Airtable display
+            validation_formatted = format_validation_for_airtable(validation_json)
+            print(f"✅ Validation formatted for Airtable: {len(validation_formatted)} chars")
 
         except Exception as e:
             import traceback
-            print(f"⚠️ Error extracting quality data: {e}")
+            print(f"⚠️ EXTERNAL VALIDATION FAILED (non-fatal):")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"   Error message: {e}")
+            print(f"   Traceback:")
             print(traceback.format_exc())
 
-            # Provide user-friendly fallback for Airtable
-            validation_formatted = f"""⚠️ **Quality Check Extraction Failed**
+            # Provide fallback suggested edits (ensures Airtable field is populated)
+            validation_formatted = f"""⚠️ **Automated Quality Check Failed**
 
-Error: {str(e)[:200]}
+Error: {str(e)[:250]}
 
-**Post was created but quality data could not be extracted.**
+**Manual Review Required:**
 
-**Recommended Actions**:
-1. Review for AI writing patterns
-2. Verify all facts and names
-3. Check hook strength
-4. Ensure proof points are specific
+Scan for these AI patterns:
+• Contrast framing: "This isn't about X—it's about Y"
+• Masked contrast: "but rather", "instead of"
+• Cringe questions: "The truth?", "Sound familiar?"
+• Formulaic headers: "THE PROCESS:", "HERE'S HOW:"
+• Corporate jargon: "Moreover", "Furthermore", "Additionally"
+• Buzzwords: "game-changer", "unlock", "revolutionary"
+• Em-dash overuse — like this — everywhere
 
-Post length: {len(clean_output)} chars"""
+Verify facts:
+• Check all names/companies/titles mentioned
+• Confirm all metrics are from provided context
+• Ensure no fabricated details
+
+Post length: {len(clean_output)} chars
+Status: Saved successfully but needs human QA"""
+
+            validation_json = None
 
         # Save to Airtable
         print("\n" + "="*60)

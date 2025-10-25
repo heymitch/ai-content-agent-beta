@@ -45,16 +45,39 @@ async def run_quality_check(content: str, platform: str) -> Dict[str, Any]:
 
         max_iterations = 5
         for iteration in range(max_iterations):
-            response = client.messages.create(
-                model="claude-sonnet-4-5-20250929",
-                max_tokens=3000,
-                tools=[{
-                    "type": "web_search_20250305",
-                    "name": "web_search",
-                    "max_uses": 3
-                }],
-                messages=messages
-            )
+            try:
+                response = client.messages.create(
+                    model="claude-sonnet-4-5-20250929",
+                    max_tokens=3000,
+                    tools=[{
+                        "type": "web_search_20250305",
+                        "name": "web_search",
+                        "max_uses": 3
+                    }],
+                    messages=messages
+                )
+            except Exception as api_error:
+                error_str = str(api_error).lower()
+                logger.error(f"❌ Anthropic API error during quality check: {api_error}")
+
+                # Check if web search tool failed specifically
+                if any(keyword in error_str for keyword in ['web_search', '500', 'internal server error', 'api_error']):
+                    logger.warning("⚠️ Web search tool unavailable - returning partial results without fact-checking")
+                    return {
+                        "scores": {"total": 18},  # Assume decent quality
+                        "decision": "manual_review",
+                        "issues": [{
+                            "axis": "validation",
+                            "severity": "high",
+                            "original": "Fact-checking unavailable",
+                            "fix": "Manual review required - web search API failed",
+                            "impact": "Could not verify claims or check for fabrications"
+                        }],
+                        "surgical_summary": "Quality check ran but fact-checking unavailable due to API error."
+                    }
+                else:
+                    # Other API errors - re-raise
+                    raise
 
             # Check if Claude wants to use a tool
             if response.stop_reason == "tool_use":
