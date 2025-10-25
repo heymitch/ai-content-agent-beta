@@ -14,6 +14,7 @@ import json
 import asyncio
 import hashlib
 import time
+import uuid
 
 # Import our existing tool functions
 from tools.search_tools import web_search as _web_search_func
@@ -1345,6 +1346,10 @@ class ClaudeAgentHandler:
 
     def __init__(self, memory_handler=None, slack_client=None):
         """Initialize the Claude Agent with SDK"""
+        # Generate unique handler instance ID for debugging
+        self.handler_id = str(uuid.uuid4())[:8]
+        print(f"\n🏗️ Creating ClaudeAgentHandler instance [{self.handler_id}]")
+
         self.memory = memory_handler
         self.slack_client = slack_client  # NEW: Store slack_client for progress updates
 
@@ -1720,6 +1725,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         # Calculate prompt version hash for cache invalidation
         self.prompt_version = hashlib.md5(self.system_prompt.encode()).hexdigest()[:8]
+        print(f"   Prompt version: {self.prompt_version}")
 
         # Create MCP server with our tools
         self.mcp_server = create_sdk_mcp_server(
@@ -1764,20 +1770,29 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             ]
         )
 
-        print("🚀 Claude Agent SDK initialized with 30 tools (9 general + 6 batch + 15 co-writing tools for 5 platforms)")
+        print(f"✅ Handler [{self.handler_id}] ready with 30 tools (9 general + 6 batch + 15 co-writing)")
 
-    def _get_or_create_session(self, thread_ts: str) -> ClaudeSDKClient:
+    def _get_or_create_session(self, thread_ts: str, request_id: str = "NONE") -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""
         SESSION_TTL = 3600  # 1 hour session lifetime
         now = time.time()
 
+        # Verbose logging for debugging
+        print(f"[{request_id}] 🔍 Session lookup for thread {thread_ts[:8]}")
+        print(f"[{request_id}]    Existing sessions: {list(self._thread_sessions.keys())}")
+        print(f"[{request_id}]    Current prompt version: {self.prompt_version}")
+
         # Check if we need to invalidate existing session
         if thread_ts in self._thread_sessions:
+            print(f"[{request_id}]    ♻️ Session exists, checking if valid...")
+
             # Check 1: Prompt version changed (code update with new prompt)
             if thread_ts in self._session_prompt_versions:
                 old_version = self._session_prompt_versions[thread_ts]
+                print(f"[{request_id}]    Cached prompt version: {old_version}")
                 if old_version != self.prompt_version:
-                    print(f"🔄 Prompt updated ({old_version} → {self.prompt_version}), recreating session for thread {thread_ts[:8]}")
+                    print(f"[{request_id}] 🔄 PROMPT CHANGED ({old_version} → {self.prompt_version})")
+                    print(f"[{request_id}]    Invalidating session for thread {thread_ts[:8]}")
                     del self._thread_sessions[thread_ts]
                     self._connected_sessions.discard(thread_ts)
                     del self._session_prompt_versions[thread_ts]
@@ -1787,8 +1802,11 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             # Check 2: Session expired (> 1 hour old)
             if thread_ts in self._session_created_at:
                 age = now - self._session_created_at[thread_ts]
+                age_mins = int(age / 60)
+                print(f"[{request_id}]    Session age: {age_mins} minutes")
                 if age > SESSION_TTL:
-                    print(f"⏰ Session expired ({int(age/60)} minutes old), recreating session for thread {thread_ts[:8]}")
+                    print(f"[{request_id}] ⏰ SESSION EXPIRED ({age_mins} minutes old)")
+                    print(f"[{request_id}]    Invalidating session for thread {thread_ts[:8]}")
                     del self._thread_sessions[thread_ts]
                     self._connected_sessions.discard(thread_ts)
                     if thread_ts in self._session_prompt_versions:
@@ -1797,6 +1815,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         # Create new session if needed
         if thread_ts not in self._thread_sessions:
+            print(f"[{request_id}] ✨ Creating NEW session for thread {thread_ts[:8]}")
             # Configure options for this thread
             # setting_sources=["project"] tells SDK to automatically load .claude/CLAUDE.md for brand context
             options = ClaudeAgentOptions(
@@ -1813,14 +1832,16 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             self._session_prompt_versions[thread_ts] = self.prompt_version
             self._session_created_at[thread_ts] = now
 
-            print(f"✨ Created new session for thread {thread_ts[:8]} with CMO identity (prompt version: {self.prompt_version})")
-            print(f"🎭 System prompt starts with: {self.system_prompt[:100]}...")
+            print(f"[{request_id}]    ✅ Session created with prompt version: {self.prompt_version}")
+            print(f"[{request_id}]    System prompt preview: {self.system_prompt[:80]}...")
 
             # DEBUG: Verify which prompt version is loaded
             if "TWO CONTENT CREATION MODES" in self.system_prompt:
-                print(f"   ✅ Using NEW architecture (CO-WRITE vs BATCH)")
+                print(f"[{request_id}]    ✅ Using NEW architecture (CO-WRITE vs BATCH)")
             else:
-                print(f"   ⚠️ Using OLD architecture (count-based routing)")
+                print(f"[{request_id}]    ⚠️ Using OLD architecture (count-based routing)")
+        else:
+            print(f"[{request_id}]    ✅ Reusing existing session (version: {self._session_prompt_versions.get(thread_ts, 'unknown')})")
 
         return self._thread_sessions[thread_ts]
 
@@ -1844,6 +1865,14 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             Agent's response
         """
 
+        # Generate unique request ID for debugging
+        request_id = str(uuid.uuid4())[:8]
+
+        print(f"\n{'='*70}")
+        print(f"[{request_id}] 🎯 NEW REQUEST - Thread: {thread_ts[:8]}")
+        print(f"[{request_id}] 💬 Message: {message[:100]}{'...' if len(message) > 100 else ''}")
+        print(f"{'='*70}")
+
         # NEW: Store conversation context for tools to access
         self._conversation_context[thread_ts] = {
             'channel': channel_id,
@@ -1862,46 +1891,58 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         contextualized_message = f"[Today is {today}] {message}"
 
         try:
-            print(f"🤖 Claude Agent SDK processing for thread {thread_ts[:8]}...")
-
             # Get or create cached session for this thread
-            client = self._get_or_create_session(thread_ts)
+            client = self._get_or_create_session(thread_ts, request_id)
 
             # Only connect if this is a NEW session (not already connected)
             if thread_ts not in self._connected_sessions:
-                print(f"🔌 Connecting NEW client session for thread {thread_ts[:8]}...")
+                print(f"[{request_id}] 🔌 Connecting NEW client session...")
                 await client.connect()
                 self._connected_sessions.add(thread_ts)
-                print(f"✅ Client connected successfully")
+                print(f"[{request_id}] ✅ Client connected successfully")
             else:
-                print(f"♻️ Reusing connected client for thread {thread_ts[:8]}...")
+                print(f"[{request_id}] ♻️ Reusing connected client...")
 
             # Send the query
-            print(f"📨 Sending query to Claude SDK...")
+            print(f"[{request_id}] 📨 Sending query to Claude SDK...")
             await client.query(contextualized_message)
 
             # Collect ONLY the latest response (memory stays intact in session)
             latest_response = ""
-            print(f"⏳ Waiting for Claude SDK response...")
+            print(f"[{request_id}] ⏳ Waiting for Claude SDK response...")
             async for msg in client.receive_response():
                 # Each message REPLACES the previous (we only want the final response)
                 # The SDK maintains full conversation history internally
-                print(f"📩 Received message type: {type(msg)}")
+                msg_type = type(msg).__name__
+
+                # Extract text content for logging
+                text_preview = None
                 if hasattr(msg, 'content'):
                     if isinstance(msg.content, list):
                         for block in msg.content:
                             if isinstance(block, dict) and block.get('type') == 'text':
                                 latest_response = block.get('text', '')
+                                text_preview = latest_response[:150]
                             elif hasattr(block, 'text'):
                                 latest_response = block.text
+                                text_preview = latest_response[:150]
                     elif hasattr(msg.content, 'text'):
                         latest_response = msg.content.text
+                        text_preview = latest_response[:150]
                     else:
                         latest_response = str(msg.content)
                 elif hasattr(msg, 'text'):
                     latest_response = msg.text
+                    text_preview = latest_response[:150]
+
+                # Log with content preview
+                if text_preview:
+                    print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
+                else:
+                    print(f"[{request_id}] 📩 {msg_type} (no text content)")
 
             final_text = latest_response  # Only use the latest response
+            print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
 
             # Format for Slack
             final_text = self._format_for_slack(final_text)

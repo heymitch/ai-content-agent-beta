@@ -88,11 +88,15 @@ def get_slack_handler():
 
 # ============= FASTAPI LIFECYCLE EVENTS =============
 
+# Track how many times handler has been created (for debugging)
+_handler_creation_count = 0
+
 @app.on_event("startup")
 async def clear_dev_caches():
     """Clear handler cache on startup to ensure fresh prompts after code updates"""
-    global slack_handler
+    global slack_handler, _handler_creation_count
     slack_handler = None
+    _handler_creation_count = 0
     print("🔄 Startup: Cleared handler cache (ensures fresh system prompts on hot reload)")
 
 # ============= RATE LIMITING =============
@@ -397,7 +401,9 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                     slack_client=slack_client  # NEW: Pass slack_client for progress updates
                 )
 
-                print("🚀 Claude Agent SDK handler ready (tools registered via MCP server)")
+                global _handler_creation_count
+                _handler_creation_count += 1
+                print(f"🚀 Handler #{_handler_creation_count} ready (tools registered via MCP server)")
 
                 # Save user message to conversation history
                 if handler.memory:
