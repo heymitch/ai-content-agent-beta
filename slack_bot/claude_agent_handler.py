@@ -1428,11 +1428,30 @@ Examples:
 - Multiple posts → delegate_to_workflow(platform="linkedin", topic=..., context=..., count=5)
 - Week of content → delegate_to_workflow(platform="linkedin", topics=[...], count=7)
 
-BULK REQUESTS (automatically detected):
-- "Create 5 LinkedIn posts about..." → count=5
-- "Generate my week of content" → count=7
-- "Make 10 Twitter threads" → count=10
-- Bulk processing uses sequential execution with learning accumulation
+**CRITICAL: BULK REQUEST DETECTION**
+
+STEP 1: Parse user request for count indicators
+- "3 posts" → count=3
+- "5 tweets" → count=5
+- "a week of content" → count=7
+- "a month" → count=30
+- "several posts" → Ask: "How many would you like?"
+
+STEP 2: Route based on count
+- **count = 1**: Use delegate_to_workflow(count=1) - single post workflow
+- **count = 2-4**: Use delegate_to_workflow(count=N) - small batch via queue manager
+- **count >= 5**: Use batch orchestration tools (plan_content_batch + execute_post_from_plan) - sequential with learning
+
+STEP 3: CRITICAL RULE
+**NEVER create multiple posts inline and concatenate them!**
+- ❌ WRONG: Generate 3 posts in conversation, combine into one string, save as one Airtable record
+- ✅ RIGHT: Call delegate_to_workflow(count=3) or use batch orchestration tools
+- Each post MUST be created separately via workflow to get separate Airtable rows
+
+EXAMPLES:
+- "Create 3 LinkedIn posts" → delegate_to_workflow(platform="linkedin", count=3, topics=[...])
+- "Write a week of content" → Use batch orchestration (count=7)
+- "Make 15 posts about AI" → Use batch orchestration (count=15)
 
 **BATCH ORCHESTRATION WORKFLOW (NEW - For 5+ Posts):**
 
