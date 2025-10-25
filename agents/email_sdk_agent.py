@@ -393,7 +393,7 @@ class EmailSDKAgent:
 
 YOU MUST USE TOOLS. EXECUTE immediately. Parse JSON responses.
 
-AVAILABLE TOOLS (5-tool workflow):
+AVAILABLE TOOLS:
 
 1. mcp__email_tools__generate_5_hooks
    Input: {"topic": str, "context": str, "audience": str}
@@ -667,29 +667,21 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final email when thresh
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY email newsletter using LEAN WORKFLOW.
+        creation_prompt = f"""Create a high-quality email newsletter using the available MCP tools.
 
 Topic: {topic}
 Context: {context}
 Email Type: {email_type}
 
-LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__email_tools__generate_5_hooks
-2. Select best subject line, then call mcp__email_tools__create_human_draft
-3. EVALUATE: Does this draft make specific claims, cite examples, or need credibility?
-   - YES (proof needed): Call mcp__email_tools__inject_proof_points
-   - NO (thought leadership/opinion): Skip to step 4
-4. Call mcp__email_tools__quality_check (gets ALL issues: AI patterns + fabrications)
-5. Call mcp__email_tools__apply_fixes (fixes everything in ONE pass)
-6. Return final email and STOP
+WORKFLOW:
+1. Call mcp__email_tools__generate_5_hooks to get subject line options
+2. Select best subject and call mcp__email_tools__create_human_draft
+3. If draft needs proof points, call mcp__email_tools__inject_proof_points
+4. Call mcp__email_tools__quality_check to evaluate the email
+5. If issues found, call mcp__email_tools__apply_fixes
+6. Return the final email
 
-DO NOT:
-- Call quality_check more than once
-- Call apply_fixes more than once
-- Iterate or loop
-- Score or validate after fixes
-
-Trust the prompts - they include PGA writing style examples."""
+The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style examples."""
 
         try:
             # Connect if needed

@@ -398,7 +398,7 @@ class InstagramSDKAgent:
         # Instagram-specific base prompt with quality thresholds
         base_prompt = """You are an Instagram caption creation agent. Your goal: captions that score 20+ out of 25 and stop the scroll.
 
-AVAILABLE TOOLS (5-tool workflow):
+AVAILABLE TOOLS:
 
 1. mcp__instagram_tools__generate_5_hooks
    Input: {"topic": str, "context": str, "audience": str}
@@ -450,14 +450,14 @@ CRITICAL CONSTRAINTS:
 - Visual pairing (assumes accompanying image/Reel)
 - Mobile formatting (line breaks every 2-3 sentences)
 
-LEAN WORKFLOW:
+WORKFLOW:
 1. generate_5_hooks
 2. Select best hook
 3. create_caption_draft
 4. If >2,200 chars → condense_to_limit
 5. quality_check
 6. If issues → apply_fixes
-7. Return final caption and STOP"""
+7. Return final caption"""
 
         # Compose base prompt + client context (if exists)
         from integrations.prompt_loader import load_system_prompt
@@ -532,26 +532,20 @@ LEAN WORKFLOW:
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY Instagram caption using LEAN WORKFLOW.
+        creation_prompt = f"""Create a high-quality Instagram caption using the available MCP tools.
 
 Topic: {topic}
 Context: {context}
 
-LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__instagram_tools__generate_5_hooks
-2. Select best hook, then call mcp__instagram_tools__create_caption_draft
-3. If >2,200 chars → call mcp__instagram_tools__condense_to_limit
-4. Call mcp__instagram_tools__quality_check (gets ALL issues: AI patterns + fabrications + char limit)
-5. Call mcp__instagram_tools__apply_fixes (fixes everything in ONE pass)
-6. Return final caption and STOP
+WORKFLOW:
+1. Call mcp__instagram_tools__generate_5_hooks to get hook options
+2. Select best hook and call mcp__instagram_tools__create_caption_draft
+3. If >2,200 chars, call mcp__instagram_tools__condense_to_limit
+4. Call mcp__instagram_tools__quality_check to evaluate the caption
+5. If issues found, call mcp__instagram_tools__apply_fixes
+6. Return the final caption
 
-DO NOT:
-- Call quality_check more than once
-- Call apply_fixes more than once
-- Iterate or loop
-- Score or validate after fixes
-
-Trust the prompts - they include write-like-human rules."""
+The tools contain WRITE_LIKE_HUMAN_RULES and Instagram formatting guidelines."""
 
         try:
             # Connect if needed

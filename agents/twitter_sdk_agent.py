@@ -503,7 +503,7 @@ class TwitterSDKAgent:
 
 YOU MUST USE TOOLS. EXECUTE immediately. Parse JSON responses.
 
-AVAILABLE TOOLS (5-tool workflow):
+AVAILABLE TOOLS:
 
 1. mcp__twitter_tools__generate_5_hooks
    Input: {"topic": str, "context": str, "audience": str}
@@ -795,28 +795,22 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
             length_directive = "DECIDE: Default to SINGLE POST (280 chars). Only create thread if topic truly requires 3+ distinct points with evidence. BIAS TOWARD SINGLES."
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY Twitter content using LEAN WORKFLOW.
+        creation_prompt = f"""Create a high-quality Twitter thread using the available MCP tools.
 
 Topic: {topic}
 Context: {context}
 
 {length_directive}
 
-LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__twitter_tools__generate_5_hooks
-2. Select best hook, then call mcp__twitter_tools__create_human_draft
-3. Call mcp__twitter_tools__inject_proof_points
-4. Call mcp__twitter_tools__quality_check (gets ALL issues: AI patterns + fabrications)
-5. Call mcp__twitter_tools__apply_fixes (fixes everything in ONE pass)
-6. Return final thread and STOP
+WORKFLOW:
+1. Call mcp__twitter_tools__generate_5_hooks to get hook options
+2. Select best hook and call mcp__twitter_tools__create_human_draft
+3. Call mcp__twitter_tools__inject_proof_points to add specific examples
+4. Call mcp__twitter_tools__quality_check to evaluate the thread
+5. If issues found, call mcp__twitter_tools__apply_fixes
+6. Return the final thread
 
-DO NOT:
-- Call quality_check more than once
-- Call apply_fixes more than once
-- Iterate or loop
-- Score or validate after fixes
-
-Trust the prompts - they include write-like-human rules."""
+The tools contain WRITE_LIKE_HUMAN_RULES and quality evaluation logic."""
 
         try:
             # Connect if needed

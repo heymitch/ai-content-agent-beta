@@ -395,7 +395,7 @@ class YouTubeSDKAgent:
 
 YOU MUST USE TOOLS. EXECUTE immediately. Parse JSON responses.
 
-AVAILABLE TOOLS (5-tool workflow):
+AVAILABLE TOOLS:
 
 1. mcp__youtube_tools__generate_5_hooks
    Input: {"topic": str, "context": str, "audience": str}
@@ -665,29 +665,23 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final script with timin
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY YouTube script using LEAN WORKFLOW.
+        creation_prompt = f"""Create a high-quality YouTube script using the available MCP tools.
 
 Topic: {topic}
 Context: {context}
 Script Type: {script_type}
 
-LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__youtube_tools__generate_5_hooks
-2. Select best hook, then call mcp__youtube_tools__create_human_script
-3. EVALUATE: Does this draft make specific claims, cite examples, or need credibility?
+WORKFLOW:
+1. Call mcp__youtube_tools__generate_5_hooks to get video hook options
+2. Select best hook and call mcp__youtube_tools__create_human_script
+3. Evaluate: Does this draft make specific claims, cite examples, or need credibility?
    - YES (proof needed): Call mcp__youtube_tools__inject_proof_points
    - NO (thought leadership/opinion): Skip to step 4
-4. Call mcp__youtube_tools__quality_check (gets ALL issues: AI patterns + timing + fabrications)
-5. Call mcp__youtube_tools__apply_fixes (fixes everything + updates timing in ONE pass)
-6. Return final script with timing markers and STOP
+4. Call mcp__youtube_tools__quality_check to evaluate the script
+5. If issues found, call mcp__youtube_tools__apply_fixes
+6. Return the final script with timing markers
 
-DO NOT:
-- Call quality_check more than once
-- Call apply_fixes more than once
-- Iterate or loop
-- Score or validate after fixes
-
-Trust the prompts - they include Cole's script style examples and timing logic."""
+The tools contain WRITE_LIKE_HUMAN_RULES and Cole's script style examples."""
 
         try:
             # Connect if needed
