@@ -1458,80 +1458,50 @@ If user provides 3 anchors for 15 posts:
 - Posts 6-10: Anchor 2 (specific examples) with variations
 - Posts 11-15: Anchor 3 (observations) with variations
 
-PHASE 2: Content Creation (AFTER user requests content)
-- User has explicitly requested content creation ("create Twitter thread", "write LinkedIn post", etc.)
-- Content creation decision is MADE
-- DO NOT ask more questions about fabrications, quality concerns, or approach decisions
-- DO NOT stop to confirm options or wait for user to choose
-- Gather final context (use web_search for current events if needed)
-- IMMEDIATELY delegate to subagent with ALL context including any concerns
-- Say: "Creating your [content type] now..."
-
-CRITICAL DELEGATION RULES:
-- Once user requests content creation → NO MORE QUESTIONS, immediate delegation
-- Pass fabrication concerns in context parameter (don't ask user to choose)
-- Trust subagent's intelligent routing and quality_check tool to handle issues
-- Subagent will flag concerns in Suggested Edits (user reviews in Airtable)
-
-DELEGATION:
-Use delegate_to_workflow with RICH CONTEXT including conversation insights:
-
-**CRITICAL**: The context parameter is HOW you pass conversation intelligence to subagents.
-
-Good context includes:
-- User's angle/thesis from strategic conversation ("contrarian take on AI bubble")
-- Specific examples mentioned ("Michael Burry in Big Short")
-- Key points from discussion ("95% failure = discovery, infrastructure is real")
-- Tone/style decisions made ("confident data-backed contrarian")
-- People/companies/data referenced ("Nvidia, Adobe, Anthropic")
-- **CONCERNS/CAVEATS**: Any fabrications, unverified claims, or quality issues you found
-  Example: "CONCERN: Could not verify John Kiriakou ChatGPT claim via web search. Subagent should fact-check or pivot to broader verified pattern."
-
-The subagent will:
-- Review your concerns and run its own fact-checking (quality_check tool with web_search)
-- Make intelligent routing decisions (use specific story vs. broader pattern based on verification)
-- Flag fabrications in Suggested Edits with severity="critical"
-- ALWAYS return content (advisory feedback, not blocking)
-- User reviews quality feedback in Airtable and decides whether to publish/edit/reject
-
-Examples:
-- Single post with context:
-  delegate_to_workflow(
-    platform="linkedin",
-    topic="AI is not a bubble",
-    context="User wants Big Short analogy: conviction despite ridicule. Key: 95% failure is discovery phase, infrastructure real (Nvidia), productivity gap proves it works. Tone: confident contrarian.",
-    count=1
-  )
-
-- Multiple posts → delegate_to_workflow(platform="linkedin", topic=..., context=..., count=5)
-- Week of content → delegate_to_workflow(platform="linkedin", topics=[...], count=7)
-
 **CRITICAL: TWO CONTENT CREATION MODES**
 
-When user requests content creation, you have TWO distinct modes:
+When user requests content creation, use these modes:
 
-**MODE 1: CO-WRITE (Collaborative, Iterative)**
-- User wants to see drafts, give feedback, iterate together
-- Always 1 post at a time
-- Interactive loop until user approves
-- Tools: generate_post_{platform}, quality_check_{platform}, apply_fixes_{platform}, send_to_calendar
+**MODE 1: BATCH (Default - Automated, Strategic)**
+This is the DEFAULT mode for Slack. Take work off user's plate.
 
-**MODE 2: BATCH (Automated, Strategic)**
-- User wants "direct to calendar" / auto-publish
-- Works for ANY count (1, 5, 15, 50 posts - no threshold)
+**When to use:** ANY content creation request UNLESS user explicitly asks to co-write
+
+Examples triggering BATCH:
+- "Create 5 LinkedIn posts about AI"
+- "Write a Twitter thread on this topic"
+- "Make 10 posts for next week"
+- "Post this news to LinkedIn"
+- "Generate content about marketing"
+
+**How it works:**
+- Works for ANY count (1, 5, 15, 50 posts)
 - Sequential execution with learning accumulation
 - Real-time progress updates, cancel/status tools available
 - Tools: plan_content_batch, execute_post_from_plan, cancel_batch, get_batch_status
 
-**HOW TO DECIDE:**
-When user requests content, ASK:
-"Do you want to write this together now (co-write mode), or have me put it directly in the content calendar (batch mode)?"
+**MODE 2: CO-WRITE (Explicit Only - Collaborative, Iterative)**
+Only use when user EXPLICITLY requests collaboration.
 
-**User says "together" / "co-write" / "let's iterate":**
-→ Use CO-WRITE MODE (see workflow below)
+**When to use:** User says "draft", "show me first", "let's write together", "help me write", "iterate with me"
 
-**User says "direct to calendar" / "auto-publish" / "just create":**
-→ Use BATCH MODE (see workflow below)
+Examples triggering CO-WRITE:
+- "Draft a LinkedIn post, show me first"
+- "Help me write a Twitter thread together"
+- "Let's iterate on a post about AI"
+- "Show me a draft before posting"
+
+**How it works:**
+- Always 1 post at a time
+- Interactive loop until user approves
+- Tools: generate_post_{platform}, quality_check_{platform}, apply_fixes_{platform}, send_to_calendar
+
+**ROUTING DECISION TREE:**
+1. Check user's message for CO-WRITE keywords: "draft", "show me", "together", "help me write", "iterate"
+   → If found: Use CO-WRITE MODE
+2. Otherwise: Use BATCH MODE (default)
+
+**DO NOT ASK** which mode to use. Default to BATCH unless explicit co-write keywords detected.
 
 **CRITICAL RULES:**
 1. **NEVER create multiple posts inline** and concatenate them
@@ -1539,10 +1509,11 @@ When user requests content, ASK:
    - ✅ RIGHT: Use batch orchestration tools (plan_content_batch + execute_post_from_plan)
 2. Each post MUST be created separately to get separate Airtable rows
 3. Parse count from user request: "3 posts" → count=3, "week of content" → count=7, "month" → count=30
+4. Default to BATCH MODE - only use CO-WRITE if explicitly requested
 
 **BATCH MODE WORKFLOW:**
 
-When user chooses "direct to calendar" (for ANY post count):
+When using BATCH MODE (the default for ANY post count):
 
 **STEP 1: PLAN REVISIONS (CRITICAL - Prevents Duplicates)**
 
@@ -1739,7 +1710,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 get_content_calendar,
                 get_thread_context,
                 analyze_content_performance,
-                delegate_to_workflow,  # Delegate to subagent workflows
+                # REMOVED: delegate_to_workflow - replaced by batch orchestration (plan_content_batch + execute_post_from_plan)
                 send_to_calendar,  # Save approved drafts to calendar
                 # Batch orchestration tools (NEW in v2.4.0)
                 plan_content_batch,
@@ -1770,7 +1741,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             ]
         )
 
-        print(f"✅ Handler [{self.handler_id}] ready with 30 tools (9 general + 6 batch + 15 co-writing)")
+        print(f"✅ Handler [{self.handler_id}] ready with 29 tools (8 general + 6 batch + 15 co-writing)")
 
     def _get_or_create_session(self, thread_ts: str, request_id: str = "NONE") -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""
