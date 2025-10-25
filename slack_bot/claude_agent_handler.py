@@ -1776,6 +1776,12 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             print(f"✨ Created new session for thread {thread_ts[:8]} with CMO identity")
             print(f"🎭 System prompt starts with: {self.system_prompt[:100]}...")
 
+            # DEBUG: Verify which prompt version is loaded
+            if "TWO CONTENT CREATION MODES" in self.system_prompt:
+                print(f"   ✅ Using NEW architecture (CO-WRITE vs BATCH)")
+            else:
+                print(f"   ⚠️ Using OLD architecture (count-based routing)")
+
         return self._thread_sessions[thread_ts]
 
     async def handle_conversation(

@@ -382,13 +382,13 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                 handler = get_slack_handler()
 
                 # Use the REAL Claude Agent SDK handler
-                if not hasattr(handler, 'claude_agent'):
-                    handler.claude_agent = ClaudeAgentHandler(
-                        memory_handler=handler.memory if handler else None,
-                        slack_client=slack_client  # NEW: Pass slack_client for progress updates
-                    )
+                # ALWAYS recreate to pick up prompt changes on module reload
+                handler.claude_agent = ClaudeAgentHandler(
+                    memory_handler=handler.memory if handler else None,
+                    slack_client=slack_client  # NEW: Pass slack_client for progress updates
+                )
 
-                print("🚀 Claude Agent SDK ready with 6 tools")
+                print("🚀 Claude Agent SDK handler ready (tools registered via MCP server)")
 
                 # Save user message to conversation history
                 if handler.memory:
