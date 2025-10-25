@@ -639,28 +639,45 @@ AVAILABLE TOOLS (5-tool workflow):
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY LinkedIn {post_type} post using LEAN WORKFLOW.
+        creation_prompt = f"""MANDATORY: You MUST use the MCP tools to create this LinkedIn post. DO NOT generate content directly.
 
 Topic: {topic}
 Context: {context}
 
-LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__linkedin_tools__generate_5_hooks
-2. Select best hook, then call mcp__linkedin_tools__create_human_draft
-3. EVALUATE: Does this draft make specific claims, cite examples, or need credibility?
-   - YES (proof needed): Call mcp__linkedin_tools__inject_proof_points
-   - NO (thought leadership/opinion): Skip to step 4
-4. Call mcp__linkedin_tools__quality_check (gets ALL issues: AI patterns + fabrications)
-5. Call mcp__linkedin_tools__apply_fixes (fixes everything in ONE pass)
-6. Return final post and STOP
+REQUIRED WORKFLOW (YOU MUST FOLLOW THIS EXACTLY):
 
-DO NOT:
-- Call quality_check more than once
-- Call apply_fixes more than once
-- Iterate or loop
-- Score or validate after fixes
+STEP 1: REQUIRED - Call mcp__linkedin_tools__generate_5_hooks
+Input: {{"topic": "{topic[:100]}...", "context": "...", "audience": "..."}}
+YOU MUST call this tool first. Do not skip.
 
-Trust the prompts - they include write-like-human rules."""
+STEP 2: REQUIRED - Call mcp__linkedin_tools__create_human_draft
+After getting hooks, select the best one and call this tool.
+Input: {{"topic": "...", "hook": "...", "context": "..."}}
+YOU MUST call this tool. Do not skip.
+
+STEP 3: CONDITIONAL - Call mcp__linkedin_tools__inject_proof_points
+If draft has specific claims or examples, call this tool.
+Otherwise skip to step 4.
+
+STEP 4: REQUIRED - Call mcp__linkedin_tools__quality_check
+YOU MUST call this tool to evaluate the post.
+Input: {{"post": "<full post text>"}}
+This returns JSON with scores and issues.
+
+STEP 5: REQUIRED - Call mcp__linkedin_tools__apply_fixes
+YOU MUST call this tool to fix any issues.
+Input: {{"post": "<full post>", "issues_json": "<issues from quality_check>"}}
+
+STEP 6: Return the final revised_post from apply_fixes
+
+CRITICAL RULES:
+- You CANNOT generate LinkedIn content yourself
+- You MUST use the tools (they contain WRITE_LIKE_HUMAN_RULES)
+- Each tool call is REQUIRED in the workflow
+- Do NOT skip quality_check or apply_fixes
+- If you try to write the post yourself without tools, it will be rejected
+
+Now begin: Call mcp__linkedin_tools__generate_5_hooks to start."""
 
         try:
             # Connect if needed
