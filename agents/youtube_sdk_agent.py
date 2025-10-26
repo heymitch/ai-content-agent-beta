@@ -198,120 +198,86 @@ async def create_human_script(args):
 
 @tool(
     "quality_check",
-    "Score script on 5 axes, verify timing accuracy, return surgical fixes",
+    "Score script on 5 axes and return surgical fixes",
     {"post": str}
 )
 async def quality_check(args):
-    """Evaluate script with 5-axis rubric + timing check + surgical feedback + Tavily search for fabrications"""
+    """Evaluate script with 5-axis rubric + surgical feedback (simplified without Tavily loop)"""
     import json
     from anthropic import Anthropic
     from prompts.youtube_tools import QUALITY_CHECK_PROMPT
-    from tavily import TavilyClient
 
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    tavily = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
 
     post = args.get('post', '')
-    prompt = QUALITY_CHECK_PROMPT.format(post=post)
 
-    # Define Tavily search tool for Claude
-    tavily_tool = {
-        "name": "web_search",
-        "description": "Search the web for current information to verify claims, names, companies, and news stories. Returns recent, relevant results.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query (e.g., 'Rick Beato YouTube AI filters', 'James Chen Clearbit')"
-                }
-            },
-            "required": ["query"]
-        }
-    }
+    # Create a modified prompt that skips fact-checking step
+    prompt = QUALITY_CHECK_PROMPT.format(post=post) + """
 
-    messages = [{"role": "user", "content": prompt}]
+IMPORTANT: For this evaluation, skip STEP 5 (web search verification).
+Focus on steps 1-4 only: scanning for violations, creating issues, scoring, and making decision.
+Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web searches."""
 
-    # Tool loop: handle Tavily search requests
-    max_iterations = 5
-    for iteration in range(max_iterations):
+    # SIMPLIFIED: Single API call, no tool loop
+    try:
         response = client.messages.create(
             model="claude-sonnet-4-5-20250929",
             max_tokens=3000,
-            tools=[tavily_tool],
-            messages=messages
+            messages=[{"role": "user", "content": prompt}]
         )
 
-        # Check if Claude wants to use a tool
-        if response.stop_reason == "tool_use":
-            # Extract tool use from response
-            tool_use_block = next((block for block in response.content if block.type == "tool_use"), None)
+        # Extract text response
+        response_text = response.content[0].text if response.content else ""
 
-            if tool_use_block and tool_use_block.name == "web_search":
-                # Execute Tavily search
-                query = tool_use_block.input["query"]
-                try:
-                    tavily_results = tavily.search(query, max_results=3)
-                    search_output = "\n\n".join([
-                        f"**{r.get('title', 'No title')}**\n{r.get('content', 'No content')}\nSource: {r.get('url', 'No URL')}"
-                        for r in tavily_results.get('results', [])
-                    ])
-                except Exception as e:
-                    search_output = f"Search error: {str(e)}"
-
-                # Add assistant message with tool use, then tool result
-                messages.append({
-                    "role": "assistant",
-                    "content": response.content
-                })
-                messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": tool_use_block.id,
-                        "content": search_output
-                    }]
-                })
-                # Continue loop to get final response
-                continue
-
-            # Unknown tool - shouldn't happen
-            messages.append({
-                "role": "assistant",
-                "content": response.content
-            })
-            continue
-
-        # Got final text response
-        final_text = ""
-        for block in response.content:
-            if hasattr(block, 'text'):
-                final_text += block.text
-
-        # Try to parse JSON, return as-is if valid
+        # Try to parse as JSON for structured response
         try:
-            json_result = json.loads(final_text)
+            json_result = json.loads(response_text)
+            # Ensure it has expected structure
             if "scores" in json_result and "decision" in json_result:
-                return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
+                # Add note about skipped verification
+                if "searches_performed" not in json_result:
+                    json_result["searches_performed"] = []
+                json_result["note"] = "Fact verification skipped to avoid tool conflicts"
+                return {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(json_result, indent=2)
+                    }]
+                }
         except json.JSONDecodeError:
+            # Not JSON, return as text
             pass
 
-        # Fallback: return raw text
-        return {"content": [{"type": "text", "text": final_text}]}
+        # Return raw text if not valid JSON
+        return {
+            "content": [{
+                "type": "text",
+                "text": response_text
+            }]
+        }
 
-    # Max iterations reached
-    return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "scores": {"total": 0},
-                "timing_accuracy": {},
-                "decision": "error",
-                "issues": [],
-                "surgical_summary": "Max iterations reached"
-            }, indent=2)
-        }]
-    }
+    except Exception as e:
+        # Return error as structured response
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "scores": {
+                        "hook": 0,
+                        "structure": 0,
+                        "value": 0,
+                        "proof": 0,
+                        "cta": 0,
+                        "total": 0,
+                        "ai_deductions": 0
+                    },
+                    "decision": "error",
+                    "issues": [],
+                    "surgical_summary": f"Quality check error: {str(e)}",
+                    "note": "Simplified quality check without web verification"
+                }, indent=2)
+            }]
+        }
 
 
 @tool(
