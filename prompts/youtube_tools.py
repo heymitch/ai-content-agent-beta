@@ -313,13 +313,13 @@ Output JSON:
 
 # ==================== QUALITY CHECK ====================
 
-QUALITY_CHECK_PROMPT = dedent(f"""You are evaluating a YouTube video script using Editor-in-Chief standards.
+QUALITY_CHECK_PROMPT = """You are evaluating a YouTube video script using Editor-in-Chief standards.
 
 ═══════════════════════════════════════════════════════════════
 EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
 ═══════════════════════════════════════════════════════════════
 
-{EDITOR_IN_CHIEF_RULES}
+""" + EDITOR_IN_CHIEF_RULES + """
 
 ═══════════════════════════════════════════════════════════════
 END OF EDITOR-IN-CHIEF STANDARDS
@@ -453,7 +453,7 @@ Output JSON:
 }}
 
 Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
-""")
+"""
 
 # ==================== APPLY FIXES ====================
 
