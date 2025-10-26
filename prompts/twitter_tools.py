@@ -811,7 +811,7 @@ YOUR TASK:
 5. ALSO check 280-character limit for each tweet
 
 Thread to evaluate:
-{{post}}
+{post}
 
 WORKFLOW:
 

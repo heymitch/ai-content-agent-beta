@@ -212,7 +212,7 @@ YOUR TASK:
 4. Use EXACT replacement strategies from the standards (don't make up your own)
 
 CAPTION TO EVALUATE:
-{{post}}
+{post}
 
 WORKFLOW:
 

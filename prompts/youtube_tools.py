@@ -332,7 +332,7 @@ YOUR TASK:
 4. Use EXACT replacement strategies from the standards (don't make up your own)
 
 Script to evaluate:
-{{post}}
+{post}
 
 WORKFLOW:
 
