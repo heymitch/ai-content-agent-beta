@@ -757,6 +757,7 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
         self,
         topic: str,
         context: str = "",
+        style: str = "tactical",  # Add style parameter with default
         thread_type: str = "standard",
         content_length: str = "auto",  # "single_post" | "short_thread" | "long_thread" | "auto"
         target_score: int = 85,
@@ -768,6 +769,7 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
         Args:
             topic: Main topic/angle
             context: Additional requirements, CTAs, etc.
+            style: Content style (tactical, thought_leadership, educational, etc.)
             thread_type: standard (for now, may add video/image threads later)
             content_length: "single_post" (1 tweet, 280 chars) | "short_thread" (3-4 tweets) | "long_thread" (5-10 tweets) | "auto" (agent decides)
             target_score: Minimum quality score (default 85)
@@ -795,22 +797,29 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
             length_directive = "DECIDE: Default to SINGLE POST (280 chars). Only create thread if topic truly requires 3+ distinct points with evidence. BIAS TOWARD SINGLES."
 
         # Build the creation prompt
-        creation_prompt = f"""Create a high-quality Twitter thread using the available MCP tools.
+        creation_prompt = f"""You MUST use the MCP tools to create this Twitter thread.
+DO NOT generate content directly. If a tool fails, report the error.
 
 Topic: {topic}
 Context: {context}
+Style: {style}
 
 {length_directive}
 
-WORKFLOW:
-1. Call mcp__twitter_tools__generate_5_hooks to get hook options
-2. Select best hook and call mcp__twitter_tools__create_human_draft
-3. Call mcp__twitter_tools__inject_proof_points to add specific examples
-4. Call mcp__twitter_tools__quality_check to evaluate the thread
-5. If issues found, call mcp__twitter_tools__apply_fixes
-6. Return the final thread
+REQUIRED WORKFLOW (all steps mandatory):
+1. MUST call mcp__twitter_tools__generate_5_hooks to get hook options
+2. MUST call mcp__twitter_tools__create_human_draft with the selected hook
+3. MUST call mcp__twitter_tools__inject_proof_points to add specific examples
+4. MUST call mcp__twitter_tools__quality_check to evaluate the thread
+5. If issues found, MUST call mcp__twitter_tools__apply_fixes
+6. Return the final thread from the tools
 
-The tools contain WRITE_LIKE_HUMAN_RULES and quality evaluation logic."""
+If any tool returns an error:
+- Report the specific error message
+- Do NOT bypass the tools
+- Do NOT generate content manually
+
+The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
 
         try:
             # Connect if needed

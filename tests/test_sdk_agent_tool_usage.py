@@ -48,11 +48,27 @@ async def test_linkedin_tool_usage():
         post_type="thought_leadership"
     )
 
-    print(f"\n✅ Post created ({len(result)} chars)")
+    # Handle both dict (production) and string (legacy) formats
+    if isinstance(result, dict):
+        # Production SDK agents return dict
+        post_content = result.get('post', '')
+        score = result.get('score', 0)
+        success = result.get('success', False)
+
+        # Verify structure
+        assert 'post' in result, "Production result must have 'post' field"
+        assert 'success' in result, "Production result must have 'success' field"
+        print(f"\n✅ Post created: Score {score}/25, Length {len(post_content)} chars")
+    else:
+        # Legacy or test mode might return string
+        post_content = result
+        score = 0
+        success = len(result) > 0
+        print(f"\n✅ Post created ({len(post_content)} chars)")
 
     # Parse result to verify tools were mentioned in creation process
     # The verbose logging should show tool calls in the output
-    result_lower = result.lower()
+    result_lower = post_content.lower()
 
     # Check for tool usage indicators (from verbose logging)
     tool_indicators = {
@@ -68,11 +84,11 @@ async def test_linkedin_tool_usage():
             tools_found.append(tool_name)
 
     print(f"\n📊 Tool Usage Analysis:")
-    print(f"   Result length: {len(result)} chars")
+    print(f"   Result length: {len(post_content)} chars")
     print(f"   Tools potentially used: {len(tools_found)}/4")
 
     # Verify result structure
-    assert len(result) > 100, "Result should be substantial content, not empty"
+    assert len(post_content) > 100, "Result should be substantial content, not empty"
 
     # Check for AI slop patterns (should be minimal after tool usage)
     slop_patterns = [
@@ -109,10 +125,10 @@ async def test_linkedin_tool_usage():
         print(f"   ✅ No banned phrases detected")
 
     print(f"\n   Result preview:")
-    print(f"   {result[:200]}...")
+    print(f"   {post_content[:200]}...")
 
     # Final assertion: Result should be quality content
-    assert len(result) >= 200, "Post should be at least 200 chars (not a stub)"
+    assert len(post_content) >= 200, "Post should be at least 200 chars (not a stub)"
     assert len(violations) == 0, f"Post should not contain banned phrases: {violations}"
 
     print(f"\n✅ PASS: LinkedIn SDK agent produced quality content")
@@ -220,7 +236,7 @@ async def test_quality_check_detection():
     # tool response to truly test detection.
     # For now, we verify the pattern library exists and has rules.
 
-    from prompts.write_like_human_rules import WRITE_LIKE_HUMAN_RULES
+    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
 
     print(f"\n📋 WRITE_LIKE_HUMAN_RULES:")
     print(f"   Total rules: {len(WRITE_LIKE_HUMAN_RULES.splitlines())} lines")

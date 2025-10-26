@@ -639,20 +639,26 @@ AVAILABLE TOOLS:
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a high-quality LinkedIn {post_type} post using the available MCP tools.
+        creation_prompt = f"""You MUST use the MCP tools to create this LinkedIn {post_type} post.
+DO NOT generate content directly. If a tool fails, report the error.
 
 Topic: {topic}
 Context: {context}
 
-RECOMMENDED WORKFLOW:
-1. Call mcp__linkedin_tools__generate_5_hooks to get hook options
-2. Select best hook and call mcp__linkedin_tools__create_human_draft
+REQUIRED WORKFLOW (all steps mandatory):
+1. MUST call mcp__linkedin_tools__generate_5_hooks to get hook options
+2. MUST call mcp__linkedin_tools__create_human_draft with the selected hook
 3. If draft needs proof points, call mcp__linkedin_tools__inject_proof_points
-4. Call mcp__linkedin_tools__quality_check to evaluate the post
-5. If issues found, call mcp__linkedin_tools__apply_fixes
-6. Return the final post
+4. MUST call mcp__linkedin_tools__quality_check to evaluate the post
+5. If issues found, MUST call mcp__linkedin_tools__apply_fixes
+6. Return the final post from the tools
 
-The tools contain WRITE_LIKE_HUMAN_RULES and quality evaluation logic. Use them to ensure high-quality output."""
+If any tool returns an error:
+- Report the specific error message
+- Do NOT bypass the tools
+- Do NOT generate content manually
+
+The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
 
         try:
             # Connect if needed

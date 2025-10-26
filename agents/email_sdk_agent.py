@@ -667,21 +667,27 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final email when thresh
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a high-quality email newsletter using the available MCP tools.
+        creation_prompt = f"""You MUST use the MCP tools to create this email newsletter.
+DO NOT generate content directly. If a tool fails, report the error.
 
 Topic: {topic}
 Context: {context}
 Email Type: {email_type}
 
-WORKFLOW:
-1. Call mcp__email_tools__generate_5_hooks to get subject line options
-2. Select best subject and call mcp__email_tools__create_human_draft
+REQUIRED WORKFLOW (all steps mandatory):
+1. MUST call mcp__email_tools__generate_5_hooks to get subject line options
+2. MUST call mcp__email_tools__create_human_draft with the selected subject
 3. If draft needs proof points, call mcp__email_tools__inject_proof_points
-4. Call mcp__email_tools__quality_check to evaluate the email
-5. If issues found, call mcp__email_tools__apply_fixes
-6. Return the final email
+4. MUST call mcp__email_tools__quality_check to evaluate the email
+5. If issues found, MUST call mcp__email_tools__apply_fixes
+6. Return the final email from the tools
 
-The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style examples."""
+If any tool returns an error:
+- Report the specific error message
+- Do NOT bypass the tools
+- Do NOT generate content manually
+
+The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style that MUST be applied."""
 
         try:
             # Connect if needed

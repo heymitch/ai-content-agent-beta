@@ -227,12 +227,12 @@ Return the enhanced draft only (plain text, NO markdown formatting like **bold**
 
 # ==================== CREATE HUMAN DRAFT ====================
 
-CREATE_HUMAN_DRAFT_PROMPT = dedent(f"""
+CREATE_HUMAN_DRAFT_PROMPT = """
 ═══════════════════════════════════════════════════════════════
 WRITE LIKE A HUMAN (COMPREHENSIVE ANTI-SLOP RULES):
 ═══════════════════════════════════════════════════════════════
 
-{WRITE_LIKE_HUMAN_RULES}
+""" + WRITE_LIKE_HUMAN_RULES + """
 
 ═══════════════════════════════════════════════════════════════
 END OF ANTI-SLOP RULES
@@ -750,7 +750,7 @@ Output JSON:
 Character limit for post_text: 2800 chars max.
 NO commentary in post_text. NO labels like "Hook:" or "Section 1:". Just natural post text.
 NO markdown formatting: NO bold (**text**), NO italic (*text*), NO headers (##). Write plain text only.
-""")
+"""
 
 # ==================== DETECT AI CRINGE ====================
 

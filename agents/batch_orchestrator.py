@@ -484,16 +484,40 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     # Get plan from registry
     plan = _batch_plans.get(plan_id)
     if not plan:
-        return {'error': f"Plan {plan_id} not found"}
+        return {
+            'success': False,
+            'error': f"Plan {plan_id} not found",
+            'platform': 'unknown',
+            'score': 0,
+            'hook': '',
+            'airtable_url': None,
+            'learnings_summary': ''
+        }
 
     # Get context manager
     context_mgr = _context_managers.get(plan_id)
     if not context_mgr:
-        return {'error': f"Context manager not found for plan {plan_id}"}
+        return {
+            'success': False,
+            'error': f"Context manager not found for plan {plan_id}",
+            'platform': 'unknown',
+            'score': 0,
+            'hook': '',
+            'airtable_url': None,
+            'learnings_summary': ''
+        }
 
     # Validate post index
     if post_index < 0 or post_index >= len(plan['posts']):
-        return {'error': f"Invalid post_index {post_index}. Plan has {len(plan['posts'])} posts."}
+        return {
+            'success': False,
+            'error': f"Invalid post_index {post_index}. Plan has {len(plan['posts'])} posts.",
+            'platform': 'unknown',
+            'score': 0,
+            'hook': '',
+            'airtable_url': None,
+            'learnings_summary': ''
+        }
 
     post_spec = plan['posts'][post_index]
 
