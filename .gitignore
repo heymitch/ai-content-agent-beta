@@ -68,21 +68,32 @@ archive/
 *.sqlite
 
 # Test tools (delete before production)
-# Test tools
+# Development and testing documentation
+# (Hidden from client deployments for cleaner codebase)
 DEPLOYMENT_TESTS.md
 WHITE_GLOVE_DEPLOYMENT.md
 DEV_CONTEXT.md
 SDK_DOCS.md
-# Keep tests/ folder for pre-deployment testing
-# But ignore loose test files in root (NOT in tests/ folder)
-/test_*.py
-/*_test.py
-
-# Testing infrastructure (added 2024-10-21)
 TESTING_CHECKLIST.md
 TEST_SUMMARY.md
-run_tests.sh
-
-# All-caps documentation files
 AGENT_INSTRUCTIONS.md
-/README.md
+BULK-PLAN.md
+PHASE5-DEPLOYMENT-CHECKLIST.md
+AIRTABLE_SETUP.md
+editor-in-chief.md
+logs.md
+ROADMAP.md
+
+# Test files in root (keep tests/ folder)
+/test_*.py
+/*_test.py
+run_tests.sh
+test_multi_platform_*.py
+test_multi_platform_mock.py
+test_multi_platform_quality.py
+
+# Temporary and backup files
+*.backup
+*.tmp
+*.log
+*.old
