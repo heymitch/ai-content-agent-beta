@@ -193,3 +193,78 @@ All test records are marked with:
 - Post hooks containing "TEST" or "Delete Me"
 
 This makes them easy to identify and clean up.
+
+---
+
+## 🧪 Mock Test Suite (No API Calls)
+
+Complete test coverage for your content generation system **without burning API credits**.
+
+### Why Mock Tests?
+
+Your system has:
+- **5 SDK Agents** (LinkedIn, Twitter, Email, YouTube, Instagram)
+- **20+ MCP Tools** per platform
+- **Batch orchestration** with context learning
+- **Complex tool chaining** and error handling
+
+Testing this normally would cost **~$0.20 per test run** and take **2-3 minutes**.
+With these mocks: **$0.00** and **~1 second**.
+
+### Mock Test Files
+
+#### 1. `test_full_system_mock.py`
+**Complete system integration test**
+- Tests all 5 SDK agents
+- Validates batch orchestration
+- Tests MCP tool flow
+- Performance benchmarking
+
+```bash
+python3 tests/test_full_system_mock.py
+```
+
+#### 2. `test_tool_validation.py`
+**MCP tool signature validation**
+- Validates all tool contracts
+- Tests tool chaining
+- Platform workflow validation
+
+```bash
+python3 tests/test_tool_validation.py
+```
+
+#### 3. `test_batch_orchestrator_mock.py`
+**Context learning and orchestration**
+- Tests context accumulation
+- Sequential vs parallel execution
+- Slack metadata flow
+
+```bash
+python3 tests/test_batch_orchestrator_mock.py
+```
+
+### 💰 Cost Savings
+
+Each mock test run saves:
+- **90+ API calls** to Claude
+- **~$0.18** in API costs
+- **2-3 minutes** of waiting time
+
+If you run tests 10 times per day:
+- **900 API calls saved**
+- **$1.80 saved daily**
+- **30 minutes saved**
+
+### When to Use What
+
+**Use `pre_deploy_test.py`:**
+- Before deploying to production
+- Testing real integrations
+- Verifying credentials
+
+**Use mock tests:**
+- During development
+- Testing logic changes
+- Running CI/CD pipelines
+- Debugging workflows
