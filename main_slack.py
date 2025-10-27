@@ -192,7 +192,10 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
     body_bytes = await request.body()
     body_text = body_bytes.decode('utf-8')
     data = json.loads(body_text)
-    print(f"🔍 RECEIVED SLACK EVENT: {data}")
+
+    # Verbose logging (set LOG_LEVEL=DEBUG to see full payloads)
+    if os.getenv('LOG_LEVEL') == 'DEBUG':
+        print(f"🔍 RECEIVED SLACK EVENT: {data}")
 
     # Handle URL verification challenge
     if 'challenge' in data:
@@ -263,14 +266,20 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
             return {'status': 'duplicate_message'}
         processed_events[dedup_key] = now
 
-    print(f"📥 Event type: {event_type}")
-    print(f"📝 Event data: {json.dumps(event, indent=2)}")
-
-    # Special debug for thread detection
-    if 'thread_ts' in event:
-        print(f"🧵 THREAD REPLY DETECTED: thread_ts={event.get('thread_ts')}")
+    # Verbose logging (set LOG_LEVEL=DEBUG to see full event data)
+    if os.getenv('LOG_LEVEL') == 'DEBUG':
+        print(f"📥 Event type: {event_type}")
+        print(f"📝 Event data: {json.dumps(event, indent=2)}")
     else:
-        print(f"💬 NEW MESSAGE (not a thread reply)")
+        # Minimal logging - just event type
+        print(f"📥 Event: {event_type}")
+
+    # Special debug for thread detection (only in DEBUG mode)
+    if os.getenv('LOG_LEVEL') == 'DEBUG':
+        if 'thread_ts' in event:
+            print(f"🧵 THREAD REPLY DETECTED: thread_ts={event.get('thread_ts')}")
+        else:
+            print(f"💬 NEW MESSAGE (not a thread reply)")
 
     # Helper function to send messages
     def send_slack_message(channel, text, thread_ts=None):
@@ -327,8 +336,9 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
         # Determine if bot should respond
         should_respond = False
 
-        # Debug logging
-        print(f"🔍 Debug: event_type={event_type}, thread_ts={thread_ts}, is_mentioned={is_bot_mentioned}")
+        # Debug logging (only in DEBUG mode)
+        if os.getenv('LOG_LEVEL') == 'DEBUG':
+            print(f"🔍 Debug: event_type={event_type}, thread_ts={thread_ts}, is_mentioned={is_bot_mentioned}")
 
         if event_type == 'app_mention' or is_bot_mentioned:
             # Always respond to direct mentions
@@ -362,7 +372,9 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
         if bot_user_id:
             message_text = message_text.replace(f'<@{bot_user_id}>', '').strip()
 
-        print(f"💬 Processing message: {message_text}")
+        # Log message being processed (only in DEBUG mode to avoid spam)
+        if os.getenv('LOG_LEVEL') == 'DEBUG':
+            print(f"💬 Processing message: {message_text}")
 
         # ALL messages go to Claude Agent SDK - it's smart enough to understand context
         print("🤖 Processing with Claude Agent SDK...")

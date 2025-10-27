@@ -1382,7 +1382,10 @@ class ClaudeAgentHandler:
         """Initialize the Claude Agent with SDK"""
         # Generate unique handler instance ID for debugging
         self.handler_id = str(uuid.uuid4())[:8]
-        print(f"\n🏗️ Creating ClaudeAgentHandler instance [{self.handler_id}]")
+
+        # Only log handler creation in DEBUG mode
+        if os.getenv('LOG_LEVEL') == 'DEBUG':
+            print(f"\n🏗️ Creating ClaudeAgentHandler instance [{self.handler_id}]")
 
         self.memory = memory_handler
         self.slack_client = slack_client  # NEW: Store slack_client for progress updates
@@ -1782,22 +1785,26 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         SESSION_TTL = 3600  # 1 hour session lifetime
         now = time.time()
 
-        # Verbose logging for debugging
-        print(f"[{request_id}] 🔍 Session lookup for thread {thread_ts[:8]}")
-        print(f"[{request_id}]    Existing sessions: {list(self._thread_sessions.keys())}")
-        print(f"[{request_id}]    Current prompt version: {self.prompt_version}")
+        # Verbose logging for debugging (only in DEBUG mode)
+        if os.getenv('LOG_LEVEL') == 'DEBUG':
+            print(f"[{request_id}] 🔍 Session lookup for thread {thread_ts[:8]}")
+            print(f"[{request_id}]    Existing sessions: {list(self._thread_sessions.keys())}")
+            print(f"[{request_id}]    Current prompt version: {self.prompt_version}")
 
         # Check if we need to invalidate existing session
         if thread_ts in self._thread_sessions:
-            print(f"[{request_id}]    ♻️ Session exists, checking if valid...")
+            if os.getenv('LOG_LEVEL') == 'DEBUG':
+                print(f"[{request_id}]    ♻️ Session exists, checking if valid...")
 
             # Check 1: Prompt version changed (code update with new prompt)
             if thread_ts in self._session_prompt_versions:
                 old_version = self._session_prompt_versions[thread_ts]
-                print(f"[{request_id}]    Cached prompt version: {old_version}")
+                if os.getenv('LOG_LEVEL') == 'DEBUG':
+                    print(f"[{request_id}]    Cached prompt version: {old_version}")
                 if old_version != self.prompt_version:
-                    print(f"[{request_id}] 🔄 PROMPT CHANGED ({old_version} → {self.prompt_version})")
-                    print(f"[{request_id}]    Invalidating session for thread {thread_ts[:8]}")
+                    if os.getenv('LOG_LEVEL') == 'DEBUG':
+                        print(f"[{request_id}] 🔄 PROMPT CHANGED ({old_version} → {self.prompt_version})")
+                        print(f"[{request_id}]    Invalidating session for thread {thread_ts[:8]}")
                     del self._thread_sessions[thread_ts]
                     self._connected_sessions.discard(thread_ts)
                     del self._session_prompt_versions[thread_ts]
@@ -1808,10 +1815,12 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             if thread_ts in self._session_created_at:
                 age = now - self._session_created_at[thread_ts]
                 age_mins = int(age / 60)
-                print(f"[{request_id}]    Session age: {age_mins} minutes")
+                if os.getenv('LOG_LEVEL') == 'DEBUG':
+                    print(f"[{request_id}]    Session age: {age_mins} minutes")
                 if age > SESSION_TTL:
-                    print(f"[{request_id}] ⏰ SESSION EXPIRED ({age_mins} minutes old)")
-                    print(f"[{request_id}]    Invalidating session for thread {thread_ts[:8]}")
+                    if os.getenv('LOG_LEVEL') == 'DEBUG':
+                        print(f"[{request_id}] ⏰ SESSION EXPIRED ({age_mins} minutes old)")
+                        print(f"[{request_id}]    Invalidating session for thread {thread_ts[:8]}")
                     del self._thread_sessions[thread_ts]
                     self._connected_sessions.discard(thread_ts)
                     if thread_ts in self._session_prompt_versions:
@@ -1820,7 +1829,8 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         # Create new session if needed
         if thread_ts not in self._thread_sessions:
-            print(f"[{request_id}] ✨ Creating NEW session for thread {thread_ts[:8]}")
+            if os.getenv('LOG_LEVEL') == 'DEBUG':
+                print(f"[{request_id}] ✨ Creating NEW session for thread {thread_ts[:8]}")
             # Configure options for this thread
             # setting_sources=["project"] tells SDK to automatically load .claude/CLAUDE.md for brand context
             options = ClaudeAgentOptions(
@@ -1837,16 +1847,18 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             self._session_prompt_versions[thread_ts] = self.prompt_version
             self._session_created_at[thread_ts] = now
 
-            print(f"[{request_id}]    ✅ Session created with prompt version: {self.prompt_version}")
-            print(f"[{request_id}]    System prompt preview: {self.system_prompt[:80]}...")
+            if os.getenv('LOG_LEVEL') == 'DEBUG':
+                print(f"[{request_id}]    ✅ Session created with prompt version: {self.prompt_version}")
+                print(f"[{request_id}]    System prompt preview: {self.system_prompt[:80]}...")
 
-            # DEBUG: Verify which prompt version is loaded
-            if "TWO CONTENT CREATION MODES" in self.system_prompt:
-                print(f"[{request_id}]    ✅ Using NEW architecture (CO-WRITE vs BATCH)")
-            else:
-                print(f"[{request_id}]    ⚠️ Using OLD architecture (count-based routing)")
+                # DEBUG: Verify which prompt version is loaded
+                if "TWO CONTENT CREATION MODES" in self.system_prompt:
+                    print(f"[{request_id}]    ✅ Using NEW architecture (CO-WRITE vs BATCH)")
+                else:
+                    print(f"[{request_id}]    ⚠️ Using OLD architecture (count-based routing)")
         else:
-            print(f"[{request_id}]    ✅ Reusing existing session (version: {self._session_prompt_versions.get(thread_ts, 'unknown')})")
+            if os.getenv('LOG_LEVEL') == 'DEBUG':
+                print(f"[{request_id}]    ✅ Reusing existing session (version: {self._session_prompt_versions.get(thread_ts, 'unknown')})")
 
         return self._thread_sessions[thread_ts]
 
@@ -1873,10 +1885,12 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         # Generate unique request ID for debugging
         request_id = str(uuid.uuid4())[:8]
 
-        print(f"\n{'='*70}")
-        print(f"[{request_id}] 🎯 NEW REQUEST - Thread: {thread_ts[:8]}")
-        print(f"[{request_id}] 💬 Message: {message[:100]}{'...' if len(message) > 100 else ''}")
-        print(f"{'='*70}")
+        # Verbose request logging (only in DEBUG mode)
+        if os.getenv('LOG_LEVEL') == 'DEBUG':
+            print(f"\n{'='*70}")
+            print(f"[{request_id}] 🎯 NEW REQUEST - Thread: {thread_ts[:8]}")
+            print(f"[{request_id}] 💬 Message: {message[:100]}{'...' if len(message) > 100 else ''}")
+            print(f"{'='*70}")
 
         # NEW: Store conversation context for tools to access
         self._conversation_context[thread_ts] = {
@@ -1909,15 +1923,19 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
             # Only connect if this is a NEW session (not already connected)
             if thread_ts not in self._connected_sessions:
-                print(f"[{request_id}] 🔌 Connecting NEW client session...")
+                if os.getenv('LOG_LEVEL') == 'DEBUG':
+                    print(f"[{request_id}] 🔌 Connecting NEW client session...")
                 await client.connect()
                 self._connected_sessions.add(thread_ts)
-                print(f"[{request_id}] ✅ Client connected successfully")
+                if os.getenv('LOG_LEVEL') == 'DEBUG':
+                    print(f"[{request_id}] ✅ Client connected successfully")
             else:
-                print(f"[{request_id}] ♻️ Reusing connected client...")
+                if os.getenv('LOG_LEVEL') == 'DEBUG':
+                    print(f"[{request_id}] ♻️ Reusing connected client...")
 
             # Send the query
-            print(f"[{request_id}] 📨 Sending query to Claude SDK...")
+            if os.getenv('LOG_LEVEL') == 'DEBUG':
+                print(f"[{request_id}] 📨 Sending query to Claude SDK...")
             await client.query(contextualized_message)
 
             # Collect ONLY the latest response (memory stays intact in session)
