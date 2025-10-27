@@ -218,3 +218,42 @@ Posts analyzed:
         # Aim for +1 above average, capped at 24
         target = int(avg + 1)
         return min(24, max(18, target))
+
+    def add_strategic_context(self, post_index: int, strategic_outline: str):
+        """
+        Store strategic outline for tracking alignment
+
+        Args:
+            post_index: Which post in the batch
+            strategic_outline: The original user-provided outline
+        """
+        if not hasattr(self, 'strategic_outlines'):
+            self.strategic_outlines = {}
+
+        self.strategic_outlines[post_index] = strategic_outline
+
+    def check_alignment(self, post_index: int, generated_content: str) -> float:
+        """
+        Check how well generated content aligns with strategic outline
+
+        Returns:
+            Alignment score 0-1 (1 = perfect alignment)
+        """
+        if not hasattr(self, 'strategic_outlines'):
+            return 1.0  # No outline to check against
+
+        outline = self.strategic_outlines.get(post_index, '')
+        if not outline:
+            return 1.0
+
+        # Simple check: key phrases from outline appear in content
+        outline_words = set(outline.lower().split())
+        content_words = set(generated_content.lower().split())
+
+        overlap = len(outline_words & content_words)
+        alignment = overlap / len(outline_words) if outline_words else 1.0
+
+        if alignment < 0.5:
+            print(f"⚠️ WARNING: Generated content has low alignment ({alignment:.1%}) with strategic outline")
+
+        return alignment

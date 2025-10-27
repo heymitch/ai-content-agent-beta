@@ -107,7 +107,7 @@ Don't use "from...to..." constructions when not describing actual ranges.
 - AVOID: "The menu features dishes from pasta to grilled meats"
 - USE: "The menu includes pasta dishes, grilled meats, and seasonal vegetables"
 
-SEARCH AND ELIMINATE: Direct Contrast Formulations
+# SEARCH AND ELIMINATE: Direct Contrast Formulations
 Immediate Red Flags (Delete on Sight):
 
 "This isn't about X—it's about Y"

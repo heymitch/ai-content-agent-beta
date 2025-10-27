@@ -432,10 +432,10 @@ def create_batch_plan(
     user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Create a batch plan and store it in the global registry
+    Create a batch plan and store it in the global registry with RICH context preservation
 
     Args:
-        posts: List of post specs [{"platform": "...", "topic": "...", "context": "..."}]
+        posts: List of post specs [{"platform": "...", "topic": "...", "context": "...", "detailed_outline": "..."}]
         description: High-level description of the batch
         channel_id: Slack channel ID (for saving to Airtable)
         thread_ts: Slack thread timestamp (for saving to Airtable)
@@ -446,23 +446,40 @@ def create_batch_plan(
     """
     plan_id = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-    # NEW: Analyze context quality across all posts
-    total_context_chars = sum(len(p.get('context', '')) for p in posts)
-    avg_context = total_context_chars / len(posts) if posts else 0
+    # Validate context richness for each post
+    for i, post in enumerate(posts):
+        # Check for detailed_outline or rich context
+        outline = post.get('detailed_outline', '')
+        context = post.get('context', '')
+        combined_length = len(outline) + len(context)
 
-    # Determine context quality level
-    if avg_context < 100:
+        if combined_length < 200:
+            print(f"⚠️ WARNING: Post {i+1} has sparse context ({combined_length} chars)")
+            print(f"   Topic: {post.get('topic', 'Unknown')}")
+            print(f"   Consider adding 'detailed_outline' field with full strategic narrative")
+
+    # NEW: Analyze context quality across all posts (including detailed_outline)
+    context_lengths = [
+        len(p.get('detailed_outline', '')) + len(p.get('context', ''))
+        for p in posts
+    ]
+    avg_context = sum(context_lengths) / len(context_lengths) if context_lengths else 0
+
+    # Determine context quality level (adjusted for detailed_outline support)
+    if avg_context < 50:
         context_quality = "sparse"  # Minimal context, use thought leadership
-    elif avg_context < 300:
+    elif avg_context < 150:
         context_quality = "medium"  # Some context, blend proof + opinion
     else:
-        context_quality = "rich"  # Rich context, full proof posts
+        context_quality = "rich"  # Rich context with detailed outline, full proof posts
 
     plan = {
         'id': plan_id,
         'description': description,
-        'posts': posts,
-        'context_quality': context_quality,  # NEW: Track for SDK agents
+        'posts': posts,  # Now includes detailed_outline field
+        'context_quality': context_quality,
+        'avg_context_length': avg_context,  # NEW: Track average context length
+        'detailed_outlines': [p.get('detailed_outline', '') for p in posts],  # NEW: Extract all outlines
         'created_at': datetime.now().isoformat(),
         # Store Slack metadata for SDK agents to use when saving to Airtable
         'slack_metadata': {
@@ -568,15 +585,34 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     print(f"   Target score: {target_score}+")
     print(f"   Slack context: channel={channel_id}, thread={thread_ts}, user={user_id}")
 
-    # Build enhanced context with quality indicator and learnings
-    enhanced_context = f"""{post_spec.get('context', '')}
+    # Build RICH context with strategic outline as primary
+
+    # 1. Get the FULL strategic outline (priority)
+    strategic_outline = post_spec.get('detailed_outline', '')
+    base_context = post_spec.get('context', '')
+
+    # 2. Combine strategic elements
+    if strategic_outline:
+        primary_context = f"""**STRATEGIC OUTLINE (Follow this closely):**
+{strategic_outline}
+
+**Additional Context:**
+{base_context}"""
+    else:
+        primary_context = base_context
+
+    # 3. Add learnings and quality targets
+    enhanced_context = f"""{primary_context}
 
 **Content Type:** {content_type_hint}
 
 **Learnings from previous posts:**
 {learnings}
 
-**Target quality score:** {target_score}+/25"""
+**Target quality score:** {target_score}+/25
+
+**INSTRUCTION:** If a strategic outline is provided above, follow it closely.
+The outline represents the exact narrative flow and key points to hit."""
 
     try:
         # Execute post using SDK agent with enhanced context AND Slack metadata
@@ -597,6 +633,18 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
         score = extract_score_from_result(result)
         airtable_url = extract_airtable_url_from_result(result)
         hook = extract_hook_from_result(result)
+
+        # NEW: Check strategic alignment if outline was provided
+        if post_spec.get('detailed_outline'):
+            context_mgr.add_strategic_context(post_index, post_spec['detailed_outline'])
+            content = result.get('content', '')
+            alignment = context_mgr.check_alignment(post_index, content)
+
+            if alignment < 0.5:
+                print(f"   ⚠️ Post {post_index + 1} has low strategic alignment: {alignment:.1%}")
+                print(f"      Consider reviewing if content matches intended outline")
+            else:
+                print(f"   ✅ Post {post_index + 1} strategic alignment: {alignment:.1%}")
 
         # Update context manager
         await context_mgr.add_post_summary({

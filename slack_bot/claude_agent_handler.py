@@ -1637,6 +1637,39 @@ CMO: *calls plan_content_batch with FINAL 7-post plan*
    - Progress bar visualization
    - Example: get_batch_status(plan_id="batch_123")
 
+**CRITICAL: PRESERVING USER OUTLINES IN BATCH MODE**
+
+When user provides detailed post outlines (common in strategic batches):
+
+RECOGNIZE these patterns:
+- "Post 1: [detailed narrative]"
+- "DAY 1: [title] - [full outline]"
+- Numbered/bulleted posts with specific content
+- Strategic sequences with exact messaging
+
+YOU MUST:
+1. Extract COMPLETE outline for each post (not just topic)
+2. Store in 'detailed_outline' field alongside topic/context
+3. Include ALL user-provided details (hooks, examples, CTAs)
+4. Preserve formatting and structure
+
+EXAMPLE - User provides:
+"Create 3 LinkedIn posts:
+Post 1 (Morning): Most high-ticket operators have built the wrong AI tools. They spent months on chatbots. I built something different..."
+
+Your plan_content_batch call MUST be:
+posts=[{
+    "platform": "linkedin",
+    "topic": "High-ticket operators building wrong AI tools",
+    "context": "Morning post, contrarian angle",
+    "detailed_outline": "Most high-ticket operators have built the wrong AI tools. They spent months on chatbots. I built something different...",  # FULL TEXT
+    "style": "contrarian",
+    "timing": "Morning 7-9 AM"
+}]
+
+NEVER summarize or truncate the user's strategic outline!
+When in doubt, preserve MORE context, not less.
+
 **BATCH WORKFLOW EXAMPLES:**
 
 Example A: Single post batch
