@@ -484,7 +484,7 @@ async def test_batch_orchestrator(results: TestResults):
 
     try:
         from agents.batch_orchestrator import create_batch_plan
-        from agents.context_manager import BatchContextManager
+        from agents.context_manager import ContextManager
 
         print(f"1. Testing batch plan creation...")
 
@@ -520,15 +520,18 @@ async def test_batch_orchestrator(results: TestResults):
             print(f"   {YELLOW}⚠{RESET} Plan structure incomplete")
 
         print(f"3. Testing context manager...")
-        context_mgr = BatchContextManager()
+        context_mgr = ContextManager(plan_id="test_plan_001")
         await context_mgr.add_post_summary({
             'post_num': 1,
             'score': 20,
+            'hook': 'Test hook for content',
             'platform': 'linkedin',
-            'learnings': ['Test learning 1']
+            'airtable_url': 'https://airtable.com/test',
+            'what_worked': 'Good engagement hook'
         })
 
-        context = await context_mgr.get_accumulated_context(2)
+        # Use the correct method name
+        context = context_mgr.get_compacted_learnings()
         if context:
             print(f"   {GREEN}✓{RESET} Context manager working")
 
