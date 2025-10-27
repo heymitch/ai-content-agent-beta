@@ -1662,13 +1662,16 @@ posts=[{
     "platform": "linkedin",
     "topic": "High-ticket operators building wrong AI tools",
     "context": "Morning post, contrarian angle",
-    "detailed_outline": "Most high-ticket operators have built the wrong AI tools. They spent months on chatbots. I built something different...",  # FULL TEXT
+    "detailed_outline": "Most high-ticket operators have built the wrong AI tools. They spent months on chatbots. I built something different...",  # FULL TEXT - can be 500+ words!
     "style": "contrarian",
     "timing": "Morning 7-9 AM"
 }]
 
 NEVER summarize or truncate the user's strategic outline!
 When in doubt, preserve MORE context, not less.
+
+If user provides a 500-word nearly-complete post as their outline, store ALL 500 words.
+The detailed_outline field has NO length limit - preserve EVERYTHING.
 
 **BATCH WORKFLOW EXAMPLES:**
 
