@@ -4,7 +4,7 @@ Clean implementation with only essential Slack functionality
 """
 
 from anthropic import Anthropic, RateLimitError
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from supabase import create_client, Client
 import os
 import json
@@ -85,6 +85,19 @@ def get_slack_handler():
             slack_handler = SlackContentHandler(supabase, None)
             print("✅ Slack handler initialized (no calendar)")
     return slack_handler
+
+# ============= FASTAPI LIFECYCLE EVENTS =============
+
+# Track how many times handler has been created (for debugging)
+_handler_creation_count = 0
+
+@app.on_event("startup")
+async def clear_dev_caches():
+    """Clear handler cache on startup to ensure fresh prompts after code updates"""
+    global slack_handler, _handler_creation_count
+    slack_handler = None
+    _handler_creation_count = 0
+    print("🔄 Startup: Cleared handler cache (ensures fresh system prompts on hot reload)")
 
 # ============= RATE LIMITING =============
 
@@ -173,8 +186,8 @@ def health_check():
 # ============= SLACK EVENT HANDLERS =============
 
 @app.post('/slack/events')
-async def handle_slack_event(request: Request):
-    """Handle Slack events with proper async support"""
+async def handle_slack_event(request: Request, background_tasks: BackgroundTasks):
+    """Handle Slack events with proper async support and FastAPI background tasks"""
     # Get raw body for signature verification
     body_bytes = await request.body()
     body_text = body_bytes.decode('utf-8')
@@ -382,12 +395,15 @@ async def handle_slack_event(request: Request):
                 handler = get_slack_handler()
 
                 # Use the REAL Claude Agent SDK handler
-                if not hasattr(handler, 'claude_agent'):
-                    handler.claude_agent = ClaudeAgentHandler(
-                        memory_handler=handler.memory if handler else None
-                    )
+                # ALWAYS recreate to pick up prompt changes on module reload
+                handler.claude_agent = ClaudeAgentHandler(
+                    memory_handler=handler.memory if handler else None,
+                    slack_client=slack_client  # NEW: Pass slack_client for progress updates
+                )
 
-                print("🚀 Claude Agent SDK ready with 6 tools")
+                global _handler_creation_count
+                _handler_creation_count += 1
+                print(f"🚀 Handler #{_handler_creation_count} ready (tools registered via MCP server)")
 
                 # Save user message to conversation history
                 if handler.memory:
@@ -440,10 +456,10 @@ async def handle_slack_event(request: Request):
                     thread_ts=thread_ts
                 )
 
-        # Create background task
-        asyncio.create_task(process_message())
+        # Use FastAPI BackgroundTasks for proper lifecycle management
+        background_tasks.add_task(process_message)
 
-        # Return immediately to beat 3-second timeout
+        # Return immediately to beat Slack's 3-second timeout
         return {'status': 'processing'}
     # Handle reaction events
     elif event_type == 'reaction_added':

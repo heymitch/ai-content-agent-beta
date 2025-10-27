@@ -32,6 +32,33 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 # Detailed prompts loaded just-in-time when tools are called
 
 @tool(
+    "search_company_documents",
+    "Search user-uploaded docs (case studies, testimonials, product docs) for proof points",
+    {"query": str, "match_count": int, "document_type": str}
+)
+async def search_company_documents(args):
+    """Search company documents for context enrichment"""
+    from tools.company_documents import search_company_documents as _search_func
+
+    query = args.get('query', '')
+    match_count = args.get('match_count', 3)
+    document_type = args.get('document_type')
+
+    result = _search_func(
+        query=query,
+        match_count=match_count,
+        document_type=document_type
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
     "generate_5_hooks",
     "Generate 5 Instagram hooks optimized for 125-char preview",
     {"topic": str, "context": str, "target_audience": str}
@@ -182,119 +209,87 @@ async def condense_to_limit(args):
 
 @tool(
     "quality_check",
-    "Score Instagram caption on 5 axes and return surgical fixes",
+    "Score caption on 5 axes and return surgical fixes",
     {"post": str}
 )
 async def quality_check(args):
-    """Evaluate caption with 5-axis rubric + surgical feedback + Tavily search for fabrications"""
+    """Evaluate caption with 5-axis rubric + surgical feedback (simplified without Tavily loop)"""
     import json
     from anthropic import Anthropic
     from prompts.instagram_tools import QUALITY_CHECK_PROMPT
-    from tavily import TavilyClient
 
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    tavily = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
 
     post = args.get('post', '')
-    prompt = QUALITY_CHECK_PROMPT.format(post=post)
 
-    # Define Tavily search tool for Claude
-    tavily_tool = {
-        "name": "web_search",
-        "description": "Search the web for current information to verify claims, names, companies, and news stories. Returns recent, relevant results.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query (e.g., 'Rick Beato YouTube AI filters', 'James Chen Clearbit')"
-                }
-            },
-            "required": ["query"]
-        }
-    }
+    # Create a modified prompt that skips fact-checking step
+    prompt = QUALITY_CHECK_PROMPT.format(post=post) + """
 
-    messages = [{"role": "user", "content": prompt}]
+IMPORTANT: For this evaluation, skip STEP 5 (web search verification).
+Focus on steps 1-4 only: scanning for violations, creating issues, scoring, and making decision.
+Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web searches."""
 
-    # Tool loop: handle Tavily search requests
-    max_iterations = 5
-    for iteration in range(max_iterations):
+    # SIMPLIFIED: Single API call, no tool loop
+    try:
         response = client.messages.create(
             model="claude-sonnet-4-5-20250929",
             max_tokens=3000,
-            tools=[tavily_tool],
-            messages=messages
+            messages=[{"role": "user", "content": prompt}]
         )
 
-        # Check if Claude wants to use a tool
-        if response.stop_reason == "tool_use":
-            # Extract tool use from response
-            tool_use_block = next((block for block in response.content if block.type == "tool_use"), None)
+        # Extract text response
+        response_text = response.content[0].text if response.content else ""
 
-            if tool_use_block and tool_use_block.name == "web_search":
-                # Execute Tavily search
-                query = tool_use_block.input["query"]
-                try:
-                    tavily_results = tavily.search(query, max_results=3)
-                    search_output = "\n\n".join([
-                        f"**{r.get('title', 'No title')}**\n{r.get('content', 'No content')}\nSource: {r.get('url', 'No URL')}"
-                        for r in tavily_results.get('results', [])
-                    ])
-                except Exception as e:
-                    search_output = f"Search error: {str(e)}"
-
-                # Add assistant message with tool use, then tool result
-                messages.append({
-                    "role": "assistant",
-                    "content": response.content
-                })
-                messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": tool_use_block.id,
-                        "content": search_output
-                    }]
-                })
-                # Continue loop to get final response
-                continue
-
-            # Unknown tool - shouldn't happen
-            messages.append({
-                "role": "assistant",
-                "content": response.content
-            })
-            continue
-
-        # Got final text response
-        final_text = ""
-        for block in response.content:
-            if hasattr(block, 'text'):
-                final_text += block.text
-
-        # Try to parse JSON, return as-is if valid
+        # Try to parse as JSON for structured response
         try:
-            json_result = json.loads(final_text)
+            json_result = json.loads(response_text)
+            # Ensure it has expected structure
             if "scores" in json_result and "decision" in json_result:
-                return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
+                # Add note about skipped verification
+                if "searches_performed" not in json_result:
+                    json_result["searches_performed"] = []
+                json_result["note"] = "Fact verification skipped to avoid tool conflicts"
+                return {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(json_result, indent=2)
+                    }]
+                }
         except json.JSONDecodeError:
+            # Not JSON, return as text
             pass
 
-        # Fallback: return raw text
-        return {"content": [{"type": "text", "text": final_text}]}
+        # Return raw text if not valid JSON
+        return {
+            "content": [{
+                "type": "text",
+                "text": response_text
+            }]
+        }
 
-    # Max iterations reached
-    return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "scores": {"total": 0},
-                "decision": "error",
-                "issues": [],
-                "surgical_summary": "Max iterations reached"
-            }, indent=2)
-        }]
-    }
+    except Exception as e:
+        # Return error as structured response
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "scores": {
+                        "hook": 0,
+                        "storytelling": 0,
+                        "visual_cues": 0,
+                        "proof": 0,
+                        "cta": 0,
+                        "total": 0,
+                        "ai_deductions": 0
+                    },
+                    "decision": "error",
+                    "issues": [],
+                    "preview_length": 0,
+                    "surgical_summary": f"Quality check error: {str(e)}",
+                    "note": "Simplified quality check without web verification"
+                }, indent=2)
+            }]
+        }
 
 
 @tool(
@@ -357,21 +352,31 @@ class InstagramSDKAgent:
     Orchestrates Tier 3 tools and maintains platform-specific context
     """
 
-    def __init__(self, user_id: str = "default", isolated_mode: bool = False):
+    def __init__(
+        self,
+        user_id: str = "default",
+        isolated_mode: bool = False,
+        channel_id: Optional[str] = None,
+        thread_ts: Optional[str] = None
+    ):
         """Initialize Instagram SDK Agent with memory and tools
 
         Args:
             user_id: User identifier for session management
             isolated_mode: If True, creates isolated sessions (for testing only)
+            channel_id: Slack channel ID for tracking
+            thread_ts: Slack thread timestamp for tracking
         """
         self.user_id = user_id
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
+        self.channel_id = channel_id  # Slack channel for Supabase/Airtable
+        self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
 
         # Instagram-specific base prompt with quality thresholds
         base_prompt = """You are an Instagram caption creation agent. Your goal: captions that score 20+ out of 25 and stop the scroll.
 
-AVAILABLE TOOLS (5-tool workflow):
+AVAILABLE TOOLS:
 
 1. mcp__instagram_tools__generate_5_hooks
    Input: {"topic": str, "context": str, "audience": str}
@@ -423,14 +428,14 @@ CRITICAL CONSTRAINTS:
 - Visual pairing (assumes accompanying image/Reel)
 - Mobile formatting (line breaks every 2-3 sentences)
 
-LEAN WORKFLOW:
+WORKFLOW:
 1. generate_5_hooks
 2. Select best hook
 3. create_caption_draft
 4. If >2,200 chars → condense_to_limit
 5. quality_check
 6. If issues → apply_fixes
-7. Return final caption and STOP"""
+7. Return final caption"""
 
         # Compose base prompt + client context (if exists)
         from integrations.prompt_loader import load_system_prompt
@@ -439,8 +444,9 @@ LEAN WORKFLOW:
         # Create MCP server with Instagram-specific tools (LEAN 5-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
             name="instagram_tools",
-            version="1.0.0",
+            version="4.1.0",
             tools=[
+                search_company_documents,  # NEW v4.1.0
                 generate_5_hooks,
                 create_caption_draft,
                 condense_to_limit,
@@ -449,7 +455,7 @@ LEAN WORKFLOW:
             ]
         )
 
-        print("🎯 Instagram SDK Agent initialized with 5 lean tools")
+        print("📸 Instagram SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
@@ -504,26 +510,20 @@ LEAN WORKFLOW:
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY Instagram caption using LEAN WORKFLOW.
+        creation_prompt = f"""Create a high-quality Instagram caption using the available MCP tools.
 
 Topic: {topic}
 Context: {context}
 
-LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__instagram_tools__generate_5_hooks
-2. Select best hook, then call mcp__instagram_tools__create_caption_draft
-3. If >2,200 chars → call mcp__instagram_tools__condense_to_limit
-4. Call mcp__instagram_tools__quality_check (gets ALL issues: AI patterns + fabrications + char limit)
-5. Call mcp__instagram_tools__apply_fixes (fixes everything in ONE pass)
-6. Return final caption and STOP
+WORKFLOW:
+1. Call mcp__instagram_tools__generate_5_hooks to get hook options
+2. Select best hook and call mcp__instagram_tools__create_caption_draft
+3. If >2,200 chars, call mcp__instagram_tools__condense_to_limit
+4. Call mcp__instagram_tools__quality_check to evaluate the caption
+5. If issues found, call mcp__instagram_tools__apply_fixes
+6. Return the final caption
 
-DO NOT:
-- Call quality_check more than once
-- Call apply_fixes more than once
-- Iterate or loop
-- Score or validate after fixes
-
-Trust the prompts - they include write-like-human rules."""
+The tools contain WRITE_LIKE_HUMAN_RULES and Instagram formatting guidelines."""
 
         try:
             # Connect if needed
@@ -679,8 +679,13 @@ Trust the prompts - they include write-like-human rules."""
                 print(f"   Record ID: {airtable_record_id}")
                 print(f"   URL: {airtable_url}")
             else:
-                print(f"❌ Airtable save FAILED:")
-                print(f"   Error: {result.get('error')}")
+                # Check if this is a quota error
+                if result.get('is_quota_error'):
+                    print(f"⚠️ Airtable quota exceeded - saving to Supabase only")
+                    print(f"   (Post will still be accessible, just not in Airtable)")
+                else:
+                    print(f"❌ Airtable save FAILED:")
+                    print(f"   Error: {result.get('error')}")
         except Exception as e:
             import traceback
             print(f"❌ EXCEPTION in Airtable save:")
@@ -717,7 +722,8 @@ Trust the prompts - they include write-like-human rules."""
                 'status': 'draft',
                 'quality_score': score,
                 'iterations': 3,  # Would track from actual process
-                'slack_thread_ts': getattr(self, 'session_id', None),
+                'slack_thread_ts': self.thread_ts,
+                'slack_channel_id': self.channel_id,
                 'user_id': self.user_id,
                 'created_by_agent': 'instagram_sdk_agent',
                 'embedding': embedding
@@ -779,10 +785,13 @@ Trust the prompts - they include write-like-human rules."""
 
 # ================== INTEGRATION FUNCTION ==================
 
-async def create_instagram_caption_workflow(
+async def create_instagram_post_workflow(
     topic: str,
     context: str = "",
-    style: str = "engagement"
+    style: str = "engagement",
+    channel_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> str:
     """
     Main entry point for Instagram caption creation
@@ -790,7 +799,11 @@ async def create_instagram_caption_workflow(
     Returns structured response with hook preview and links
     """
 
-    agent = InstagramSDKAgent()
+    agent = InstagramSDKAgent(
+        user_id=user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts
+    )
 
     result = await agent.create_caption(
         topic=topic,
@@ -808,7 +821,7 @@ async def create_instagram_caption_workflow(
 **Hook Preview (first 125 chars):**
 _{result.get('hook', result['caption'][:125])}..._
 
-**Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Quality Score:** {result.get('score', 20)}/25 (Iterations: {result.get('iterations', 3)})
 **Length:** {char_status}
 
 **Full Caption:**

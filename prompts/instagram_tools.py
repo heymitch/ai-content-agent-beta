@@ -193,13 +193,13 @@ Target: {target_length} characters or less.
 
 # ==================== QUALITY CHECK ====================
 
-QUALITY_CHECK_PROMPT = dedent(f"""You are evaluating an Instagram caption using Editor-in-Chief standards.
+QUALITY_CHECK_PROMPT = """You are evaluating an Instagram caption using Editor-in-Chief standards.
 
 ═══════════════════════════════════════════════════════════════
 EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
 ═══════════════════════════════════════════════════════════════
 
-{EDITOR_IN_CHIEF_RULES}
+""" + EDITOR_IN_CHIEF_RULES + """
 
 ═══════════════════════════════════════════════════════════════
 END OF EDITOR-IN-CHIEF STANDARDS
@@ -212,7 +212,7 @@ YOUR TASK:
 4. Use EXACT replacement strategies from the standards (don't make up your own)
 
 CAPTION TO EVALUATE:
-{{post}}
+{post}
 
 WORKFLOW:
 
@@ -317,7 +317,7 @@ Output JSON:
 }}
 
 Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
-""")
+"""
 
 # ==================== APPLY FIXES ====================
 

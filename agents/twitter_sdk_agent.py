@@ -27,6 +27,33 @@ load_dotenv()
 # Detailed prompts loaded just-in-time when tools are called
 
 @tool(
+    "search_company_documents",
+    "Search user-uploaded docs (case studies, testimonials, product docs) for proof points",
+    {"query": str, "match_count": int, "document_type": str}
+)
+async def search_company_documents(args):
+    """Search company documents for context enrichment"""
+    from tools.company_documents import search_company_documents as _search_func
+
+    query = args.get('query', '')
+    match_count = args.get('match_count', 3)
+    document_type = args.get('document_type')
+
+    result = _search_func(
+        query=query,
+        match_count=match_count,
+        document_type=document_type
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
     "generate_5_hooks",
     "Generate 5 Twitter thread hooks",
     {"topic": str, "context": str, "target_audience": str}
@@ -65,24 +92,34 @@ async def generate_5_hooks(args):
 
 @tool(
     "inject_proof_points",
-    "Add metrics and proof points",
+    "Add metrics and proof points. Searches company documents first for real case studies.",
     {"draft": str, "topic": str, "industry": str}
 )
 async def inject_proof_points(args):
-    """Inject proof - prompt loaded JIT"""
+    """Inject proof - searches company docs first, then prompt loaded JIT"""
     from anthropic import Anthropic
     from prompts.twitter_tools import INJECT_PROOF_PROMPT, WRITE_LIKE_HUMAN_RULES
+    from tools.company_documents import search_company_documents as _search_func
+
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     draft = args.get('draft', '')
     topic = args.get('topic', '')
     industry = args.get('industry', 'Tech')
 
+    # NEW: Search company documents for proof points FIRST
+    proof_context = _search_func(
+        query=f"{topic} case study metrics ROI testimonial",
+        match_count=3,
+        document_type=None
+    )
+
     prompt = INJECT_PROOF_PROMPT.format(
         write_like_human_rules=WRITE_LIKE_HUMAN_RULES,
         draft=draft,
         topic=topic,
-        industry=industry
+        industry=industry,
+        proof_context=proof_context  # NEW: Include company docs
     )
 
     response = client.messages.create(
@@ -277,115 +314,83 @@ async def score_and_iterate(args):
     {"post": str}
 )
 async def quality_check(args):
-    """Evaluate thread with 5-axis rubric + surgical feedback + Tavily search for fabrications"""
+    """Evaluate thread with 5-axis rubric + surgical feedback (simplified without Tavily loop)"""
     import json
     from anthropic import Anthropic
     from prompts.twitter_tools import QUALITY_CHECK_PROMPT
-    from tavily import TavilyClient
 
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    tavily = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
 
     post = args.get('post', '')
-    prompt = QUALITY_CHECK_PROMPT.format(post=post)
 
-    # Define Tavily search tool for Claude
-    tavily_tool = {
-        "name": "web_search",
-        "description": "Search the web for current information to verify claims, names, companies, and news stories. Returns recent, relevant results.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query (e.g., 'Rick Beato YouTube AI filters', 'James Chen Clearbit')"
-                }
-            },
-            "required": ["query"]
-        }
-    }
+    # Create a modified prompt that skips fact-checking step
+    prompt = QUALITY_CHECK_PROMPT.format(post=post) + """
 
-    messages = [{"role": "user", "content": prompt}]
+IMPORTANT: For this evaluation, skip STEP 5 (web search verification).
+Focus on steps 1-4 only: scanning for violations, creating issues, scoring, and making decision.
+Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web searches."""
 
-    # Tool loop: handle Tavily search requests
-    max_iterations = 5
-    for iteration in range(max_iterations):
+    # SIMPLIFIED: Single API call, no tool loop
+    try:
         response = client.messages.create(
             model="claude-sonnet-4-5-20250929",
             max_tokens=3000,
-            tools=[tavily_tool],
-            messages=messages
+            messages=[{"role": "user", "content": prompt}]
         )
 
-        # Check if Claude wants to use a tool
-        if response.stop_reason == "tool_use":
-            # Extract tool use from response
-            tool_use_block = next((block for block in response.content if block.type == "tool_use"), None)
+        # Extract text response
+        response_text = response.content[0].text if response.content else ""
 
-            if tool_use_block and tool_use_block.name == "web_search":
-                # Execute Tavily search
-                query = tool_use_block.input["query"]
-                try:
-                    tavily_results = tavily.search(query, max_results=3)
-                    search_output = "\n\n".join([
-                        f"**{r.get('title', 'No title')}**\n{r.get('content', 'No content')}\nSource: {r.get('url', 'No URL')}"
-                        for r in tavily_results.get('results', [])
-                    ])
-                except Exception as e:
-                    search_output = f"Search error: {str(e)}"
-
-                # Add assistant message with tool use, then tool result
-                messages.append({
-                    "role": "assistant",
-                    "content": response.content
-                })
-                messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": tool_use_block.id,
-                        "content": search_output
-                    }]
-                })
-                # Continue loop to get final response
-                continue
-
-            # Unknown tool - shouldn't happen
-            messages.append({
-                "role": "assistant",
-                "content": response.content
-            })
-            continue
-
-        # Got final text response
-        final_text = ""
-        for block in response.content:
-            if hasattr(block, 'text'):
-                final_text += block.text
-
-        # Try to parse JSON, return as-is if valid
+        # Try to parse as JSON for structured response
         try:
-            json_result = json.loads(final_text)
+            json_result = json.loads(response_text)
+            # Ensure it has expected structure
             if "scores" in json_result and "decision" in json_result:
-                return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
+                # Add note about skipped verification
+                if "searches_performed" not in json_result:
+                    json_result["searches_performed"] = []
+                json_result["note"] = "Fact verification skipped to avoid tool conflicts"
+                return {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(json_result, indent=2)
+                    }]
+                }
         except json.JSONDecodeError:
+            # Not JSON, return as text
             pass
 
-        # Fallback: return raw text
-        return {"content": [{"type": "text", "text": final_text}]}
+        # Return raw text if not valid JSON
+        return {
+            "content": [{
+                "type": "text",
+                "text": response_text
+            }]
+        }
 
-    # Max iterations reached
-    return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "scores": {"total": 0},
-                "decision": "error",
-                "issues": [],
-                "surgical_summary": "Max iterations reached"
-            }, indent=2)
-        }]
-    }
+    except Exception as e:
+        # Return error as structured response
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "scores": {
+                        "hook": 0,
+                        "flow": 0,
+                        "brevity": 0,
+                        "proof": 0,
+                        "cta": 0,
+                        "total": 0,
+                        "ai_deductions": 0
+                    },
+                    "decision": "error",
+                    "issues": [],
+                    "char_violations": [],
+                    "surgical_summary": f"Quality check error: {str(e)}",
+                    "note": "Simplified quality check without web verification"
+                }, indent=2)
+            }]
+        }
 
 
 @tool(
@@ -450,23 +455,33 @@ class TwitterSDKAgent:
     Orchestrates Tier 3 tools and maintains platform-specific context
     """
 
-    def __init__(self, user_id: str = "default", isolated_mode: bool = False):
+    def __init__(
+        self,
+        user_id: str = "default",
+        isolated_mode: bool = False,
+        channel_id: Optional[str] = None,
+        thread_ts: Optional[str] = None
+    ):
         """Initialize Twitter SDK Agent with memory and tools
 
         Args:
             user_id: User identifier for session management
             isolated_mode: If True, creates isolated sessions (for testing only)
+            channel_id: Slack channel ID for tracking
+            thread_ts: Slack thread timestamp for tracking
         """
         self.user_id = user_id
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
+        self.channel_id = channel_id  # Slack channel for Supabase/Airtable
+        self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
 
         # Twitter-specific base prompt with quality thresholds
         base_prompt = """You are a Twitter thread creation agent. Your goal: threads that score 18+ out of 25 without needing 3 rounds of revision.
 
 YOU MUST USE TOOLS. EXECUTE immediately. Parse JSON responses.
 
-AVAILABLE TOOLS (5-tool workflow):
+AVAILABLE TOOLS:
 
 1. mcp__twitter_tools__generate_5_hooks
    Input: {"topic": str, "context": str, "audience": str}
@@ -484,8 +499,9 @@ AVAILABLE TOOLS (5-tool workflow):
 3. mcp__twitter_tools__inject_proof_points
    Input: {"draft": str, "topic": str, "industry": str}
    Returns: Enhanced thread with metrics from topic/context (NO fabrication)
-   What it does: Adds specific numbers/dates/names ONLY from provided context
-   When to use: After create_human_draft, before quality_check
+   What it does: Searches company documents for case studies/testimonials, adds specific numbers/dates/names ONLY from verified sources
+   When to use: ONLY when draft makes specific claims that need backing (case studies, ROI claims, customer examples)
+   When NOT to use: Thought leadership posts, opinion pieces, personal reflections, frameworks without specific claims
 
 4. mcp__twitter_tools__quality_check
    Input: {"post": str}
@@ -533,7 +549,9 @@ Your job: Create threads that pass quality_check with zero AI tells and valid ch
 STANDARD PATH (most threads):
 1. Call generate_5_hooks → Select best hook for first tweet
 2. Call create_human_draft → Get thread with self_assessment
-3. Call inject_proof_points → Add metrics from context
+3. EVALUATE: Does this draft make specific claims, cite examples, or need credibility?
+   - YES (proof needed): Call inject_proof_points → Add metrics from context
+   - NO (thought leadership/opinion): Skip to step 4
 4. Call quality_check → Evaluate for AI tells, quality, and char limits
 
 5. INTELLIGENT DECISION POINT - Review quality_check results:
@@ -671,20 +689,21 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
         from integrations.prompt_loader import load_system_prompt
         self.system_prompt = load_system_prompt(base_prompt)
 
-        # Create MCP server with Twitter-specific tools (LEAN 5-TOOL WORKFLOW)
+        # Create MCP server with Twitter-specific tools (LEAN 5-TOOL WORKFLOW + company docs)
         self.mcp_server = create_sdk_mcp_server(
             name="twitter_tools",
-            version="1.0.0",
+            version="4.1.0",
             tools=[
+                search_company_documents,  # NEW v4.1.0
                 generate_5_hooks,
                 create_human_draft,
-                inject_proof_points,
+                inject_proof_points,  # Enhanced: Now searches company docs first
                 quality_check,  # Combined: AI patterns + fact-check
                 apply_fixes     # Combined: Fix everything in one pass
             ]
         )
 
-        print("🐦 Twitter SDK Agent initialized with 5 lean tools (write-like-human rules embedded)")
+        print("🐦 Twitter SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
@@ -716,6 +735,7 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
         self,
         topic: str,
         context: str = "",
+        style: str = "tactical",  # Add style parameter with default
         thread_type: str = "standard",
         content_length: str = "auto",  # "single_post" | "short_thread" | "long_thread" | "auto"
         target_score: int = 85,
@@ -727,6 +747,7 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
         Args:
             topic: Main topic/angle
             context: Additional requirements, CTAs, etc.
+            style: Content style (tactical, thought_leadership, educational, etc.)
             thread_type: standard (for now, may add video/image threads later)
             content_length: "single_post" (1 tweet, 280 chars) | "short_thread" (3-4 tweets) | "long_thread" (5-10 tweets) | "auto" (agent decides)
             target_score: Minimum quality score (default 85)
@@ -754,28 +775,29 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
             length_directive = "DECIDE: Default to SINGLE POST (280 chars). Only create thread if topic truly requires 3+ distinct points with evidence. BIAS TOWARD SINGLES."
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY Twitter content using LEAN WORKFLOW.
+        creation_prompt = f"""You MUST use the MCP tools to create this Twitter thread.
+DO NOT generate content directly. If a tool fails, report the error.
 
 Topic: {topic}
 Context: {context}
+Style: {style}
 
 {length_directive}
 
-LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__twitter_tools__generate_5_hooks
-2. Select best hook, then call mcp__twitter_tools__create_human_draft
-3. Call mcp__twitter_tools__inject_proof_points
-4. Call mcp__twitter_tools__quality_check (gets ALL issues: AI patterns + fabrications)
-5. Call mcp__twitter_tools__apply_fixes (fixes everything in ONE pass)
-6. Return final thread and STOP
+REQUIRED WORKFLOW (all steps mandatory):
+1. MUST call mcp__twitter_tools__generate_5_hooks to get hook options
+2. MUST call mcp__twitter_tools__create_human_draft with the selected hook
+3. MUST call mcp__twitter_tools__inject_proof_points to add specific examples
+4. MUST call mcp__twitter_tools__quality_check to evaluate the thread
+5. If issues found, MUST call mcp__twitter_tools__apply_fixes
+6. Return the final thread from the tools
 
-DO NOT:
-- Call quality_check more than once
-- Call apply_fixes more than once
-- Iterate or loop
-- Score or validate after fixes
+If any tool returns an error:
+- Report the specific error message
+- Do NOT bypass the tools
+- Do NOT generate content manually
 
-Trust the prompts - they include write-like-human rules."""
+The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
 
         try:
             # Connect if needed
@@ -918,8 +940,13 @@ Trust the prompts - they include write-like-human rules."""
                 print(f"   Record ID: {airtable_record_id}")
                 print(f"   URL: {airtable_url}")
             else:
-                print(f"❌ Airtable save FAILED:")
-                print(f"   Error: {result.get('error')}")
+                # Check if this is a quota error
+                if result.get('is_quota_error'):
+                    print(f"⚠️ Airtable quota exceeded - saving to Supabase only")
+                    print(f"   (Post will still be accessible, just not in Airtable)")
+                else:
+                    print(f"❌ Airtable save FAILED:")
+                    print(f"   Error: {result.get('error')}")
         except Exception as e:
             import traceback
             print(f"❌ EXCEPTION in Airtable save:")
@@ -956,7 +983,8 @@ Trust the prompts - they include write-like-human rules."""
                 'status': 'draft',
                 'quality_score': score,
                 'iterations': 3,
-                'slack_thread_ts': getattr(self, 'session_id', None),
+                'slack_thread_ts': self.thread_ts,
+                'slack_channel_id': self.channel_id,
                 'user_id': self.user_id,
                 'created_by_agent': 'twitter_sdk_agent',
                 'embedding': embedding
@@ -1069,7 +1097,10 @@ Be harsh but constructive. We need 85+ quality."""
 async def create_twitter_thread_workflow(
     topic: str,
     context: str = "",
-    style: str = "thought_leadership"
+    style: str = "thought_leadership",
+    channel_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> str:
     """
     Main entry point for Twitter content creation
@@ -1077,7 +1108,11 @@ async def create_twitter_thread_workflow(
     Returns structured response with hook preview and links
     """
 
-    agent = TwitterSDKAgent()
+    agent = TwitterSDKAgent(
+        user_id=user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts
+    )
 
     result = await agent.create_thread(
         topic=topic,
@@ -1093,7 +1128,7 @@ async def create_twitter_thread_workflow(
 **Hook Preview:**
 _{result.get('hook', result['thread'][:280])}..._
 
-**Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Quality Score:** {result.get('score', 20)}/25 (Iterations: {result.get('iterations', 3)})
 
 **Full Thread:**
 {result['thread']}

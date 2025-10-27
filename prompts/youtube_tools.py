@@ -107,10 +107,13 @@ Draft: {draft}
 Topic: {topic}
 Industry: {industry}
 
+**COMPANY DOCUMENTS SEARCH RESULTS:**
+{proof_context}
+
 **WHERE PROOF CAN COME FROM:**
 1. **TOPIC/CONTEXT** - User explicitly provided: "Alex 500→5k subs", "workshop with 50+ creators"
 2. **WEB SEARCH RESULTS** - Verified via web_search tool (future): industry benchmarks
-3. **RAG/DATABASE** - Retrieved from user's past content, case studies (future)
+3. **COMPANY DOCUMENTS** - Retrieved from user-uploaded docs (case studies, testimonials, product docs) - SEE ABOVE
 
 **CRITICAL: DO NOT FABRICATE**
 - ❌ Making up creator names: "Sarah grew her channel"
@@ -310,13 +313,13 @@ Output JSON:
 
 # ==================== QUALITY CHECK ====================
 
-QUALITY_CHECK_PROMPT = dedent(f"""You are evaluating a YouTube video script using Editor-in-Chief standards.
+QUALITY_CHECK_PROMPT = """You are evaluating a YouTube video script using Editor-in-Chief standards.
 
 ═══════════════════════════════════════════════════════════════
 EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
 ═══════════════════════════════════════════════════════════════
 
-{EDITOR_IN_CHIEF_RULES}
+""" + EDITOR_IN_CHIEF_RULES + """
 
 ═══════════════════════════════════════════════════════════════
 END OF EDITOR-IN-CHIEF STANDARDS
@@ -329,7 +332,7 @@ YOUR TASK:
 4. Use EXACT replacement strategies from the standards (don't make up your own)
 
 Script to evaluate:
-{{post}}
+{post}
 
 WORKFLOW:
 
@@ -450,7 +453,7 @@ Output JSON:
 }}
 
 Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
-""")
+"""
 
 # ==================== APPLY FIXES ====================
 

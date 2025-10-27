@@ -27,6 +27,33 @@ load_dotenv()
 # Detailed prompts loaded just-in-time when tools are called
 
 @tool(
+    "search_company_documents",
+    "Search user-uploaded docs (case studies, testimonials, product docs) for proof points",
+    {"query": str, "match_count": int, "document_type": str}
+)
+async def search_company_documents(args):
+    """Search company documents for context enrichment"""
+    from tools.company_documents import search_company_documents as _search_func
+
+    query = args.get('query', '')
+    match_count = args.get('match_count', 3)
+    document_type = args.get('document_type')
+
+    result = _search_func(
+        query=query,
+        match_count=match_count,
+        document_type=document_type
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
     "generate_5_hooks",
     "Generate 5 video hooks",
     {"topic": str, "context": str, "target_audience": str}
@@ -65,24 +92,34 @@ async def generate_5_hooks(args):
 
 @tool(
     "inject_proof_points",
-    "Add metrics and proof points to script",
+    "Add metrics and proof points to script. Searches company documents first for real case studies.",
     {"draft": str, "topic": str, "industry": str}
 )
 async def inject_proof_points(args):
-    """Inject proof - prompt loaded JIT"""
+    """Inject proof - searches company docs first, then prompt loaded JIT"""
     from anthropic import Anthropic
     from prompts.youtube_tools import INJECT_PROOF_PROMPT, WRITE_LIKE_HUMAN_RULES
+    from tools.company_documents import search_company_documents as _search_func
+
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     draft = args.get('draft', '')
     topic = args.get('topic', '')
     industry = args.get('industry', 'Content Creation')
 
+    # NEW: Search company documents for proof points FIRST
+    proof_context = _search_func(
+        query=f"{topic} case study metrics ROI testimonial",
+        match_count=3,
+        document_type=None
+    )
+
     prompt = INJECT_PROOF_PROMPT.format(
         write_like_human_rules=WRITE_LIKE_HUMAN_RULES,
         draft=draft,
         topic=topic,
-        industry=industry
+        industry=industry,
+        proof_context=proof_context  # NEW: Include company docs
     )
 
     response = client.messages.create(
@@ -161,120 +198,86 @@ async def create_human_script(args):
 
 @tool(
     "quality_check",
-    "Score script on 5 axes, verify timing accuracy, return surgical fixes",
+    "Score script on 5 axes and return surgical fixes",
     {"post": str}
 )
 async def quality_check(args):
-    """Evaluate script with 5-axis rubric + timing check + surgical feedback + Tavily search for fabrications"""
+    """Evaluate script with 5-axis rubric + surgical feedback (simplified without Tavily loop)"""
     import json
     from anthropic import Anthropic
     from prompts.youtube_tools import QUALITY_CHECK_PROMPT
-    from tavily import TavilyClient
 
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    tavily = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
 
     post = args.get('post', '')
-    prompt = QUALITY_CHECK_PROMPT.format(post=post)
 
-    # Define Tavily search tool for Claude
-    tavily_tool = {
-        "name": "web_search",
-        "description": "Search the web for current information to verify claims, names, companies, and news stories. Returns recent, relevant results.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query (e.g., 'Rick Beato YouTube AI filters', 'James Chen Clearbit')"
-                }
-            },
-            "required": ["query"]
-        }
-    }
+    # Create a modified prompt that skips fact-checking step
+    prompt = QUALITY_CHECK_PROMPT.format(post=post) + """
 
-    messages = [{"role": "user", "content": prompt}]
+IMPORTANT: For this evaluation, skip STEP 5 (web search verification).
+Focus on steps 1-4 only: scanning for violations, creating issues, scoring, and making decision.
+Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web searches."""
 
-    # Tool loop: handle Tavily search requests
-    max_iterations = 5
-    for iteration in range(max_iterations):
+    # SIMPLIFIED: Single API call, no tool loop
+    try:
         response = client.messages.create(
             model="claude-sonnet-4-5-20250929",
             max_tokens=3000,
-            tools=[tavily_tool],
-            messages=messages
+            messages=[{"role": "user", "content": prompt}]
         )
 
-        # Check if Claude wants to use a tool
-        if response.stop_reason == "tool_use":
-            # Extract tool use from response
-            tool_use_block = next((block for block in response.content if block.type == "tool_use"), None)
+        # Extract text response
+        response_text = response.content[0].text if response.content else ""
 
-            if tool_use_block and tool_use_block.name == "web_search":
-                # Execute Tavily search
-                query = tool_use_block.input["query"]
-                try:
-                    tavily_results = tavily.search(query, max_results=3)
-                    search_output = "\n\n".join([
-                        f"**{r.get('title', 'No title')}**\n{r.get('content', 'No content')}\nSource: {r.get('url', 'No URL')}"
-                        for r in tavily_results.get('results', [])
-                    ])
-                except Exception as e:
-                    search_output = f"Search error: {str(e)}"
-
-                # Add assistant message with tool use, then tool result
-                messages.append({
-                    "role": "assistant",
-                    "content": response.content
-                })
-                messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": tool_use_block.id,
-                        "content": search_output
-                    }]
-                })
-                # Continue loop to get final response
-                continue
-
-            # Unknown tool - shouldn't happen
-            messages.append({
-                "role": "assistant",
-                "content": response.content
-            })
-            continue
-
-        # Got final text response
-        final_text = ""
-        for block in response.content:
-            if hasattr(block, 'text'):
-                final_text += block.text
-
-        # Try to parse JSON, return as-is if valid
+        # Try to parse as JSON for structured response
         try:
-            json_result = json.loads(final_text)
+            json_result = json.loads(response_text)
+            # Ensure it has expected structure
             if "scores" in json_result and "decision" in json_result:
-                return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
+                # Add note about skipped verification
+                if "searches_performed" not in json_result:
+                    json_result["searches_performed"] = []
+                json_result["note"] = "Fact verification skipped to avoid tool conflicts"
+                return {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(json_result, indent=2)
+                    }]
+                }
         except json.JSONDecodeError:
+            # Not JSON, return as text
             pass
 
-        # Fallback: return raw text
-        return {"content": [{"type": "text", "text": final_text}]}
+        # Return raw text if not valid JSON
+        return {
+            "content": [{
+                "type": "text",
+                "text": response_text
+            }]
+        }
 
-    # Max iterations reached
-    return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "scores": {"total": 0},
-                "timing_accuracy": {},
-                "decision": "error",
-                "issues": [],
-                "surgical_summary": "Max iterations reached"
-            }, indent=2)
-        }]
-    }
+    except Exception as e:
+        # Return error as structured response
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "scores": {
+                        "hook": 0,
+                        "structure": 0,
+                        "value": 0,
+                        "proof": 0,
+                        "cta": 0,
+                        "total": 0,
+                        "ai_deductions": 0
+                    },
+                    "decision": "error",
+                    "issues": [],
+                    "surgical_summary": f"Quality check error: {str(e)}",
+                    "note": "Simplified quality check without web verification"
+                }, indent=2)
+            }]
+        }
 
 
 @tool(
@@ -342,23 +345,33 @@ class YouTubeSDKAgent:
     Outputs scripts with timing markers (Option 2)
     """
 
-    def __init__(self, user_id: str = "default", isolated_mode: bool = False):
+    def __init__(
+        self,
+        user_id: str = "default",
+        isolated_mode: bool = False,
+        channel_id: Optional[str] = None,
+        thread_ts: Optional[str] = None
+    ):
         """Initialize YouTube SDK Agent with memory and tools
 
         Args:
             user_id: User identifier for session management
             isolated_mode: If True, creates isolated sessions (for testing only)
+            channel_id: Slack channel ID for tracking
+            thread_ts: Slack thread timestamp for tracking
         """
         self.user_id = user_id
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
+        self.channel_id = channel_id  # Slack channel for Supabase/Airtable
+        self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
 
         # YouTube-specific base prompt with quality thresholds
         base_prompt = """You are a YouTube script creation agent. Your goal: scripts that score 18+ out of 25 without needing 3 rounds of revision.
 
 YOU MUST USE TOOLS. EXECUTE immediately. Parse JSON responses.
 
-AVAILABLE TOOLS (5-tool workflow):
+AVAILABLE TOOLS:
 
 1. mcp__youtube_tools__generate_5_hooks
    Input: {"topic": str, "context": str, "audience": str}
@@ -560,17 +573,18 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final script with timin
         # Create MCP server with YouTube-specific tools (LEAN 5-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
             name="youtube_tools",
-            version="1.0.0",
+            version="4.1.0",
             tools=[
+                search_company_documents,  # NEW v4.1.0
                 generate_5_hooks,
                 create_human_script,
-                inject_proof_points,
+                inject_proof_points,  # Enhanced: Now searches company docs first
                 quality_check,  # Combined: AI patterns + timing check + fact-check
                 apply_fixes     # Combined: Fix everything + update timing in one pass
             ]
         )
 
-        print("🎬 YouTube SDK Agent initialized with 5 lean tools (Cole's script style embedded)")
+        print("🎬 YouTube SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
@@ -627,27 +641,23 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final script with timin
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY YouTube script using LEAN WORKFLOW.
+        creation_prompt = f"""Create a high-quality YouTube script using the available MCP tools.
 
 Topic: {topic}
 Context: {context}
 Script Type: {script_type}
 
-LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__youtube_tools__generate_5_hooks
-2. Select best hook, then call mcp__youtube_tools__create_human_script
-3. Call mcp__youtube_tools__inject_proof_points
-4. Call mcp__youtube_tools__quality_check (gets ALL issues: AI patterns + timing + fabrications)
-5. Call mcp__youtube_tools__apply_fixes (fixes everything + updates timing in ONE pass)
-6. Return final script with timing markers and STOP
+WORKFLOW:
+1. Call mcp__youtube_tools__generate_5_hooks to get video hook options
+2. Select best hook and call mcp__youtube_tools__create_human_script
+3. Evaluate: Does this draft make specific claims, cite examples, or need credibility?
+   - YES (proof needed): Call mcp__youtube_tools__inject_proof_points
+   - NO (thought leadership/opinion): Skip to step 4
+4. Call mcp__youtube_tools__quality_check to evaluate the script
+5. If issues found, call mcp__youtube_tools__apply_fixes
+6. Return the final script with timing markers
 
-DO NOT:
-- Call quality_check more than once
-- Call apply_fixes more than once
-- Iterate or loop
-- Score or validate after fixes
-
-Trust the prompts - they include Cole's script style examples and timing logic."""
+The tools contain WRITE_LIKE_HUMAN_RULES and Cole's script style examples."""
 
         try:
             # Connect if needed
@@ -799,8 +809,13 @@ Trust the prompts - they include Cole's script style examples and timing logic."
                 print(f"   Record ID: {airtable_record_id}")
                 print(f"   URL: {airtable_url}")
             else:
-                print(f"❌ Airtable save FAILED:")
-                print(f"   Error: {result.get('error')}")
+                # Check if this is a quota error
+                if result.get('is_quota_error'):
+                    print(f"⚠️ Airtable quota exceeded - saving to Supabase only")
+                    print(f"   (Post will still be accessible, just not in Airtable)")
+                else:
+                    print(f"❌ Airtable save FAILED:")
+                    print(f"   Error: {result.get('error')}")
         except Exception as e:
             import traceback
             print(f"❌ EXCEPTION in Airtable save:")
@@ -837,7 +852,8 @@ Trust the prompts - they include Cole's script style examples and timing logic."
                 'status': 'draft',
                 'quality_score': score,
                 'iterations': 3,
-                'slack_thread_ts': getattr(self, 'session_id', None),
+                'slack_thread_ts': self.thread_ts,
+                'slack_channel_id': self.channel_id,
                 'user_id': self.user_id,
                 'created_by_agent': 'youtube_sdk_agent',
                 'embedding': embedding,
@@ -912,7 +928,10 @@ Trust the prompts - they include Cole's script style examples and timing logic."
 async def create_youtube_workflow(
     topic: str,
     context: str = "",
-    script_type: str = "short_form"
+    script_type: str = "short_form",
+    channel_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> str:
     """
     Main entry point for YouTube script creation
@@ -920,7 +939,11 @@ async def create_youtube_workflow(
     Returns structured response with hook preview, timing, and links
     """
 
-    agent = YouTubeSDKAgent()
+    agent = YouTubeSDKAgent(
+        user_id=user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts
+    )
 
     result = await agent.create_script(
         topic=topic,
@@ -937,7 +960,7 @@ async def create_youtube_workflow(
 _{result.get('hook', result['script'][:60])}..._
 
 **Duration:** {result.get('estimated_duration', '60s')} | **Words:** {result.get('word_count', 150)}
-**Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Quality Score:** {result.get('score', 20)}/25 (Iterations: {result.get('iterations', 3)})
 **Timing Markers:** {result.get('timing_markers_found', 0)} sections
 
 **Full Script:**

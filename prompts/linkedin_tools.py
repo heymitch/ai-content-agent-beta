@@ -50,11 +50,11 @@ Em dashes ( — )
 ✓ Rewrite: 'The idea was interesting but was rejected.'
 B. Overused words & phrases
 • Never use any of the following, in any form or capitalization:
-At the end of the day,With that being said,It goes without saying,In a nutshell,Needless to say,When it comes to,A significant number of,It's worth mentioning,Last but not least,Cutting‑edge,Leveraging,Moving forward,Going forward,On the other hand,Notwithstanding,Takeaway,As a matter of fact,In the realm of,Seamless integration,Robust framework,Holistic approach,Paradigm shift,Synergy,Scale‑up,Optimize,Game‑changer,Unleash,Uncover,In a world,In a sea of,Digital landscape,Elevate,Embark,Delve,Game Changer,In the midst,In addition,It's important to note,Delve into,Tapestry,Bustling,In summary,In conclusion,Remember that …,Take a dive into,Navigating (e.g., 'Navigating the landscape'),Landscape (metaphorical),Testament (e.g., 'a testament to …'),In the world of,Realm,Virtuoso,Symphony,bustinling,vibrant,Firstly, Moreover,Furthermore,However,Therefore,Additionally,Specifically, Generally,Consequently,Importantly,Similarly,Nonetheless,As a result,Indeed,Thus,Alternatively,Notably,As well as,Despite, Essentially,While,Unless,Also,Even though,Because (as subordinate conjunction),In contrast,Although,In order to,Due to,Even if,Given that,Arguably,To consider,Ensure,Essential,Vital,Out of the box,Underscores,Soul,Crucible,It depends on,You may want to,This is not an exhaustive list,You could consider,As previously mentioned,It's worth noting that,To summarize,Ultimately,To put it simply,Pesky,Promptly,Dive into,In today's digital era,Reverberate,Enhance,Emphasise,Enable,Hustle and bustle,Revolutionize,Folks,Foster,Sure,Labyrinthine,Moist,Remnant,As a professional,Subsequently,Nestled,Labyrinth,Gossamer,Enigma,Whispering,Sights unseen,Sounds unheard,A testament to …,Dance,Metamorphosis,Indelible
+At the end of the day,With that being said,It goes without saying,In a nutshell,Needless to say,When it comes to,A significant number of,It's worth mentioning,Last but not least,Cutting‑edge,Leveraging,Moving forward,Going forward,On the other hand,Notwithstanding,Takeaway,As a matter of fact,In the realm of,Seamless integration,Robust framework,Holistic approach,Paradigm shift,Synergy,Scale‑up,Optimize,Game‑changer,Unleash,Uncover,In a world,In a sea of,Digital landscape,Elevate,Embark,Delve,Game Changer,In the midst,In addition,It's important to note,Delve into,Tapestry,Bustling,In summary,In conclusion,Remember that …,Take a dive into,Navigating (e.g., 'Navigating the landscape'),Landscape (metaphorical),Testament (e.g., 'a testament to …'),In the world of,Realm,Virtuoso,Symphony,bustinling,vibrant,Firstly, Moreover,Furthermore,However,Therefore,Additionally,Specifically, Generally,Consequently,Importantly,Similarly,Nonetheless,As a result,Indeed,Thus,Alternatively,Notably,As well as,Despite, Essentially,While,Unless,Also,Even though,Because (as subordinate conjunction),In contrast,Although,In order to,Due to,Even if,Given that,Arguably,To consider,Ensure,Essential,Vital,Out of the box,Underscores,Soul,Crucible,It depends on,You may want to,This is not an exhaustive list,You could consider,As previously mentioned,It's worth noting that,To summarize,Ultimately,To put it simply,Pesky,Promptly,Dive into,In today's digital era,Reverberate,Enhance,Emphasise,Enable,Hustle and bustle,Revolutionize,Folks,Foster,Sure,Labyrinthine,Moist,Remnant,As a professional,Subsequently,Nestled,Labyrinth,Gossamer,Enigma,Whispering,Sights unseen,Sounds unheard,A testament to …,Dance,Metamorphosis,Indelible,Governance,Infrastructure
 ✗ Example to avoid: 'Cutting‑edge analytics will revolutionize your workflow.'
 ✓ Rewrite: 'The software measures performance faster.'
 C. Overused single words to ban
-however, moreover, furthermore, additionally, consequently, therefore, ultimately, generally, essentially, arguably, significant, innovative, efficient, dynamic, ensure, foster, leverage, utilize
+however, moreover, furthermore, additionally, consequently, therefore, ultimately, generally, essentially, arguably, significant, innovative, efficient, dynamic, ensure, foster, leverage, utilize, governance, infrastructure
 ✗ Example to avoid: 'We must leverage dynamic, innovative approaches.'
 ✓ Rewrite: 'We must try new approaches.'
 D. Overused multi‑word phrases to ban
@@ -188,10 +188,13 @@ Draft: {draft}
 Topic: {topic}
 Industry: {industry}
 
+**COMPANY DOCUMENTS SEARCH RESULTS:**
+{proof_context}
+
 **WHERE PROOF CAN COME FROM:**
 1. **TOPIC/CONTEXT** - User explicitly provided: "6 hours → 10 minutes", "March 2024", "50 nodes"
 2. **WEB SEARCH RESULTS** - Verified via web_search tool (future): company metrics, industry benchmarks
-3. **RAG/DATABASE** - Retrieved from user's past posts, testimonials, case studies (future)
+3. **COMPANY DOCUMENTS** - Retrieved from user-uploaded docs (case studies, testimonials, product docs) - SEE ABOVE
 
 **CRITICAL: DO NOT FABRICATE**
 - ❌ Making up dollar amounts: "$1,050", "$29"
@@ -224,7 +227,17 @@ Return the enhanced draft only (plain text, NO markdown formatting like **bold**
 
 # ==================== CREATE HUMAN DRAFT ====================
 
-CREATE_HUMAN_DRAFT_PROMPT = dedent("""
+CREATE_HUMAN_DRAFT_PROMPT = """
+═══════════════════════════════════════════════════════════════
+WRITE LIKE A HUMAN (COMPREHENSIVE ANTI-SLOP RULES):
+═══════════════════════════════════════════════════════════════
+
+""" + WRITE_LIKE_HUMAN_RULES + """
+
+═══════════════════════════════════════════════════════════════
+END OF ANTI-SLOP RULES
+═══════════════════════════════════════════════════════════════
+
 You are writing a LinkedIn post. Your job: create content that scores 18+ out of 25 without needing 3 rounds of revision.
 
 Evaluate on these axes (0-5):
@@ -737,7 +750,7 @@ Output JSON:
 Character limit for post_text: 2800 chars max.
 NO commentary in post_text. NO labels like "Hook:" or "Section 1:". Just natural post text.
 NO markdown formatting: NO bold (**text**), NO italic (*text*), NO headers (##). Write plain text only.
-""")
+"""
 
 # ==================== DETECT AI CRINGE ====================
 
@@ -1020,13 +1033,13 @@ Return as JSON:
 
 # ==================== QUALITY CHECK (COMBINED: AI CRINGE + FACT CHECK) ====================
 
-QUALITY_CHECK_PROMPT = dedent(f"""You are evaluating a LinkedIn post using Editor-in-Chief standards.
+QUALITY_CHECK_PROMPT = """You are evaluating a LinkedIn post using Editor-in-Chief standards.
 
 ═══════════════════════════════════════════════════════════════
 EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
 ═══════════════════════════════════════════════════════════════
 
-{EDITOR_IN_CHIEF_RULES}
+""" + EDITOR_IN_CHIEF_RULES + """
 
 ═══════════════════════════════════════════════════════════════
 END OF EDITOR-IN-CHIEF STANDARDS
@@ -1039,7 +1052,7 @@ YOUR TASK:
 4. Use EXACT replacement strategies from the standards (don't make up your own)
 
 Post to evaluate:
-{{post}}
+{post}
 
 WORKFLOW:
 
@@ -1134,7 +1147,7 @@ Output JSON:
 }}
 
 Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
-""")
+"""
 
 # ==================== CREATE CAROUSEL SLIDES ====================
 

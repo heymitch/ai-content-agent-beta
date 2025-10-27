@@ -23,6 +23,7 @@ class ContentStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     RETRYING = "retrying"
+    CANCELLED = "cancelled"  # NEW: For cancelled jobs
 
 
 @dataclass
@@ -56,7 +57,10 @@ class ContentQueueManager:
         max_concurrent: int = 3,  # Process 3 posts at a time
         max_retries: int = 2,
         retry_delay: int = 5,
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        slack_client = None,  # NEW: Slack WebClient for progress updates
+        slack_channel: str = None,  # NEW: Channel ID for messages
+        slack_thread_ts: str = None  # NEW: Thread timestamp for replies
     ):
         """
         Initialize queue manager
@@ -66,6 +70,9 @@ class ContentQueueManager:
             max_retries: Number of retry attempts for failed posts
             retry_delay: Seconds to wait before retry
             progress_callback: Function to call with progress updates
+            slack_client: Slack WebClient instance for real-time progress updates
+            slack_channel: Slack channel ID to send messages to
+            slack_thread_ts: Thread timestamp to reply in thread
         """
         self.queue = Queue()
         self.semaphore = Semaphore(max_concurrent)
@@ -73,15 +80,22 @@ class ContentQueueManager:
         self.retry_delay = retry_delay
         self.progress_callback = progress_callback
 
+        # Slack integration for progress updates
+        self.slack_client = slack_client
+        self.slack_channel = slack_channel
+        self.slack_thread_ts = slack_thread_ts
+
         # Track all jobs
         self.jobs: Dict[str, ContentJob] = {}
         self.processing = False
+        self.cancelled = False  # NEW: Track if batch was cancelled
 
         # Statistics
         self.stats = {
             'total_queued': 0,
             'total_completed': 0,
             'total_failed': 0,
+            'total_cancelled': 0,  # NEW: Track cancelled jobs
             'average_time': 0
         }
 
@@ -144,6 +158,17 @@ class ContentQueueManager:
 
         try:
             while not self.queue.empty():
+                # Check if batch was cancelled
+                if self.cancelled:
+                    logger.info("⚠️ Batch cancelled - marking remaining jobs as cancelled")
+                    # Cancel all remaining jobs in queue
+                    while not self.queue.empty():
+                        job = await self.queue.get()
+                        job.status = ContentStatus.CANCELLED
+                        self.stats['total_cancelled'] += 1
+                        self.queue.task_done()
+                    break
+
                 # Get next job (blocks if queue is empty)
                 job = await self.queue.get()
 
@@ -156,7 +181,10 @@ class ContentQueueManager:
 
         finally:
             self.processing = False
-            logger.info("✅ Queue processing complete")
+            if self.cancelled:
+                logger.info("🛑 Queue processing cancelled")
+            else:
+                logger.info("✅ Queue processing complete")
 
     async def _process_job(self, job: ContentJob):
         """Process a single content job with retries"""
@@ -174,38 +202,24 @@ class ContentQueueManager:
                 'total': self.stats['total_queued']
             })
 
+        # NEW: Send Slack progress message BEFORE processing
+        if self.slack_client:
+            try:
+                self.slack_client.chat_postMessage(
+                    channel=self.slack_channel,
+                    thread_ts=self.slack_thread_ts,
+                    text=f"⏳ Creating post {self.stats['total_completed'] + 1}/{self.stats['total_queued']}...\n"
+                         f"Topic: {job.topic[:100]}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send Slack progress message: {e}")
+
         try:
-            # Import the appropriate workflow
-            if job.platform == "linkedin":
-                from agents.linkedin_sdk_agent import create_linkedin_post_workflow
-                result = await create_linkedin_post_workflow(
-                    topic=job.topic,
-                    context=job.context,
-                    style=job.style
-                )
-            elif job.platform == "twitter":
-                from agents.twitter_sdk_agent import create_twitter_thread_workflow
-                result = await create_twitter_thread_workflow(
-                    topic=job.topic,
-                    context=job.context,
-                    style=job.style
-                )
-            elif job.platform == "email":
-                from agents.email_sdk_agent import create_email_workflow
-                result = await create_email_workflow(
-                    topic=job.topic,
-                    context=job.context,
-                    style=job.style
-                )
-            elif job.platform in ["youtube", "video"]:
-                from agents.youtube_sdk_agent import create_youtube_workflow
-                result = await create_youtube_workflow(
-                    topic=job.topic,
-                    context=job.context,
-                    script_type=job.style
-                )
-            else:
-                raise ValueError(f"Unknown platform: {job.platform}")
+            # NEW: Wrap workflow execution in timeout (120 seconds = 2 minutes)
+            result = await asyncio.wait_for(
+                self._execute_workflow(job),
+                timeout=120
+            )
 
             # Success!
             job.status = ContentStatus.COMPLETED
@@ -219,8 +233,80 @@ class ContentQueueManager:
 
             logger.info(f"✅ Completed job {job.id} in {elapsed:.1f}s")
 
+            # NEW: Send Slack success message AFTER processing
+            if self.slack_client and result:
+                try:
+                    # Extract Airtable URL and score from result
+                    airtable_url = self._extract_airtable_url(result)
+                    quality_score = self._extract_quality_score(result)
+
+                    self.slack_client.chat_postMessage(
+                        channel=self.slack_channel,
+                        thread_ts=self.slack_thread_ts,
+                        text=f"✅ Post {self.stats['total_completed']}/{self.stats['total_queued']} complete!\n"
+                             f"📊 Airtable: {airtable_url}\n"
+                             f"🎯 Quality Score: {quality_score}/25"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send Slack success message: {e}")
+
+        except asyncio.TimeoutError:
+            # Handle timeout as failure
+            timeout_error = Exception(f"Timeout: Post took >2 minutes (platform: {job.platform})")
+            logger.error(f"⏱️ Job {job.id} timed out after 120 seconds")
+
+            # Send Slack notification about timeout
+            if self.slack_client:
+                try:
+                    self.slack_client.chat_postMessage(
+                        channel=self.slack_channel,
+                        thread_ts=self.slack_thread_ts,
+                        text=f"⚠️ Post {self.stats['total_completed'] + 1}/{self.stats['total_queued']} timed out (>2 min)\n"
+                             f"Retrying..."
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send Slack timeout message: {e}")
+
+            await self._handle_job_failure(job, timeout_error)
+
         except Exception as e:
             await self._handle_job_failure(job, e)
+
+    async def _execute_workflow(self, job: ContentJob):
+        """Execute the appropriate platform workflow for a job"""
+        # Import the appropriate workflow
+        if job.platform == "linkedin":
+            from agents.linkedin_sdk_agent import create_linkedin_post_workflow
+            result = await create_linkedin_post_workflow(
+                topic=job.topic,
+                context=job.context,
+                style=job.style
+            )
+        elif job.platform == "twitter":
+            from agents.twitter_sdk_agent import create_twitter_thread_workflow
+            result = await create_twitter_thread_workflow(
+                topic=job.topic,
+                context=job.context,
+                style=job.style
+            )
+        elif job.platform == "email":
+            from agents.email_sdk_agent import create_email_workflow
+            result = await create_email_workflow(
+                topic=job.topic,
+                context=job.context,
+                style=job.style
+            )
+        elif job.platform in ["youtube", "video"]:
+            from agents.youtube_sdk_agent import create_youtube_workflow
+            result = await create_youtube_workflow(
+                topic=job.topic,
+                context=job.context,
+                script_type=job.style
+            )
+        else:
+            raise ValueError(f"Unknown platform: {job.platform}")
+
+        return result
 
     async def _handle_job_failure(self, job: ContentJob, error: Exception):
         """Handle failed job with retry logic"""
@@ -272,7 +358,8 @@ class ContentQueueManager:
             'processing': 0,
             'completed': 0,
             'failed': 0,
-            'retrying': 0
+            'retrying': 0,
+            'cancelled': 0  # NEW: Track cancelled jobs
         }
 
         for job in self.jobs.values():
@@ -300,6 +387,51 @@ class ContentQueueManager:
         """Wait for all queued jobs to complete"""
         await self.queue.join()
         logger.info(f"📊 Final stats: {self.stats}")
+
+    def cancel_batch(self):
+        """
+        Cancel the batch execution
+        - In-progress jobs will complete
+        - Queued jobs will be marked as cancelled
+        """
+        if not self.processing:
+            return {
+                'success': False,
+                'message': 'No batch currently running'
+            }
+
+        self.cancelled = True
+        logger.warning("🛑 Batch cancellation requested")
+
+        return {
+            'success': True,
+            'message': 'Batch cancellation initiated. In-progress posts will complete, pending posts will be cancelled.',
+            'stats': self.stats.copy()
+        }
+
+    def _extract_airtable_url(self, result: str) -> str:
+        """Extract Airtable URL from result string"""
+        import re
+        try:
+            # Look for Airtable URL pattern
+            match = re.search(r'https://airtable\.com/[a-zA-Z0-9/]+', str(result))
+            if match:
+                return match.group(0)
+            return "N/A"
+        except Exception:
+            return "N/A"
+
+    def _extract_quality_score(self, result: str) -> str:
+        """Extract quality score from result string"""
+        import re
+        try:
+            # Look for score pattern like "Score: 22/25" or "Quality: 22/25"
+            match = re.search(r'(?:Score|Quality):\s*(\d+)/25', str(result))
+            if match:
+                return match.group(1)
+            return "N/A"
+        except Exception:
+            return "N/A"
 
 
 # ================== SLACK INTEGRATION ==================
@@ -359,14 +491,36 @@ async def handle_bulk_content_request(
     # Send final summary
     stats = await queue_manager.get_all_status()
 
-    summary = f"""✅ **Bulk Generation Complete**
+    # Calculate success/failure breakdown
+    total_posts = stats['stats']['total_queued']
+    completed = stats['stats']['total_completed']
+    failed = stats['stats']['total_failed']
+    cancelled = stats['stats'].get('total_cancelled', 0)
 
-    📊 Results:
-    - Completed: {stats['stats']['total_completed']}
-    - Failed: {stats['stats']['total_failed']}
-    - Average time: {stats['stats']['average_time']:.1f}s per post
+    # Determine summary emoji and message based on results
+    if cancelled > 0:
+        # Batch was cancelled
+        header = f"🛑 **Batch Cancelled**\n✅ {completed} posts completed\n🚫 {cancelled} posts cancelled"
+    elif failed == 0:
+        # Perfect success
+        header = f"✅ **Batch Complete - All {completed} Posts Created!**"
+    elif completed > 0:
+        # Partial success
+        header = f"⚠️ **Batch Complete - Partial Success**\n✅ {completed}/{total_posts} posts succeeded\n❌ {failed}/{total_posts} posts failed"
+    else:
+        # Complete failure
+        header = f"❌ **Batch Failed - All {failed} Posts Failed**"
 
-    Check Airtable for all generated content!
+    summary = f"""{header}
+
+📊 Stats:
+- Total requested: {total_posts}
+- Successfully created: {completed}
+- Failed: {failed}
+{f'- Cancelled: {cancelled}' if cancelled > 0 else ''}
+- Average time: {stats['stats']['average_time']:.1f}s per post
+
+{f'Check Airtable for {completed} generated posts!' if completed > 0 else 'Please check errors above and try again.'}
     """
 
     slack_client.chat_postMessage(

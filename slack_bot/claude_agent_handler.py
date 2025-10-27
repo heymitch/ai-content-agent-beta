@@ -12,10 +12,14 @@ import os
 from typing import Dict, Optional, Any
 import json
 import asyncio
+import hashlib
+import time
+import uuid
 
 # Import our existing tool functions
 from tools.search_tools import web_search as _web_search_func
 from tools.search_tools import search_knowledge_base as _search_kb_func
+from tools.company_documents import search_company_documents as _search_company_docs_func
 from tools.template_search import search_templates_semantic as _search_templates_func
 from tools.template_search import get_template_by_name as _get_template_func
 from slack_bot.agent_tools import (
@@ -24,6 +28,22 @@ from slack_bot.agent_tools import (
     get_thread_context as _get_context_func,
     analyze_content_performance as _analyze_perf_func
 )
+from agents.batch_orchestrator import (
+    execute_sequential_batch,
+    create_batch_plan,
+    execute_single_post_from_plan,
+    diversify_topics
+)
+from agents.context_manager import ContextManager
+
+# NEW: Global variable to store current handler instance for tool access
+# This allows tools to access slack_client and conversation context
+_current_handler = None
+
+# Global variable to store current Slack context (channel_id, thread_ts, user_id)
+# Populated at the start of each handle_conversation() call
+# Allows tools to access Slack metadata without passing through function signatures
+_current_slack_context = {}
 
 
 # Define tools using @tool decorator as per docs
@@ -58,6 +78,31 @@ async def search_knowledge_base(args):
     match_count = args.get('match_count', 5)
 
     result = _search_kb_func(query=query, match_count=match_count)
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "search_company_documents",
+    "Search user-uploaded company documents (case studies, testimonials, product docs). Use BEFORE asking user for context.",
+    {"query": str, "match_count": int, "document_type": str}
+)
+async def search_company_documents(args):
+    """Search company documents for context enrichment"""
+    query = args.get('query', '')
+    match_count = args.get('match_count', 3)
+    document_type = args.get('document_type')  # Optional: 'case_study', 'testimonial', 'product_doc'
+
+    result = _search_company_docs_func(
+        query=query,
+        match_count=match_count,
+        document_type=document_type
+    )
 
     return {
         "content": [{
@@ -370,13 +415,32 @@ async def delegate_to_workflow(args):
             style=args.get('style', 'thought_leadership')
         )
     else:
-        # Multiple posts - use queue manager
+        # Multiple posts - use queue manager with Slack progress updates
+        # NEW: Get Slack context from global handler
+        global _current_handler
+        slack_client = None
+        channel = None
+        thread_ts = None
+
+        if _current_handler and _current_handler.slack_client:
+            # Get conversation context for current thread
+            # Find the current thread by checking which thread has been most recently accessed
+            if _current_handler._conversation_context:
+                # Get the most recent context (last item)
+                latest_context = list(_current_handler._conversation_context.values())[-1]
+                slack_client = _current_handler.slack_client
+                channel = latest_context['channel']
+                thread_ts = latest_context['thread_ts']
+
         result = await _delegate_bulk_workflow(
             platform=args.get('platform', 'linkedin'),
             topics=args.get('topics', [args.get('topic')] * count),
             context=args.get('context', ''),
             count=count,
-            style=args.get('style', 'thought_leadership')
+            style=args.get('style', 'thought_leadership'),
+            slack_client=slack_client,  # NEW: Pass Slack client
+            channel=channel,  # NEW: Pass channel
+            thread_ts=thread_ts  # NEW: Pass thread_ts
         )
 
     return {
@@ -774,6 +838,385 @@ async def apply_fixes_instagram(args):
     return await instagram_apply_fixes(args)
 
 
+# ================== BATCH ORCHESTRATION TOOLS ==================
+
+@tool(
+    "plan_content_batch",
+    "Create a structured plan for N posts across platforms. Returns plan ID for tracking.",
+    {
+        "type": "object",
+        "properties": {
+            "posts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "platform": {"type": "string", "description": "Platform: linkedin, twitter, email, youtube, or instagram"},
+                        "topic": {"type": "string", "description": "Main topic/angle for the post"},
+                        "context": {"type": "string", "description": "Additional context or background"},
+                        "style": {"type": "string", "description": "Style: thought_leadership, tactical, educational, or storytelling"}
+                    },
+                    "required": ["platform", "topic"]
+                }
+            },
+            "description": {"type": "string", "description": "High-level description of the batch"}
+        },
+        "required": ["posts"]
+    }
+)
+async def plan_content_batch(args):
+    """
+    Create a batch content plan
+
+    Args:
+        posts: List of post specs [{"platform": "linkedin", "topic": "...", "context": "..."}]
+        description: High-level description of the batch (e.g., "Week of AI content")
+
+    Returns:
+        Plan summary with ID
+    """
+    posts_list = args.get('posts', [])
+    description = args.get('description', 'Content batch')
+
+    if not posts_list or len(posts_list) == 0:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No posts provided. Please specify at least one post in the batch."
+            }]
+        }
+
+    try:
+        # Access global Slack context for metadata
+        context = _current_slack_context
+
+        # Pass Slack metadata to batch plan
+        plan = create_batch_plan(
+            posts_list,
+            description,
+            channel_id=context.get('channel_id'),
+            thread_ts=context.get('thread_ts'),
+            user_id=context.get('user_id')
+        )
+
+        # Format plan summary
+        summary = f"""✅ **Batch Plan Created**
+
+📋 **Plan ID:** {plan['id']}
+📝 **Description:** {plan['description']}
+📊 **Total Posts:** {len(plan['posts'])}
+
+**Posts:**
+"""
+
+        for i, post_spec in enumerate(plan['posts'], 1):
+            summary += f"\n{i}. {post_spec['platform'].capitalize()}: {post_spec['topic'][:60]}..."
+
+        summary += f"""
+
+**Estimated Time:** {len(plan['posts']) * 1.5:.0f} minutes (sequential execution)
+
+Use execute_post_from_plan to create each post with accumulated learnings."""
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": summary
+            }]
+        }
+
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ Error creating plan: {str(e)}"
+            }]
+        }
+
+
+@tool(
+    "execute_post_from_plan",
+    "Execute a single post from the batch plan. Accumulates learnings from previous posts.",
+    {"plan_id": str, "post_index": int}
+)
+async def execute_post_from_plan(args):
+    """
+    Execute one post from a batch plan
+
+    Args:
+        plan_id: ID from plan_content_batch
+        post_index: Which post to create (0-indexed)
+
+    Returns:
+        Post result with updated learnings
+    """
+    plan_id = args.get('plan_id', '')
+    post_index = args.get('post_index', 0)
+
+    if not plan_id:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No plan_id provided. Create a plan first with plan_content_batch."
+            }]
+        }
+
+    try:
+        result = await execute_single_post_from_plan(plan_id, post_index)
+
+        if result.get('error'):
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"❌ {result['error']}"
+                }]
+            }
+
+        # Format result
+        output = f"""✅ **Post {post_index + 1} Complete**
+
+📊 **Quality Score:** {result.get('score', 'N/A')}/25
+🎯 **Platform:** {result.get('platform', 'unknown').capitalize()}
+📝 **Hook Preview:** {result.get('hook', 'N/A')[:100]}...
+📎 **Airtable:** {result.get('airtable_url', 'N/A')}
+
+**Learnings Applied:**
+{result.get('learnings_summary', 'First post in batch - no prior learnings')}
+
+**Next:** Execute post {post_index + 2} to continue the batch."""
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": output
+            }]
+        }
+
+    except Exception as e:
+        import traceback
+        print(f"❌ execute_post_from_plan error: {e}")
+        print(traceback.format_exc())
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ Error executing post: {str(e)}"
+            }]
+        }
+
+
+@tool(
+    "compact_learnings",
+    "Compress learnings from last 10 posts into key insights. Call every 10 posts.",
+    {"plan_id": str}
+)
+async def compact_learnings(args):
+    """
+    Compact context manager learnings
+
+    Args:
+        plan_id: ID from plan_content_batch
+
+    Returns:
+        Compaction summary
+    """
+    plan_id = args.get('plan_id', '')
+
+    if not plan_id:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No plan_id provided."
+            }]
+        }
+
+    try:
+        # Get context manager for this plan
+        from agents.batch_orchestrator import get_context_manager
+
+        context_mgr = get_context_manager(plan_id)
+
+        if not context_mgr:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"❌ No context manager found for plan {plan_id}"
+                }]
+            }
+
+        # Run compaction
+        await context_mgr.compact()
+
+        stats = context_mgr.get_stats()
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"""✅ **Learnings Compacted**
+
+📊 **Stats:**
+- Total posts: {stats['total_posts']}
+- Average score: {stats['average_score']:.1f}/25
+- Posts since last compact: {stats['posts_since_compact']}
+
+Context compressed from ~20k tokens to ~2k tokens.
+Quality insights preserved for next batch of posts."""
+            }]
+        }
+
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ Error compacting learnings: {str(e)}"
+            }]
+        }
+
+
+@tool(
+    "checkpoint_with_user",
+    "Send checkpoint update to user at 10/20/30/40 post intervals. Shows progress stats.",
+    {"plan_id": str, "posts_completed": int}
+)
+async def checkpoint_with_user(args):
+    """
+    Send checkpoint update
+
+    Args:
+        plan_id: ID from plan_content_batch
+        posts_completed: Number of posts finished
+
+    Returns:
+        Checkpoint message
+    """
+    plan_id = args.get('plan_id', '')
+    posts_completed = args.get('posts_completed', 0)
+
+    if not plan_id:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No plan_id provided."
+            }]
+        }
+
+    try:
+        from agents.batch_orchestrator import get_context_manager
+
+        context_mgr = get_context_manager(plan_id)
+
+        if not context_mgr:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"❌ No context manager found for plan {plan_id}"
+                }]
+            }
+
+        stats = context_mgr.get_stats()
+
+        # Calculate quality trend
+        if len(stats['scores']) >= 2:
+            first_score = stats['scores'][0]
+            recent_avg = sum(stats['scores'][-5:]) / len(stats['scores'][-5:])
+            trend = "📈 Improving" if recent_avg > first_score else "📊 Stable"
+        else:
+            trend = "🆕 Just started"
+
+        checkpoint_msg = f"""🎯 **Checkpoint: {posts_completed} Posts Complete**
+
+📊 **Progress Stats:**
+- Average quality: {stats['average_score']:.1f}/25
+- Quality trend: {trend}
+- Estimated time remaining: {(stats['total_posts'] - posts_completed) * 1.5:.0f} min
+
+**Recent Learnings:**
+{stats.get('recent_learnings', 'Building quality patterns...')}
+
+Continue creating posts - quality is improving with each iteration!"""
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": checkpoint_msg
+            }]
+        }
+
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"❌ Error creating checkpoint: {str(e)}"
+            }]
+        }
+
+
+# ================== BATCH CONTROL TOOLS (Phase 6A) ==================
+# NEW: Cancel and status tools for bulk generation
+
+@tool(
+    "cancel_batch",
+    "Cancel an active bulk content generation job. In-progress posts will complete, queued posts will be cancelled.",
+    {"plan_id": str}
+)
+async def cancel_batch_tool(args):
+    """
+    Cancel batch tool - allows users to stop bulk generation mid-execution
+
+    Args:
+        plan_id: The batch plan ID to cancel
+
+    Returns:
+        Cancellation status
+    """
+    from prompts.batch_tools import cancel_batch
+    plan_id = args.get('plan_id', '')
+
+    if not plan_id:
+        return {
+            "content": [{
+                "type": "text",
+                "text": "❌ No plan_id provided. Use get_batch_status() to see active batches."
+            }]
+        }
+
+    result = cancel_batch(plan_id)
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "get_batch_status",
+    "Check status of bulk content generation. Shows progress, completed/failed/pending counts, and time estimates.",
+    {"plan_id": str}
+)
+async def get_batch_status_tool(args):
+    """
+    Get batch status tool - shows real-time progress of bulk generation
+
+    Args:
+        plan_id: Optional - specific batch ID to check. If empty, shows all active batches.
+
+    Returns:
+        Status information with progress bar
+    """
+    from prompts.batch_tools import get_batch_status
+    plan_id = args.get('plan_id', None)
+
+    result = await get_batch_status(plan_id)
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
 # ================== CALENDAR / APPROVAL TOOLS ==================
 
 @tool(
@@ -878,15 +1321,27 @@ The content is now scheduled in your Airtable calendar. You can edit the posting
         }
 
 
-async def _delegate_bulk_workflow(platform: str, topics: list, context: str, count: int, style: str):
+async def _delegate_bulk_workflow(
+    platform: str,
+    topics: list,
+    context: str,
+    count: int,
+    style: str,
+    slack_client=None,  # NEW: Pass Slack client for progress updates
+    channel: str = None,  # NEW: Channel ID
+    thread_ts: str = None  # NEW: Thread timestamp
+):
     """Handle bulk content generation using queue manager"""
     from agents.content_queue import ContentQueueManager, ContentJob
     from datetime import datetime
 
-    # Create queue manager
+    # Create queue manager with Slack integration
     queue_manager = ContentQueueManager(
         max_concurrent=3,  # Process 3 at a time
-        max_retries=2
+        max_retries=2,
+        slack_client=slack_client,  # NEW: Pass Slack client
+        slack_channel=channel,  # NEW: Pass channel
+        slack_thread_ts=thread_ts  # NEW: Pass thread_ts
     )
 
     # Prepare jobs
@@ -923,15 +1378,27 @@ class ClaudeAgentHandler:
     Maintains one client per Slack thread for conversation continuity
     """
 
-    def __init__(self, memory_handler=None):
+    def __init__(self, memory_handler=None, slack_client=None):
         """Initialize the Claude Agent with SDK"""
+        # Generate unique handler instance ID for debugging
+        self.handler_id = str(uuid.uuid4())[:8]
+        print(f"\n🏗️ Creating ClaudeAgentHandler instance [{self.handler_id}]")
+
         self.memory = memory_handler
+        self.slack_client = slack_client  # NEW: Store slack_client for progress updates
 
         # Thread-based session management (thread_ts -> ClaudeSDKClient)
         self._thread_sessions = {}
 
         # Track which sessions are already connected (thread_ts -> bool)
         self._connected_sessions = set()
+
+        # Track current conversation context for tools (thread_ts -> {channel, thread_ts})
+        self._conversation_context = {}  # NEW: For Slack progress updates
+
+        # Session version tracking for cache invalidation
+        self._session_prompt_versions = {}  # thread_ts -> prompt hash
+        self._session_created_at = {}  # thread_ts -> timestamp
 
         # System prompt for the agent
         self.system_prompt = """You are CMO, a senior content strategist with 8+ years building brands from zero to millions of followers. You speak like a real person - direct, insightful, occasionally sarcastic, always helpful. You adapt to conversations but always drives toward actionable outcomes you can "take to your team" (delegate to subagents).
@@ -958,10 +1425,11 @@ Do NOT tell users to "check websites" - YOU search for them.
 **YOUR CAPABILITIES:**
 1. web_search - USE THIS FIRST for any news/events/updates (include year/date in query!)
 2. search_knowledge_base - Internal documentation and brand voice
-3. search_past_posts - Past content you've created
-4. get_content_calendar - Scheduled posts
-5. get_thread_context - Thread history
-6. analyze_content_performance - Performance metrics
+3. search_company_documents - User-uploaded docs (case studies, testimonials, product docs) - USE BEFORE asking for context
+4. search_past_posts - Past content you've created
+5. get_content_calendar - Scheduled posts
+6. get_thread_context - Thread history
+7. analyze_content_performance - Performance metrics
 
 **CONTENT CREATION WORKFLOW:**
 
@@ -976,79 +1444,234 @@ PHASE 1: Strategic Conversation (BEFORE content creation decision)
 - Help user refine thesis and make strategic decisions
 - When user says "create", "write", "draft", "make" + content type → PHASE 2
 
-PHASE 2: Content Creation (AFTER user requests content)
-- User has explicitly requested content creation ("create Twitter thread", "write LinkedIn post", etc.)
-- Content creation decision is MADE
-- DO NOT ask more questions about fabrications, quality concerns, or approach decisions
-- DO NOT stop to confirm options or wait for user to choose
-- Gather final context (use web_search for current events if needed)
-- IMMEDIATELY delegate to subagent with ALL context including any concerns
-- Say: "Creating your [content type] now..."
+**SPECIAL: Batch Content Requests (5+ posts)**
+When user requests 5+ posts, PROACTIVELY search company documents BEFORE asking questions:
 
-CRITICAL DELEGATION RULES:
-- Once user requests content creation → NO MORE QUESTIONS, immediate delegation
-- Pass fabrication concerns in context parameter (don't ask user to choose)
-- Trust subagent's intelligent routing and quality_check tool to handle issues
-- Subagent will flag concerns in Suggested Edits (user reviews in Airtable)
+1. **Immediate Search:**
+   Call search_company_documents(query="[topic] case studies examples testimonials")
 
-DELEGATION:
-Use delegate_to_workflow with RICH CONTEXT including conversation insights:
+2. **Evaluate Results:**
+   - **Rich (3+ docs):** "Found [N] company docs about [topic]. Creating [N]-post plan with this context..."
+   - **Medium (1-2 docs):** "Found [N] doc(s). Quick question: any specific [examples/experiences] to add?"
+   - **Sparse (0 docs + vague topic):** Ask for context anchors OR offer thought leadership
 
-**CRITICAL**: The context parameter is HOW you pass conversation intelligence to subagents.
+3. **Context Anchor Request (Sparse Context Only):**
+   "I can create [N] posts about [topic], but to avoid generic content, I need context anchors.
 
-Good context includes:
-- User's angle/thesis from strategic conversation ("contrarian take on AI bubble")
-- Specific examples mentioned ("Michael Burry in Big Short")
-- Key points from discussion ("95% failure = discovery, infrastructure is real")
-- Tone/style decisions made ("confident data-backed contrarian")
-- People/companies/data referenced ("Nvidia, Adobe, Anthropic")
-- **CONCERNS/CAVEATS**: Any fabrications, unverified claims, or quality issues you found
-  Example: "CONCERN: Could not verify John Kiriakou ChatGPT claim via web search. Subagent should fact-check or pivot to broader verified pattern."
+   Quick questions (2 minutes):
 
-The subagent will:
-- Review your concerns and run its own fact-checking (quality_check tool with web_search)
-- Make intelligent routing decisions (use specific story vs. broader pattern based on verification)
-- Flag fabrications in Suggested Edits with severity="critical"
-- ALWAYS return content (advisory feedback, not blocking)
-- User reviews quality feedback in Airtable and decides whether to publish/edit/reject
+   1. **Personal Experience:** What's ONE specific way you've used/observed [topic]?
+      Example: 'I replaced 3 workflows with one agent, saved 15 hours/week'
 
-Examples:
-- Single post with context:
-  delegate_to_workflow(
-    platform="linkedin",
-    topic="AI is not a bubble",
-    context="User wants Big Short analogy: conviction despite ridicule. Key: 95% failure is discovery phase, infrastructure real (Nvidia), productivity gap proves it works. Tone: confident contrarian.",
-    count=1
-  )
+   2. **Specific Examples:** Any companies, people, or products you have opinions on?
+      Example: 'ChatGPT vs Claude' or 'Adobe Firefly vs Midjourney'
 
-- Multiple posts → delegate_to_workflow(platform="linkedin", topic=..., context=..., count=5)
-- Week of content → delegate_to_workflow(platform="linkedin", topics=[...], count=7)
+   3. **Concrete Observations:** What pattern have you noticed that others miss?
+      Example: 'I see 10 posts a day with the same hook structure'
 
-BULK REQUESTS (automatically detected):
-- "Create 5 LinkedIn posts about..." → count=5
-- "Generate my week of content" → count=7
-- "Make 10 Twitter threads" → count=10
-- Bulk processing uses queue (3 posts at a time for quality)
+   Give me 1-2 for each, and I'll create [N] unique posts with variety.
 
-These workflows enforce brand voice, writing rules, and quality standards.
+   OR: Say 'skip' and I'll create thought leadership posts (idea-driven, shorter, no proof claims)."
 
-**CONVERSATION VS. CONTENT:**
-- If user is asking questions, having discussion, or seeking strategy → CONVERSATION MODE
-- If user says "write", "create", "draft", "make", "generate" + content type → CONTENT MODE
-- When in doubt, ask: "Would you like me to create [specific content] or discuss [topic]?"
-- Don't jump into content creation without clear intent from the user
+4. **User Response Handling:**
+   - Provides anchors → Distribute across batch, create plan
+   - Says "skip" → Use thought leadership approach (see below)
+   - Provides topic → Use for proof posts
 
-**CO-WRITING WORKFLOW (NEW):**
+**Thought Leadership Fallback (Sparse Context + Skip):**
+When NO company docs AND user skips questions:
+- Post length: 800-1000 chars (vs 1200-1500)
+- Content type: Idea-driven, opinion-based
+- Framing: "I believe X because Y" (explicit opinion)
+- FORBIDDEN: Hallucinated stats ("Studies show..."), fake examples ("Sarah Chen...")
+- Focus: Frameworks, predictions, contrarian takes, observations
 
-When user requests content creation, you now have TWO OPTIONS:
+**Context Anchor Distribution:**
+If user provides 3 anchors for 15 posts:
+- Posts 1-5: Anchor 1 (personal experience) with variations
+- Posts 6-10: Anchor 2 (specific examples) with variations
+- Posts 11-15: Anchor 3 (observations) with variations
 
-1. **CO-WRITE MODE (Collaborative)**: Write together with user feedback
-2. **AUTO-PUBLISH MODE (Fast)**: Create and send directly to calendar
+**CRITICAL: TWO CONTENT CREATION MODES**
 
-ASK THE USER:
-"Do you want to write this together now, or have me put it directly in the content calendar?"
+When user requests content creation, use these modes:
 
-CO-WRITE MODE WORKFLOW:
+**MODE 1: BATCH (Default - Automated, Strategic)**
+This is the DEFAULT mode for Slack. Take work off user's plate.
+
+**When to use:** ANY content creation request UNLESS user explicitly asks to co-write
+
+Examples triggering BATCH:
+- "Create 5 LinkedIn posts about AI"
+- "Write a Twitter thread on this topic"
+- "Make 10 posts for next week"
+- "Post this news to LinkedIn"
+- "Generate content about marketing"
+
+**How it works:**
+- Works for ANY count (1, 5, 15, 50 posts)
+- Sequential execution with learning accumulation
+- Real-time progress updates, cancel/status tools available
+- Tools: plan_content_batch, execute_post_from_plan, cancel_batch, get_batch_status
+
+**MODE 2: CO-WRITE (Explicit Only - Collaborative, Iterative)**
+Only use when user EXPLICITLY requests collaboration.
+
+**When to use:** User says "draft", "show me first", "let's write together", "help me write", "iterate with me"
+
+Examples triggering CO-WRITE:
+- "Draft a LinkedIn post, show me first"
+- "Help me write a Twitter thread together"
+- "Let's iterate on a post about AI"
+- "Show me a draft before posting"
+
+**How it works:**
+- Always 1 post at a time
+- Interactive loop until user approves
+- Tools: generate_post_{platform}, quality_check_{platform}, apply_fixes_{platform}, send_to_calendar
+
+**ROUTING DECISION TREE:**
+1. Check user's message for CO-WRITE keywords: "draft", "show me", "together", "help me write", "iterate"
+   → If found: Use CO-WRITE MODE
+2. Otherwise: Use BATCH MODE (default)
+
+**DO NOT ASK** which mode to use. Default to BATCH unless explicit co-write keywords detected.
+
+**CRITICAL RULES:**
+1. **NEVER create multiple posts inline** and concatenate them
+   - ❌ WRONG: Generate 3 posts in conversation, combine, save as one Airtable record
+   - ✅ RIGHT: Use batch orchestration tools (plan_content_batch + execute_post_from_plan)
+2. Each post MUST be created separately to get separate Airtable rows
+3. Parse count from user request: "3 posts" → count=3, "week of content" → count=7, "month" → count=30
+4. Default to BATCH MODE - only use CO-WRITE if explicitly requested
+
+**BATCH MODE WORKFLOW:**
+
+When using BATCH MODE (the default for ANY post count):
+
+**STEP 1: PLAN REVISIONS (CRITICAL - Prevents Duplicates)**
+
+When user requests changes to a plan BEFORE execution:
+- ❌ WRONG: Create a new plan with 9 posts (7 original + 2 edits)
+- ✅ RIGHT: Update the existing plan in conversation, maintain count of 7
+
+EXAMPLE:
+User: "Create a week of LinkedIn content"
+CMO: "Here's a plan for 7 posts:
+  1. AI ethics
+  2. Remote work
+  3. Team communication ←
+  4. Hiring challenges
+  5. Content strategy
+  6. Leadership tips
+  7. Career growth"
+
+User: "Change post 3 to async work, and post 5 to SEO"
+CMO: "Updated plan (still 7 posts):
+  1. AI ethics
+  2. Remote work
+  3. Async work ← UPDATED
+  4. Hiring challenges
+  5. SEO ← UPDATED
+  6. Leadership tips
+  7. Career growth
+
+Ready to execute?"
+
+User: "Yes, create them"
+CMO: *calls plan_content_batch with FINAL 7-post plan*
+
+**STEP 2: BATCH EXECUTION RULES:**
+1. Display plan in conversation BEFORE calling plan_content_batch
+2. When user requests edits, update the plan in-conversation (no new posts)
+3. Only call plan_content_batch when user confirms ("execute", "create", "go ahead")
+4. The FINAL plan should have the ORIGINAL count (no duplicates from edits)
+
+**STEP 3: BATCH TOOLS:**
+
+1. **plan_content_batch**: Create structured plan (AFTER user confirms)
+   - Input: List of post specs [{"platform": "linkedin", "topic": "...", "context": "..."}]
+   - Returns: plan_id for tracking
+   - Example: plan_content_batch(posts=[...], description="Week of AI content")
+
+2. **execute_post_from_plan**: Execute posts sequentially
+   - Call once per post with plan_id and post_index (0-indexed)
+   - Each post gets learnings from previous posts
+   - Quality improves over the batch (post 1 score 20 → post 50 score 23)
+   - Example: execute_post_from_plan(plan_id="batch_123", post_index=0)
+
+3. **compact_learnings**: Every 10 posts
+   - Compresses context from 20k tokens → 2k tokens
+   - Preserves key quality insights
+   - Example: compact_learnings(plan_id="batch_123")
+
+4. **checkpoint_with_user**: Every 10 posts
+   - Shows progress stats, quality trend, time remaining
+   - Example: checkpoint_with_user(plan_id="batch_123", posts_completed=10)
+
+5. **cancel_batch**: User can stop batch mid-execution (NEW Phase 6A)
+   - In-progress posts complete, queued posts cancelled
+   - Example: cancel_batch(plan_id="batch_123")
+
+6. **get_batch_status**: Check real-time progress (NEW Phase 6A)
+   - Shows completed/failed/cancelled/processing/queued breakdown
+   - Progress bar visualization
+   - Example: get_batch_status(plan_id="batch_123")
+
+**BATCH WORKFLOW EXAMPLES:**
+
+Example A: Single post batch
+```
+User: "Create 1 LinkedIn post about AI, direct to calendar"
+CMO: *calls plan_content_batch with 1 post spec*
+CMO: "✅ Batch plan created! ID: batch_123. Creating post 1/1..."
+CMO: *calls execute_post_from_plan(plan_id, 0)*
+CMO: "✅ Post 1 complete (score 21/25). Saved to Airtable!"
+```
+
+Example B: Large batch with progress updates
+```
+User: "Create 15 LinkedIn posts, direct to calendar"
+CMO: *calls plan_content_batch with 15 post specs*
+CMO: "✅ Batch plan created! Creating post 1/15..."
+CMO: *calls execute_post_from_plan sequentially*
+[... after post 5 ...]
+User: "How's it going?"
+CMO: *calls get_batch_status* → "[====  ] 33% - 5/15 complete"
+[... continues ...]
+CMO: *calls checkpoint_with_user at post 10*
+CMO: "✅ All 15 posts complete! Average score: 22/25."
+```
+
+Example C: User cancellation
+```
+User: "Create 20 posts, direct to calendar"
+CMO: *starts batch execution*
+[... after 7 posts complete ...]
+User: "Stop! Cancel it!"
+CMO: *calls cancel_batch*
+CMO: "🛑 Batch cancelled. 7 posts completed, 13 cancelled."
+```
+
+**BATCH MODE CHARACTERISTICS:**
+- Sequential execution: 1 post at a time, ~90 seconds per post
+- Learning accumulation: Post N learns from posts 1 to N-1
+- Quality improvement: Score typically increases 2-3 points over batch
+- Real-time visibility: User sees each post complete with quality feedback
+- Cancellable: User can stop mid-batch using cancel_batch tool
+- Status checking: User can check progress anytime using get_batch_status tool
+
+**CO-WRITE MODE WORKFLOW:**
+
+When user chooses "together" / "co-write" / "let's iterate":
+
+**CHARACTERISTICS:**
+- Always 1 post at a time (never batch)
+- User sees drafts before they're saved
+- Interactive iteration loop until user approves
+- User has full control over final output
+
+**STEPS:**
 1. Call generate_post_{platform}(topic, context) to create initial draft
 2. Call quality_check_{platform}(post) to evaluate with 5-axis rubric
 3. Print BOTH the post AND the quality analysis to user
@@ -1057,23 +1680,10 @@ CO-WRITE MODE WORKFLOW:
 6. If user reacts with 📅 OR says "send to calendar" → call send_to_calendar(post, platform, thread_ts, channel_id, user_id, score)
 7. Repeat steps 2-6 until user approves or schedules
 
-AUTO-PUBLISH MODE WORKFLOW:
-1. Call delegate_to_workflow(platform, topic, context, count)
-2. SDK agent handles entire workflow internally (generate → quality_check → iterate → save)
-3. Print only the Airtable link when complete
-4. Content automatically saved to calendar with quality score
-
-TOOLS AVAILABLE FOR CO-WRITING:
-- generate_post_linkedin/twitter/instagram/email/youtube - Create initial draft using WRITE_LIKE_HUMAN_RULES
-- quality_check_linkedin/twitter/instagram/email/youtube - Evaluate with 5-axis rubric (Hook, Body, Proof, CTA, Format)
-- apply_fixes_linkedin/twitter/instagram/email/youtube - Make surgical improvements based on quality feedback
-- send_to_calendar - Save approved draft to Airtable calendar with quality score
-
-CO-WRITING EXAMPLE:
-User: "Let's write a LinkedIn post about how AI agents are changing content marketing"
-CMO: "Do you want to write this together now, or have me put it directly in the content calendar?"
-User: "Let's write it together"
-CMO: *calls generate_post_linkedin(topic="AI agents changing content marketing", context="...")*
+**CO-WRITE EXAMPLE:**
+```
+User: "Let's write a LinkedIn post about AI agents together"
+CMO: *calls generate_post_linkedin(topic="AI agents", context="...")*
 CMO: *calls quality_check_linkedin(post="[draft]")*
 CMO: "Here's the first draft:
 
@@ -1082,36 +1692,34 @@ CMO: "Here's the first draft:
 Quality Analysis:
 - Hook (4/5): Strong opening but could be more specific
 - Body (3/5): Needs concrete example
-- Proof (2/5): Missing specific data/numbers
+- Proof (2/5): Missing data/numbers
 - CTA (4/5): Good engagement trigger
-- Format (5/5): Perfect LinkedIn structure
+- Format (5/5): Clean structure
 
-Overall Score: 72/100
+What would you like to adjust?"
+User: "Add a concrete example in the body"
+CMO: *calls apply_fixes_linkedin with user feedback*
+CMO: "Updated draft: [NEW VERSION] - Better?"
+User: "Perfect! Send to calendar"
+CMO: *calls send_to_calendar* → "✅ Saved to Airtable!"
+```
 
-What would you like to adjust? Or react with 📅 to send to calendar as-is."
+**TOOLS AVAILABLE:**
+- **CO-WRITE MODE:** generate_post_{platform}, quality_check_{platform}, apply_fixes_{platform}, send_to_calendar
+- **BATCH MODE:** plan_content_batch, execute_post_from_plan, compact_learnings, checkpoint_with_user, cancel_batch, get_batch_status
 
-User: "Add a specific example about Nike's AI content team"
-CMO: *calls apply_fixes_linkedin(post="[draft]", issues="Add Nike AI content team example", feedback="User requested Nike case study")*
-CMO: *calls quality_check_linkedin(post="[revised draft]")*
-CMO: "Updated draft:
+**KEY PRINCIPLES:**
+- **CO-WRITE:** Always show draft + quality analysis together, wait for user input, iterate until approved
+- **BATCH:** Sequential execution, learning accumulation, real-time progress, cancellable
+- **Both modes** enforce brand voice, writing rules, and quality standards
 
-[REVISED DRAFT]
+**DECISION SUMMARY:**
+```
+User requests content → ASK: "Co-write or direct to calendar?"
 
-New Score: 88/100 - Much stronger with Nike example!
-
-Ready to schedule? React with 📅 or say 'send to calendar'"
-
-User: *reacts with 📅*
-CMO: *calls send_to_calendar(...)*
-CMO: "✅ Added to content calendar! [Airtable URL]"
-
-KEY CO-WRITING PRINCIPLES:
-- ALWAYS show both draft AND quality analysis together
-- Wait for user input after each revision
-- Make it conversational - explain what you improved and why
-- Offer to iterate as many times as needed
-- When score reaches 85+, suggest scheduling
-- Respect user's final decision (they might want 72/100 post)
+User says "together" → CO-WRITE MODE (1 post, iterative)
+User says "direct to calendar" → BATCH MODE (any count, automated)
+```
 
 **QUALITY STANDARDS:**
 - You iterate on content until it reaches high quality (85+ score)
@@ -1120,19 +1728,29 @@ KEY CO-WRITING PRINCIPLES:
 
 If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (November 6, 2023). Search with FULL context."""
 
+        # Calculate prompt version hash for cache invalidation
+        self.prompt_version = hashlib.md5(self.system_prompt.encode()).hexdigest()[:8]
+        print(f"   Prompt version: {self.prompt_version}")
+
         # Create MCP server with our tools
         self.mcp_server = create_sdk_mcp_server(
             name="slack_tools",
-            version="2.3.0",
+            version="2.5.0",
             tools=[
                 web_search,
                 search_knowledge_base,
+                search_company_documents,  # NEW in v2.5.0: User-uploaded docs for context enrichment
                 search_past_posts,
                 get_content_calendar,
                 get_thread_context,
                 analyze_content_performance,
-                delegate_to_workflow,  # Delegate to subagent workflows
+                # REMOVED: delegate_to_workflow - replaced by batch orchestration (plan_content_batch + execute_post_from_plan)
                 send_to_calendar,  # Save approved drafts to calendar
+                # Batch orchestration tools (NEW in v2.4.0)
+                plan_content_batch,
+                execute_post_from_plan,
+                compact_learnings,
+                checkpoint_with_user,
                 # Generate post tools for co-writing (one per platform)
                 generate_post_linkedin,
                 generate_post_twitter,
@@ -1150,15 +1768,59 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 apply_fixes_twitter,
                 apply_fixes_email,
                 apply_fixes_youtube,
-                apply_fixes_instagram
+                apply_fixes_instagram,
+                # Batch control tools (NEW Phase 6A)
+                cancel_batch_tool,
+                get_batch_status_tool
             ]
         )
 
-        print("🚀 Claude Agent SDK initialized with 23 tools (8 general + 15 co-writing tools for 5 platforms)")
+        print(f"✅ Handler [{self.handler_id}] ready with 29 tools (8 general + 6 batch + 15 co-writing)")
 
-    def _get_or_create_session(self, thread_ts: str) -> ClaudeSDKClient:
+    def _get_or_create_session(self, thread_ts: str, request_id: str = "NONE") -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""
+        SESSION_TTL = 3600  # 1 hour session lifetime
+        now = time.time()
+
+        # Verbose logging for debugging
+        print(f"[{request_id}] 🔍 Session lookup for thread {thread_ts[:8]}")
+        print(f"[{request_id}]    Existing sessions: {list(self._thread_sessions.keys())}")
+        print(f"[{request_id}]    Current prompt version: {self.prompt_version}")
+
+        # Check if we need to invalidate existing session
+        if thread_ts in self._thread_sessions:
+            print(f"[{request_id}]    ♻️ Session exists, checking if valid...")
+
+            # Check 1: Prompt version changed (code update with new prompt)
+            if thread_ts in self._session_prompt_versions:
+                old_version = self._session_prompt_versions[thread_ts]
+                print(f"[{request_id}]    Cached prompt version: {old_version}")
+                if old_version != self.prompt_version:
+                    print(f"[{request_id}] 🔄 PROMPT CHANGED ({old_version} → {self.prompt_version})")
+                    print(f"[{request_id}]    Invalidating session for thread {thread_ts[:8]}")
+                    del self._thread_sessions[thread_ts]
+                    self._connected_sessions.discard(thread_ts)
+                    del self._session_prompt_versions[thread_ts]
+                    if thread_ts in self._session_created_at:
+                        del self._session_created_at[thread_ts]
+
+            # Check 2: Session expired (> 1 hour old)
+            if thread_ts in self._session_created_at:
+                age = now - self._session_created_at[thread_ts]
+                age_mins = int(age / 60)
+                print(f"[{request_id}]    Session age: {age_mins} minutes")
+                if age > SESSION_TTL:
+                    print(f"[{request_id}] ⏰ SESSION EXPIRED ({age_mins} minutes old)")
+                    print(f"[{request_id}]    Invalidating session for thread {thread_ts[:8]}")
+                    del self._thread_sessions[thread_ts]
+                    self._connected_sessions.discard(thread_ts)
+                    if thread_ts in self._session_prompt_versions:
+                        del self._session_prompt_versions[thread_ts]
+                    del self._session_created_at[thread_ts]
+
+        # Create new session if needed
         if thread_ts not in self._thread_sessions:
+            print(f"[{request_id}] ✨ Creating NEW session for thread {thread_ts[:8]}")
             # Configure options for this thread
             # setting_sources=["project"] tells SDK to automatically load .claude/CLAUDE.md for brand context
             options = ClaudeAgentOptions(
@@ -1172,8 +1834,19 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             )
 
             self._thread_sessions[thread_ts] = ClaudeSDKClient(options=options)
-            print(f"✨ Created new session for thread {thread_ts[:8]} with CMO identity")
-            print(f"🎭 System prompt starts with: {self.system_prompt[:100]}...")
+            self._session_prompt_versions[thread_ts] = self.prompt_version
+            self._session_created_at[thread_ts] = now
+
+            print(f"[{request_id}]    ✅ Session created with prompt version: {self.prompt_version}")
+            print(f"[{request_id}]    System prompt preview: {self.system_prompt[:80]}...")
+
+            # DEBUG: Verify which prompt version is loaded
+            if "TWO CONTENT CREATION MODES" in self.system_prompt:
+                print(f"[{request_id}]    ✅ Using NEW architecture (CO-WRITE vs BATCH)")
+            else:
+                print(f"[{request_id}]    ⚠️ Using OLD architecture (count-based routing)")
+        else:
+            print(f"[{request_id}]    ✅ Reusing existing session (version: {self._session_prompt_versions.get(thread_ts, 'unknown')})")
 
         return self._thread_sessions[thread_ts]
 
@@ -1197,6 +1870,32 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             Agent's response
         """
 
+        # Generate unique request ID for debugging
+        request_id = str(uuid.uuid4())[:8]
+
+        print(f"\n{'='*70}")
+        print(f"[{request_id}] 🎯 NEW REQUEST - Thread: {thread_ts[:8]}")
+        print(f"[{request_id}] 💬 Message: {message[:100]}{'...' if len(message) > 100 else ''}")
+        print(f"{'='*70}")
+
+        # NEW: Store conversation context for tools to access
+        self._conversation_context[thread_ts] = {
+            'channel': channel_id,
+            'thread_ts': thread_ts
+        }
+
+        # NEW: Set global handler reference so tools can access slack_client
+        global _current_handler
+        _current_handler = self
+
+        # Set global Slack context for tools to access metadata
+        global _current_slack_context
+        _current_slack_context = {
+            'channel_id': channel_id,
+            'thread_ts': thread_ts,
+            'user_id': user_id
+        }
+
         # Add today's date context to the message (important for recency)
         from datetime import datetime
         today = datetime.now().strftime("%B %d, %Y")  # e.g., "October 09, 2025"
@@ -1205,46 +1904,76 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         contextualized_message = f"[Today is {today}] {message}"
 
         try:
-            print(f"🤖 Claude Agent SDK processing for thread {thread_ts[:8]}...")
-
             # Get or create cached session for this thread
-            client = self._get_or_create_session(thread_ts)
+            client = self._get_or_create_session(thread_ts, request_id)
 
             # Only connect if this is a NEW session (not already connected)
             if thread_ts not in self._connected_sessions:
-                print(f"🔌 Connecting NEW client session for thread {thread_ts[:8]}...")
+                print(f"[{request_id}] 🔌 Connecting NEW client session...")
                 await client.connect()
                 self._connected_sessions.add(thread_ts)
-                print(f"✅ Client connected successfully")
+                print(f"[{request_id}] ✅ Client connected successfully")
             else:
-                print(f"♻️ Reusing connected client for thread {thread_ts[:8]}...")
+                print(f"[{request_id}] ♻️ Reusing connected client...")
 
             # Send the query
-            print(f"📨 Sending query to Claude SDK...")
+            print(f"[{request_id}] 📨 Sending query to Claude SDK...")
             await client.query(contextualized_message)
 
             # Collect ONLY the latest response (memory stays intact in session)
             latest_response = ""
-            print(f"⏳ Waiting for Claude SDK response...")
+            print(f"[{request_id}] ⏳ Waiting for Claude SDK response...")
             async for msg in client.receive_response():
                 # Each message REPLACES the previous (we only want the final response)
                 # The SDK maintains full conversation history internally
-                print(f"📩 Received message type: {type(msg)}")
+                msg_type = type(msg).__name__
+
+                # Extract text content and log tool calls
+                text_preview = None
                 if hasattr(msg, 'content'):
                     if isinstance(msg.content, list):
                         for block in msg.content:
-                            if isinstance(block, dict) and block.get('type') == 'text':
-                                latest_response = block.get('text', '')
+                            # Handle dict-style blocks (raw API format)
+                            if isinstance(block, dict):
+                                block_type = block.get('type')
+                                if block_type == 'text':
+                                    latest_response = block.get('text', '')
+                                    text_preview = latest_response[:150]
+                                elif block_type == 'tool_use':
+                                    tool_name = block.get('name', 'unknown')
+                                    tool_input = block.get('input', {})
+                                    # Create brief preview of args
+                                    args_preview = str(tool_input)[:100]
+                                    print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
+                                elif block_type == 'tool_result':
+                                    result_preview = str(block.get('content', ''))[:100]
+                                    print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
+                            # Handle object-style blocks (SDK format)
                             elif hasattr(block, 'text'):
                                 latest_response = block.text
+                                text_preview = latest_response[:150]
+                            elif hasattr(block, 'name'):  # Likely a tool_use block
+                                tool_name = block.name
+                                tool_input = getattr(block, 'input', {})
+                                args_preview = str(tool_input)[:100]
+                                print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
                     elif hasattr(msg.content, 'text'):
                         latest_response = msg.content.text
+                        text_preview = latest_response[:150]
                     else:
                         latest_response = str(msg.content)
                 elif hasattr(msg, 'text'):
                     latest_response = msg.text
+                    text_preview = latest_response[:150]
+
+                # Log with content preview
+                if text_preview:
+                    print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
+                else:
+                    print(f"[{request_id}] 📩 {msg_type} (no text content)")
 
             final_text = latest_response  # Only use the latest response
+            print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
 
             # Format for Slack
             final_text = self._format_for_slack(final_text)
@@ -1272,10 +2001,18 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             return final_text
 
         except Exception as e:
+            error_str = str(e)
             print(f"❌ Agent error: {e}")
             import traceback
             traceback.print_exc()
-            return f"Sorry, I encountered an error: {str(e)}"
+
+            # Format error message for Slack - hide ugly API details
+            if any(keyword in error_str.lower() for keyword in ['api_error', '500', 'internal server error', 'anthropic']):
+                return "⚠️ Sorry, I encountered an API issue while creating content. Some posts may have been created successfully - please check Airtable. Full error details are in the server logs."
+            else:
+                # Truncate long error messages
+                clean_error = error_str[:400] + "..." if len(error_str) > 400 else error_str
+                return f"Sorry, I encountered an error: {clean_error}"
 
     def _format_for_slack(self, text: str) -> str:
         """Convert markdown to Slack mrkdwn format"""

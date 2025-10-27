@@ -141,9 +141,18 @@ class AirtableContentCalendar:
                 'url': f"https://airtable.com/{self.base_id}/{self.table_name}/{record['id']}"
             }
         except Exception as e:
+            error_str = str(e).lower()
+
+            # Detect quota/rate limit errors
+            is_quota_error = any(keyword in error_str for keyword in [
+                'quota', 'rate limit', 'too many requests', '429', 'limit exceeded'
+            ])
+
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'is_quota_error': is_quota_error,
+                'fallback_message': 'Airtable quota exceeded. Saved to Supabase only.' if is_quota_error else None
             }
 
     def update_content_record(

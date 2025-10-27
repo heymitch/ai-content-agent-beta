@@ -69,25 +69,62 @@ async def generate_5_hooks(args):
 
 
 @tool(
+    "search_company_documents",
+    "Search user-uploaded docs (case studies, testimonials, product docs) for proof points",
+    {"query": str, "match_count": int, "document_type": str}
+)
+async def search_company_documents(args):
+    """Search company documents for context enrichment"""
+    from tools.company_documents import search_company_documents as _search_func
+
+    query = args.get('query', '')
+    match_count = args.get('match_count', 3)
+    document_type = args.get('document_type')  # Optional filter
+
+    result = _search_func(
+        query=query,
+        match_count=match_count,
+        document_type=document_type
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
     "inject_proof_points",
-    "Add metrics and proof points",
+    "Add metrics and proof points. Searches company documents first for real case studies.",
     {"draft": str, "topic": str, "industry": str}
 )
 async def inject_proof_points(args):
-    """Inject proof - prompt loaded JIT"""
+    """Inject proof - searches company docs first, then prompt loaded JIT"""
     from anthropic import Anthropic
     from prompts.linkedin_tools import INJECT_PROOF_PROMPT, WRITE_LIKE_HUMAN_RULES
+    from tools.company_documents import search_company_documents as _search_func
+
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
     draft = args.get('draft', '')
     topic = args.get('topic', '')
     industry = args.get('industry', 'SaaS')
 
+    # NEW: Search company documents for proof points FIRST
+    proof_context = _search_func(
+        query=f"{topic} case study metrics ROI testimonial",
+        match_count=3,
+        document_type=None  # Search all types
+    )
+
     prompt = INJECT_PROOF_PROMPT.format(
         write_like_human_rules=WRITE_LIKE_HUMAN_RULES,
         draft=draft,
         topic=topic,
-        industry=industry
+        industry=industry,
+        proof_context=proof_context  # NEW: Include company docs
     )
 
     response = client.messages.create(
@@ -275,115 +312,83 @@ async def score_and_iterate(args):
     {"post": str}
 )
 async def quality_check(args):
-    """Evaluate post with 5-axis rubric + surgical feedback + Tavily search for fabrications"""
+    """Evaluate post with 5-axis rubric + surgical feedback (simplified without Tavily loop)"""
     import json
     from anthropic import Anthropic
     from prompts.linkedin_tools import QUALITY_CHECK_PROMPT
-    from tavily import TavilyClient
 
     client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    tavily = TavilyClient(api_key=os.getenv('TAVILY_API_KEY'))
 
     post = args.get('post', '')
-    prompt = QUALITY_CHECK_PROMPT.format(post=post)
 
-    # Define Tavily search tool for Claude
-    tavily_tool = {
-        "name": "web_search",
-        "description": "Search the web for current information to verify claims, names, companies, and news stories. Returns recent, relevant results.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query (e.g., 'Rick Beato YouTube AI filters', 'James Chen Clearbit')"
-                }
-            },
-            "required": ["query"]
-        }
-    }
+    # Create a modified prompt that skips fact-checking step
+    # The QUALITY_CHECK_PROMPT includes instructions for web searches, but we'll ask Claude to skip that
+    prompt = QUALITY_CHECK_PROMPT.format(post=post) + """
 
-    messages = [{"role": "user", "content": prompt}]
+IMPORTANT: For this evaluation, skip STEP 5 (web search verification).
+Focus on steps 1-4 only: scanning for violations, creating issues, scoring, and making decision.
+Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web searches."""
 
-    # Tool loop: handle Tavily search requests
-    max_iterations = 5
-    for iteration in range(max_iterations):
+    # SIMPLIFIED: Single API call, no tool loop
+    try:
         response = client.messages.create(
             model="claude-sonnet-4-5-20250929",
             max_tokens=3000,
-            tools=[tavily_tool],
-            messages=messages
+            messages=[{"role": "user", "content": prompt}]
         )
 
-        # Check if Claude wants to use a tool
-        if response.stop_reason == "tool_use":
-            # Extract tool use from response
-            tool_use_block = next((block for block in response.content if block.type == "tool_use"), None)
+        # Extract text response
+        response_text = response.content[0].text if response.content else ""
 
-            if tool_use_block and tool_use_block.name == "web_search":
-                # Execute Tavily search
-                query = tool_use_block.input["query"]
-                try:
-                    tavily_results = tavily.search(query, max_results=3)
-                    search_output = "\n\n".join([
-                        f"**{r.get('title', 'No title')}**\n{r.get('content', 'No content')}\nSource: {r.get('url', 'No URL')}"
-                        for r in tavily_results.get('results', [])
-                    ])
-                except Exception as e:
-                    search_output = f"Search error: {str(e)}"
-
-                # Add assistant message with tool use, then tool result
-                messages.append({
-                    "role": "assistant",
-                    "content": response.content
-                })
-                messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": tool_use_block.id,
-                        "content": search_output
-                    }]
-                })
-                # Continue loop to get final response
-                continue
-
-            # Unknown tool - shouldn't happen
-            messages.append({
-                "role": "assistant",
-                "content": response.content
-            })
-            continue
-
-        # Got final text response
-        final_text = ""
-        for block in response.content:
-            if hasattr(block, 'text'):
-                final_text += block.text
-
-        # Try to parse JSON, return as-is if valid
+        # Try to parse as JSON for structured response
         try:
-            json_result = json.loads(final_text)
+            json_result = json.loads(response_text)
+            # Ensure it has expected structure
             if "scores" in json_result and "decision" in json_result:
-                return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
+                # Add note about skipped verification
+                if "searches_performed" not in json_result:
+                    json_result["searches_performed"] = []
+                json_result["note"] = "Fact verification skipped to avoid tool conflicts"
+                return {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps(json_result, indent=2)
+                    }]
+                }
         except json.JSONDecodeError:
+            # Not JSON, return as text
             pass
 
-        # Fallback: return raw text
-        return {"content": [{"type": "text", "text": final_text}]}
+        # Return raw text if not valid JSON
+        return {
+            "content": [{
+                "type": "text",
+                "text": response_text
+            }]
+        }
 
-    # Max iterations reached
-    return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "scores": {"total": 0},
-                "decision": "error",
-                "issues": [],
-                "surgical_summary": "Max iterations reached"
-            }, indent=2)
-        }]
-    }
+    except Exception as e:
+        # Return error as structured response
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "scores": {
+                        "hook": 0,
+                        "audience": 0,
+                        "headers": 0,
+                        "proof": 0,
+                        "cta": 0,
+                        "total": 0,
+                        "ai_deductions": 0
+                    },
+                    "decision": "error",
+                    "issues": [],
+                    "surgical_summary": f"Quality check error: {str(e)}",
+                    "note": "Simplified quality check without web verification"
+                }, indent=2)
+            }]
+        }
 
 
 @tool(
@@ -448,21 +453,32 @@ class LinkedInSDKAgent:
     Orchestrates Tier 3 tools and maintains platform-specific context
     """
 
-    def __init__(self, user_id: str = "default", isolated_mode: bool = False):
+    def __init__(
+        self,
+        user_id: str = "default",
+        isolated_mode: bool = False,
+        channel_id: Optional[str] = None,
+        thread_ts: Optional[str] = None
+    ):
         """Initialize LinkedIn SDK Agent with memory and tools
 
         Args:
             user_id: User identifier for session management
             isolated_mode: If True, creates isolated sessions (for testing only)
+            channel_id: Slack channel ID (for Airtable/Supabase saves)
+            thread_ts: Slack thread timestamp (for Airtable/Supabase saves)
         """
         self.user_id = user_id
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
+        # Store Slack metadata for saving to Airtable/Supabase
+        self.channel_id = channel_id
+        self.thread_ts = thread_ts
 
         # LinkedIn-specific base prompt with quality thresholds
         base_prompt = """You are a LinkedIn content creation agent. Your goal: posts that score 18+ out of 25 without needing 3 rounds of revision.
 
-AVAILABLE TOOLS (5-tool workflow):
+AVAILABLE TOOLS:
 
 1. mcp__linkedin_tools__generate_5_hooks
    Input: {"topic": str, "context": str, "audience": str}
@@ -520,20 +536,21 @@ AVAILABLE TOOLS (5-tool workflow):
         from integrations.prompt_loader import load_system_prompt
         self.system_prompt = load_system_prompt(base_prompt)
 
-        # Create MCP server with LinkedIn-specific tools (LEAN 5-TOOL WORKFLOW)
+        # Create MCP server with LinkedIn-specific tools (ENHANCED 6-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
             name="linkedin_tools",
-            version="4.0.0",
+            version="4.1.0",
             tools=[
+                search_company_documents,  # NEW v4.1.0: Access user-uploaded docs for proof points
                 generate_5_hooks,
                 create_human_draft,
-                inject_proof_points,
+                inject_proof_points,  # Enhanced: Now searches company docs first
                 quality_check,  # Combined: AI patterns + fact-check
                 apply_fixes     # Combined: Fix everything in one pass
             ]
         )
 
-        print("🎯 LinkedIn SDK Agent initialized with 5 lean tools (write-like-human rules embedded)")
+        print("🎯 LinkedIn SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
@@ -590,26 +607,26 @@ AVAILABLE TOOLS (5-tool workflow):
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""Create a HIGH-QUALITY LinkedIn {post_type} post using LEAN WORKFLOW.
+        creation_prompt = f"""You MUST use the MCP tools to create this LinkedIn {post_type} post.
+DO NOT generate content directly. If a tool fails, report the error.
 
 Topic: {topic}
 Context: {context}
 
-LEAN WORKFLOW (5 TOOLS ONLY - NO ITERATION):
-1. Call mcp__linkedin_tools__generate_5_hooks
-2. Select best hook, then call mcp__linkedin_tools__create_human_draft
-3. Call mcp__linkedin_tools__inject_proof_points
-4. Call mcp__linkedin_tools__quality_check (gets ALL issues: AI patterns + fabrications)
-5. Call mcp__linkedin_tools__apply_fixes (fixes everything in ONE pass)
-6. Return final post and STOP
+REQUIRED WORKFLOW (all steps mandatory):
+1. MUST call mcp__linkedin_tools__generate_5_hooks to get hook options
+2. MUST call mcp__linkedin_tools__create_human_draft with the selected hook
+3. If draft needs proof points, call mcp__linkedin_tools__inject_proof_points
+4. MUST call mcp__linkedin_tools__quality_check to evaluate the post
+5. If issues found, MUST call mcp__linkedin_tools__apply_fixes
+6. Return the final post from the tools
 
-DO NOT:
-- Call quality_check more than once
-- Call apply_fixes more than once
-- Iterate or loop
-- Score or validate after fixes
+If any tool returns an error:
+- Report the specific error message
+- Do NOT bypass the tools
+- Do NOT generate content manually
 
-Trust the prompts - they include write-like-human rules."""
+The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
 
         try:
             # Connect if needed
@@ -637,27 +654,54 @@ Trust the prompts - they include write-like-human rules."""
                             for block in msg.content:
                                 if isinstance(block, dict):
                                     block_type = block.get('type', 'unknown')
-                                    print(f"      Block type: {block_type}")
                                     if block_type == 'text':
                                         text_content = block.get('text', '')
                                         if text_content:
                                             final_output = text_content
+                                            # NEW: Log preview of message content
+                                            preview = text_content[:300].replace('\n', ' ')
                                             print(f"      ✅ Got text output ({len(text_content)} chars)")
+                                            print(f"         PREVIEW: {preview}...")
+                                    elif block_type == 'tool_use':
+                                        # NEW: Log tool calls from SDK agent
+                                        tool_name = block.get('name', 'unknown')
+                                        tool_input = str(block.get('input', {}))[:150]
+                                        print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                        print(f"         Input preview: {tool_input}...")
                                 elif hasattr(block, 'text'):
                                     text_content = block.text
                                     if text_content:
                                         final_output = text_content
+                                        preview = text_content[:300].replace('\n', ' ')
                                         print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
+                                        print(f"         PREVIEW: {preview}...")
+                                elif hasattr(block, 'type') and block.type == 'tool_use':
+                                    # Object-style tool_use block
+                                    tool_name = getattr(block, 'name', 'unknown')
+                                    tool_input = str(getattr(block, 'input', {}))[:150]
+                                    print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                    print(f"         Input preview: {tool_input}...")
                         elif hasattr(msg.content, 'text'):
                             text_content = msg.content.text
                             if text_content:
                                 final_output = text_content
+                                preview = text_content[:300].replace('\n', ' ')
                                 print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
+                                print(f"         PREVIEW: {preview}...")
+
+                                # Check for tool_use in content blocks (object style)
+                                if hasattr(msg.content, '__iter__'):
+                                    for item in msg.content:
+                                        if hasattr(item, 'type') and item.type == 'tool_use':
+                                            tool_name = getattr(item, 'name', 'unknown')
+                                            print(f"      🔧 SDK Agent calling tool: {tool_name}")
                     elif hasattr(msg, 'text'):
                         text_content = msg.text
                         if text_content:
                             final_output = text_content
+                            preview = text_content[:300].replace('\n', ' ')
                             print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
+                            print(f"         PREVIEW: {preview}...")
 
             print(f"\n   ✅ Stream complete after {message_count} messages")
             print(f"   📝 Final output: {len(final_output)} chars")
@@ -718,20 +762,70 @@ Trust the prompts - they include write-like-human rules."""
             hook_preview = "Extraction failed (see Suggested Edits)"
 
         # Extract score if mentioned in output
-        score = 90  # Default, would parse from actual output
+        score = 90  # Default fallback
 
-        # Run validators (quality check + optional GPTZero)
+        # Run EXTERNAL validators (quality check + optional GPTZero)
+        # This is a SECOND QA pass with Editor-in-Chief rules
+        # SDK agent already ran its own quality_check tool during creation
+        # This external check catches AI patterns the agent might have missed
         validation_json = None
         validation_formatted = None
+
         try:
+            print(f"\n🔍 Running external validation (Editor-in-Chief rules) for {len(clean_output)} chars...")
+
             from integrations.validation_utils import run_all_validators, format_validation_for_airtable
+
             validation_json = await run_all_validators(clean_output, 'linkedin')
+
+            # Extract score from validation results
+            if validation_json:
+                import json
+                try:
+                    val_data = json.loads(validation_json) if isinstance(validation_json, str) else validation_json
+                    score = val_data.get('quality_scores', {}).get('total', score)
+                    print(f"✅ External validation complete: Score {score}/25")
+                except Exception as score_err:
+                    print(f"⚠️ Could not extract score from validation: {score_err}")
+                    pass
+
             # Format for human-readable Airtable display
             validation_formatted = format_validation_for_airtable(validation_json)
+            print(f"✅ Validation formatted for Airtable: {len(validation_formatted)} chars")
+
         except Exception as e:
-            print(f"⚠️ Validation error (non-fatal): {e}")
+            import traceback
+            print(f"⚠️ EXTERNAL VALIDATION FAILED (non-fatal):")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"   Error message: {e}")
+            print(f"   Traceback:")
+            print(traceback.format_exc())
+
+            # Provide fallback suggested edits (ensures Airtable field is populated)
+            validation_formatted = f"""⚠️ **Automated Quality Check Failed**
+
+Error: {str(e)[:250]}
+
+**Manual Review Required:**
+
+Scan for these AI patterns:
+• Contrast framing: "This isn't about X—it's about Y"
+• Masked contrast: "but rather", "instead of"
+• Cringe questions: "The truth?", "Sound familiar?"
+• Formulaic headers: "THE PROCESS:", "HERE'S HOW:"
+• Corporate jargon: "Moreover", "Furthermore", "Additionally"
+• Buzzwords: "game-changer", "unlock", "revolutionary"
+• Em-dash overuse — like this — everywhere
+
+Verify facts:
+• Check all names/companies/titles mentioned
+• Confirm all metrics are from provided context
+• Ensure no fabricated details
+
+Post length: {len(clean_output)} chars
+Status: Saved successfully but needs human QA"""
+
             validation_json = None
-            validation_formatted = None
 
         # Save to Airtable
         print("\n" + "="*60)
@@ -765,8 +859,13 @@ Trust the prompts - they include write-like-human rules."""
                 print(f"   Record ID: {airtable_record_id}")
                 print(f"   URL: {airtable_url}")
             else:
-                print(f"❌ Airtable save FAILED:")
-                print(f"   Error: {result.get('error')}")
+                # Check if this is a quota error
+                if result.get('is_quota_error'):
+                    print(f"⚠️ Airtable quota exceeded - saving to Supabase only")
+                    print(f"   (Post will still be accessible, just not in Airtable)")
+                else:
+                    print(f"❌ Airtable save FAILED:")
+                    print(f"   Error: {result.get('error')}")
         except Exception as e:
             import traceback
             print(f"❌ EXCEPTION in Airtable save:")
@@ -803,7 +902,8 @@ Trust the prompts - they include write-like-human rules."""
                 'status': 'draft',
                 'quality_score': score,
                 'iterations': 3,  # Would track from actual process
-                'slack_thread_ts': getattr(self, 'session_id', None),
+                'slack_thread_ts': self.thread_ts,  # Use stored Slack metadata
+                'slack_channel_id': self.channel_id,  # NEW: Store channel ID
                 'user_id': self.user_id,
                 'created_by_agent': 'linkedin_sdk_agent',
                 'embedding': embedding
@@ -939,15 +1039,30 @@ Be harsh but constructive. We need 85+ quality."""
 async def create_linkedin_post_workflow(
     topic: str,
     context: str = "",
-    style: str = "thought_leadership"
+    style: str = "thought_leadership",
+    channel_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> str:
     """
     Main entry point for LinkedIn content creation
     Called by the main CMO agent's delegate_to_workflow tool
     Returns structured response with hook preview and links
+
+    Args:
+        topic: Main topic for the post
+        context: Additional context
+        style: Content style
+        channel_id: Slack channel ID (for Airtable/Supabase saves)
+        thread_ts: Slack thread timestamp (for Airtable/Supabase saves)
+        user_id: Slack user ID (for Airtable/Supabase saves)
     """
 
-    agent = LinkedInSDKAgent()
+    agent = LinkedInSDKAgent(
+        user_id=user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts
+    )
 
     # Map style to post type
     post_type = "carousel" if "visual" in style.lower() else "standard"
@@ -966,7 +1081,7 @@ async def create_linkedin_post_workflow(
 **Hook Preview:**
 _{result.get('hook', result['post'][:200])}..._
 
-**Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Quality Score:** {result.get('score', 20)}/25 (Iterations: {result.get('iterations', 3)})
 
 **Full Post:**
 {result['post']}

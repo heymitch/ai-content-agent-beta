@@ -5,8 +5,9 @@
   "private": true,
   "scripts": {
     "preinstall": "npm install -g @anthropic-ai/claude-code || true",
-    "prestart": "node scripts/bootstrap_database.js",
-    "start": "python3 -m uvicorn main_slack:app --host 0.0.0.0 --port 5000",
+    "prestart": "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && node scripts/bootstrap_database.js",
+    "start": "python3 -m uvicorn main_slack:app --host 0.0.0.0 --port 5000 --reload",
+    "restart": "pkill -f uvicorn && npm start",
     "bootstrap": "node scripts/bootstrap_database.js",
     "export-db": "./scripts/export_database.sh",
     "test": "python -m pytest",
