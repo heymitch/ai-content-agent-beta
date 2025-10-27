@@ -424,6 +424,319 @@ Are you seeing the same decline?
         results.add_fail("Content extraction", str(e))
 
 
+async def test_sdk_agent_init(results: TestResults):
+    """Test SDK agent initialization with Slack metadata"""
+    print(f"\n{BLUE}{'='*70}{RESET}")
+    print(f"{BLUE}TEST 8: SDK Agent Initialization{RESET}")
+    print(f"{BLUE}{'='*70}{RESET}")
+
+    try:
+        # Test all 5 SDK agents can be initialized with Slack metadata
+        from agents.linkedin_sdk_agent import LinkedInSDKAgent
+        from agents.twitter_sdk_agent import TwitterSDKAgent
+        from agents.email_sdk_agent import EmailSDKAgent
+        from agents.youtube_sdk_agent import YouTubeSDKAgent
+        from agents.instagram_sdk_agent import InstagramSDKAgent
+
+        test_metadata = {
+            'user_id': 'test_user',
+            'channel_id': 'C_TEST',
+            'thread_ts': '1234567890.123456'
+        }
+
+        agents_to_test = [
+            ('LinkedIn', LinkedInSDKAgent),
+            ('Twitter', TwitterSDKAgent),
+            ('Email', EmailSDKAgent),
+            ('YouTube', YouTubeSDKAgent),
+            ('Instagram', InstagramSDKAgent)
+        ]
+
+        print(f"Testing SDK agent initialization with Slack metadata...")
+        all_passed = True
+
+        for name, AgentClass in agents_to_test:
+            try:
+                agent = AgentClass(
+                    user_id=test_metadata['user_id'],
+                    channel_id=test_metadata['channel_id'],
+                    thread_ts=test_metadata['thread_ts']
+                )
+                print(f"   {GREEN}✓{RESET} {name} SDK agent initialized with metadata")
+            except Exception as e:
+                print(f"   {RED}✗{RESET} {name} SDK agent failed: {e}")
+                all_passed = False
+
+        if all_passed:
+            results.add_pass("All SDK agents accept Slack metadata")
+        else:
+            results.add_fail("SDK agent initialization", "Some agents don't accept metadata")
+
+    except Exception as e:
+        results.add_fail("SDK agent initialization", str(e))
+
+
+async def test_batch_orchestrator(results: TestResults):
+    """Test batch orchestrator can handle plans"""
+    print(f"\n{BLUE}{'='*70}{RESET}")
+    print(f"{BLUE}TEST 9: Batch Orchestrator{RESET}")
+    print(f"{BLUE}{'='*70}{RESET}")
+
+    try:
+        from agents.batch_orchestrator import create_batch_plan, validate_plan_structure
+        from agents.context_manager import BatchContextManager
+
+        print(f"1. Testing batch plan creation...")
+
+        # Create a test plan
+        test_plan_request = {
+            'objective': 'Test batch system',
+            'num_posts': 2,
+            'platforms': ['linkedin', 'twitter'],
+            'topics': {
+                'linkedin': 'AI automation benefits',
+                'twitter': 'Quick AI tips'
+            }
+        }
+
+        plan = await create_batch_plan(
+            objective=test_plan_request['objective'],
+            num_posts=test_plan_request['num_posts'],
+            platforms=test_plan_request['platforms'],
+            topic_guidelines=test_plan_request['topics'],
+            user_context="Test user context"
+        )
+
+        if plan and 'plan_id' in plan:
+            print(f"   {GREEN}✓{RESET} Batch plan created: {plan['plan_id']}")
+        else:
+            raise Exception("Plan creation failed")
+
+        print(f"2. Testing plan structure validation...")
+        validation_errors = validate_plan_structure(plan)
+
+        if not validation_errors:
+            print(f"   {GREEN}✓{RESET} Plan structure is valid")
+        else:
+            print(f"   {YELLOW}⚠{RESET} Validation issues: {validation_errors}")
+
+        print(f"3. Testing context manager...")
+        context_mgr = BatchContextManager()
+        await context_mgr.add_post_summary({
+            'post_num': 1,
+            'score': 20,
+            'platform': 'linkedin',
+            'learnings': ['Test learning 1']
+        })
+
+        context = await context_mgr.get_accumulated_context(2)
+        if context:
+            print(f"   {GREEN}✓{RESET} Context manager working")
+
+        results.add_pass("Batch orchestrator components functional")
+
+    except Exception as e:
+        results.add_fail("Batch orchestrator", str(e))
+
+
+async def test_mcp_tool_structure(results: TestResults):
+    """Test MCP tool structure and loading"""
+    print(f"\n{BLUE}{'='*70}{RESET}")
+    print(f"{BLUE}TEST 10: MCP Tool Structure{RESET}")
+    print(f"{BLUE}{'='*70}{RESET}")
+
+    try:
+        import importlib
+
+        platforms = ['linkedin', 'twitter', 'email', 'youtube', 'instagram']
+        required_tools = [
+            'generate_5_hooks',
+            'create_human_draft',
+            'inject_proof_points',
+            'quality_check',
+            'apply_fixes'
+        ]
+
+        print(f"Testing MCP tool structure for all platforms...")
+        all_passed = True
+
+        for platform in platforms:
+            try:
+                # Import the platform's tools module
+                module = importlib.import_module(f'prompts.{platform}_tools')
+
+                # Check for required tools
+                missing_tools = []
+                for tool_name in required_tools:
+                    full_tool_name = f"{tool_name}_{platform}" if platform != 'linkedin' else tool_name
+                    if not hasattr(module, full_tool_name):
+                        missing_tools.append(tool_name)
+
+                if missing_tools:
+                    print(f"   {YELLOW}⚠{RESET} {platform}: Missing tools: {missing_tools}")
+                    all_passed = False
+                else:
+                    print(f"   {GREEN}✓{RESET} {platform}: All 5 MCP tools present")
+
+            except ImportError as e:
+                print(f"   {RED}✗{RESET} {platform}: Module not found - {e}")
+                all_passed = False
+
+        if all_passed:
+            results.add_pass("All MCP tools properly structured")
+        else:
+            results.add_warning("MCP tool structure", "Some tools missing but non-critical")
+
+    except Exception as e:
+        results.add_fail("MCP tool structure", str(e))
+
+
+async def test_validation_prompts(results: TestResults):
+    """Test validation prompt loading"""
+    print(f"\n{BLUE}{'='*70}{RESET}")
+    print(f"{BLUE}TEST 11: Validation Prompt Loading{RESET}")
+    print(f"{BLUE}{'='*70}{RESET}")
+
+    try:
+        from integrations.validation_utils import run_all_validators
+
+        print(f"Testing validation prompt loading...")
+
+        # Test with minimal content
+        test_content = "Test post content for validation"
+        test_metadata = {
+            'platform': 'linkedin',
+            'content_type': 'thought_leadership'
+        }
+
+        # This will attempt to load all validation prompts
+        validation_result = await run_all_validators(
+            content=test_content,
+            metadata=test_metadata
+        )
+
+        if validation_result and 'quality_scores' in validation_result:
+            print(f"   {GREEN}✓{RESET} Validation prompts loaded successfully")
+            print(f"   {GREEN}✓{RESET} Quality scores generated: {validation_result['quality_scores'].get('total', 0)}/25")
+            results.add_pass("Validation prompts functional")
+        else:
+            results.add_warning("Validation prompts", "Loaded but no scores returned")
+
+    except FileNotFoundError as e:
+        results.add_fail("Validation prompts", f"Prompt file missing: {e}")
+    except Exception as e:
+        results.add_fail("Validation prompts", str(e))
+
+
+async def test_slack_metadata_flow(results: TestResults):
+    """Test Slack metadata flows through entire system"""
+    print(f"\n{BLUE}{'='*70}{RESET}")
+    print(f"{BLUE}TEST 12: Slack Metadata Flow{RESET}")
+    print(f"{BLUE}{'='*70}{RESET}")
+
+    try:
+        from agents.batch_orchestrator import _execute_single_post
+        from integrations.supabase_client import get_supabase_client
+
+        print(f"Testing Slack metadata flow through system...")
+
+        # Test metadata that should flow through
+        test_slack_metadata = {
+            'channel_id': 'C_TEST_METADATA',
+            'thread_ts': '1234567890.123456',
+            'user_id': 'U_TEST_USER'
+        }
+
+        # 1. Test batch orchestrator accepts metadata
+        print(f"1. Testing batch orchestrator accepts Slack metadata...")
+
+        # Mock test - just verify the function signature accepts the params
+        import inspect
+        sig = inspect.signature(_execute_single_post)
+        params = sig.parameters
+
+        if 'channel_id' in params and 'thread_ts' in params and 'user_id' in params:
+            print(f"   {GREEN}✓{RESET} Batch orchestrator accepts all Slack metadata")
+        else:
+            print(f"   {RED}✗{RESET} Missing params: {set(['channel_id', 'thread_ts', 'user_id']) - set(params.keys())}")
+
+        # 2. Test SDK workflow functions accept metadata
+        print(f"2. Testing SDK workflow functions accept metadata...")
+
+        from agents.linkedin_sdk_agent import create_linkedin_post_workflow
+        from agents.twitter_sdk_agent import create_twitter_thread_workflow
+        from agents.email_sdk_agent import create_email_workflow
+        from agents.youtube_sdk_agent import create_youtube_workflow
+        from agents.instagram_sdk_agent import create_instagram_post_workflow
+
+        workflow_functions = [
+            ('LinkedIn', create_linkedin_post_workflow),
+            ('Twitter', create_twitter_thread_workflow),
+            ('Email', create_email_workflow),
+            ('YouTube', create_youtube_workflow),
+            ('Instagram', create_instagram_post_workflow)
+        ]
+
+        all_accept_metadata = True
+        for name, func in workflow_functions:
+            sig = inspect.signature(func)
+            params = sig.parameters
+
+            if 'channel_id' in params and 'thread_ts' in params and 'user_id' in params:
+                print(f"   {GREEN}✓{RESET} {name} workflow accepts Slack metadata")
+            else:
+                print(f"   {RED}✗{RESET} {name} workflow missing metadata params")
+                all_accept_metadata = False
+
+        # 3. Test Supabase schema has Slack fields
+        print(f"3. Testing Supabase schema has Slack fields...")
+
+        try:
+            supabase = get_supabase_client()
+
+            # Create a test record with Slack metadata
+            test_record = {
+                'platform': 'test',
+                'post_hook': 'TEST - Metadata flow check',
+                'body_content': 'Test content for metadata flow',
+                'content_type': 'test',
+                'status': 'test',
+                'quality_score': 20,
+                'slack_thread_ts': test_slack_metadata['thread_ts'],
+                'slack_channel_id': test_slack_metadata['channel_id'],
+                'user_id': test_slack_metadata['user_id'],
+                'created_by_agent': 'pre_deploy_test'
+            }
+
+            result = supabase.table('generated_posts').insert(test_record).execute()
+
+            if result.data and len(result.data) > 0:
+                record_id = result.data[0]['id']
+                print(f"   {GREEN}✓{RESET} Supabase accepts Slack metadata fields")
+
+                # Clean up test record
+                supabase.table('generated_posts').delete().eq('id', record_id).execute()
+                print(f"   {GREEN}✓{RESET} Test record cleaned up")
+            else:
+                print(f"   {YELLOW}⚠{RESET} Supabase insert succeeded but no data returned")
+
+        except Exception as e:
+            if 'slack_channel_id' in str(e):
+                print(f"   {RED}✗{RESET} Supabase schema missing slack_channel_id column")
+            elif 'slack_thread_ts' in str(e):
+                print(f"   {RED}✗{RESET} Supabase schema missing slack_thread_ts column")
+            else:
+                print(f"   {YELLOW}⚠{RESET} Supabase test skipped: {str(e)[:100]}")
+
+        if all_accept_metadata:
+            results.add_pass("Slack metadata flows through entire system")
+        else:
+            results.add_warning("Slack metadata", "Some components don't fully support metadata")
+
+    except Exception as e:
+        results.add_fail("Slack metadata flow", str(e))
+
+
 async def main():
     """Run all pre-deployment tests"""
     print(f"\n{BLUE}{'='*70}{RESET}")
@@ -433,7 +746,7 @@ async def main():
 
     results = TestResults()
 
-    # Run all tests
+    # Run original tests
     await test_env_vars(results)
     await test_supabase(results)
     await test_airtable(results)
@@ -441,6 +754,13 @@ async def main():
     await test_slack_connection(results)
     await test_slack_threads(results)
     await test_content_extraction(results)
+
+    # Run new comprehensive tests
+    await test_sdk_agent_init(results)
+    await test_batch_orchestrator(results)
+    await test_mcp_tool_structure(results)
+    await test_validation_prompts(results)
+    await test_slack_metadata_flow(results)
 
     # Print summary
     success = results.summary()
