@@ -579,11 +579,11 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     else:
         content_type_hint = "Proof Post (specific examples, 1200-1500 chars, data-driven)"
 
-    print(f"\n📝 Executing post {post_index + 1}/{len(plan['posts'])}")
-    print(f"   Platform: {post_spec['platform']}")
-    print(f"   Context quality: {context_quality}")
-    print(f"   Target score: {target_score}+")
-    print(f"   Slack context: channel={channel_id}, thread={thread_ts}, user={user_id}")
+    print(f"\n📝 Executing post {post_index + 1}/{len(plan['posts'])}", flush=True)
+    print(f"   Platform: {post_spec['platform']}", flush=True)
+    print(f"   Context quality: {context_quality}", flush=True)
+    print(f"   Target score: {target_score}+", flush=True)
+    print(f"   Slack context: channel={channel_id}, thread={thread_ts}, user={user_id}", flush=True)
 
     # Build RICH context with strategic outline as primary
 

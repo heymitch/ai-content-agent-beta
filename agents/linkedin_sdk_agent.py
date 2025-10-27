@@ -458,7 +458,8 @@ class LinkedInSDKAgent:
         user_id: str = "default",
         isolated_mode: bool = False,
         channel_id: Optional[str] = None,
-        thread_ts: Optional[str] = None
+        thread_ts: Optional[str] = None,
+        batch_mode: bool = False
     ):
         """Initialize LinkedIn SDK Agent with memory and tools
 
@@ -467,10 +468,12 @@ class LinkedInSDKAgent:
             isolated_mode: If True, creates isolated sessions (for testing only)
             channel_id: Slack channel ID (for Airtable/Supabase saves)
             thread_ts: Slack thread timestamp (for Airtable/Supabase saves)
+            batch_mode: If True, disable session reuse for batch safety
         """
         self.user_id = user_id
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
+        self.batch_mode = batch_mode  # Batch execution mode
         # Store Slack metadata for saving to Airtable/Supabase
         self.channel_id = channel_id
         self.thread_ts = thread_ts
@@ -554,6 +557,17 @@ AVAILABLE TOOLS:
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
+        # In batch mode, always create fresh sessions (don't reuse)
+        if self.batch_mode and session_id in self.sessions:
+            print(f"🔄 Batch mode: Creating fresh session (replacing {session_id})")
+            # Clean up old session before creating new one
+            try:
+                old_session = self.sessions[session_id]
+                # No explicit disconnect method in SDK, just remove reference
+                del self.sessions[session_id]
+            except Exception as e:
+                print(f"⚠️ Error cleaning up old session: {e}")
+
         if session_id not in self.sessions:
             # Only clear env vars in isolated test mode
             if self.isolated_mode:
@@ -563,17 +577,24 @@ AVAILABLE TOOLS:
                 os.environ.pop('CLAUDE_WORKSPACE', None)
                 os.environ['CLAUDE_HOME'] = '/tmp/linkedin_agent'
 
+            # In batch mode, disable conversation continuation
+            should_continue = not (self.isolated_mode or self.batch_mode)
+
             options = ClaudeAgentOptions(
                 mcp_servers={"linkedin_tools": self.mcp_server},
                 allowed_tools=["mcp__linkedin_tools__*"],
                 system_prompt=self.system_prompt,
                 model="claude-sonnet-4-5-20250929",
                 permission_mode="bypassPermissions",
-                continue_conversation=not self.isolated_mode  # False in test mode, True in prod
+                continue_conversation=should_continue  # False in test/batch mode
             )
 
             self.sessions[session_id] = ClaudeSDKClient(options=options)
-            mode_str = " (isolated test mode)" if self.isolated_mode else ""
+            mode_str = ""
+            if self.isolated_mode:
+                mode_str = " (isolated test mode)"
+            elif self.batch_mode:
+                mode_str = " (batch mode - no session reuse)"
             print(f"📝 Created LinkedIn session: {session_id}{mode_str}")
 
         return self.sessions[session_id]
@@ -601,8 +622,11 @@ AVAILABLE TOOLS:
         """
 
         # Use session ID or create new one
-        if not session_id:
-            session_id = f"linkedin_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # In batch mode, always create unique session IDs to prevent conflicts
+        if not session_id or self.batch_mode:
+            import random
+            session_id = f"linkedin_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
+            print(f"📋 Using unique session ID for batch safety: {session_id}", flush=True)
 
         client = self.get_or_create_session(session_id)
 
@@ -629,79 +653,132 @@ If any tool returns an error:
 The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
 
         try:
-            # Connect if needed
-            print(f"🔗 Connecting LinkedIn SDK client...")
-            await client.connect()
+            # Connect if needed with proper error handling
+            print(f"🔗 Connecting LinkedIn SDK client...", flush=True)
+            try:
+                await client.connect()
+                print(f"✅ LinkedIn SDK connected successfully", flush=True)
+            except Exception as e:
+                print(f"❌ Connection failed: {str(e)}", flush=True)
+                print(f"📊 Retrying connection...", flush=True)
+                try:
+                    await client.connect()
+                    print(f"✅ LinkedIn SDK connected on retry", flush=True)
+                except Exception as retry_error:
+                    print(f"❌ Retry failed: {str(retry_error)}", flush=True)
+                    raise
 
-            # Send the creation request
-            print(f"📤 Sending LinkedIn creation prompt...")
-            await client.query(creation_prompt)
-            print(f"⏳ LinkedIn agent processing (this takes 30-60s)...")
+            # Send the creation request with timeout and retry
+            print(f"📤 Sending LinkedIn creation prompt...", flush=True)
+            query_sent = False
+            for attempt in range(2):  # Try twice
+                try:
+                    await asyncio.wait_for(
+                        client.query(creation_prompt),
+                        timeout=60.0  # 60 second timeout for sending query
+                    )
+                    query_sent = True
+                    break
+                except asyncio.TimeoutError:
+                    if attempt == 0:
+                        print(f"⚠️ Timeout on first attempt, retrying...", flush=True)
+                        # Create new session for retry
+                        import random
+                        retry_session_id = f"linkedin_retry_{datetime.now().strftime('%H%M%S')}_{random.randint(1000, 9999)}"
+                        client = self.get_or_create_session(retry_session_id)
+                        await client.connect()
+                    else:
+                        print(f"❌ Timeout: Query failed after 2 attempts", flush=True)
+                        raise Exception("LinkedIn SDK query timeout after 2 attempts")
 
-            # Collect the response - use LAST message (matches Twitter/YouTube/Email agents)
+            if not query_sent:
+                raise Exception("Failed to send query to LinkedIn SDK")
+
+            print(f"⏳ LinkedIn agent processing (this takes 30-60s)...", flush=True)
+
+            # Collect the response with overall timeout
             final_output = ""
             message_count = 0
 
-            async for msg in client.receive_response():
-                message_count += 1
-                msg_type = type(msg).__name__
-                print(f"   📬 Received message {message_count}: type={msg_type}")
+            # Wrap the entire response collection in a timeout
+            try:
+                async def collect_response():
+                    nonlocal final_output, message_count
+                    async for msg in client.receive_response():
+                        message_count += 1
+                        msg_type = type(msg).__name__
+                        print(f"   📬 Received message {message_count}: type={msg_type}", flush=True)
 
-                # Track all AssistantMessages with text content
-                if msg_type == 'AssistantMessage':
-                    if hasattr(msg, 'content'):
-                        if isinstance(msg.content, list):
-                            for block in msg.content:
-                                if isinstance(block, dict):
-                                    block_type = block.get('type', 'unknown')
-                                    if block_type == 'text':
-                                        text_content = block.get('text', '')
-                                        if text_content:
-                                            final_output = text_content
-                                            # NEW: Log preview of message content
-                                            preview = text_content[:300].replace('\n', ' ')
-                                            print(f"      ✅ Got text output ({len(text_content)} chars)")
-                                            print(f"         PREVIEW: {preview}...")
-                                    elif block_type == 'tool_use':
-                                        # NEW: Log tool calls from SDK agent
-                                        tool_name = block.get('name', 'unknown')
-                                        tool_input = str(block.get('input', {}))[:150]
-                                        print(f"      🔧 SDK Agent calling tool: {tool_name}")
-                                        print(f"         Input preview: {tool_input}...")
-                                elif hasattr(block, 'text'):
-                                    text_content = block.text
+                        # Track all AssistantMessages with text content
+                        if msg_type == 'AssistantMessage':
+                            if hasattr(msg, 'content'):
+                                if isinstance(msg.content, list):
+                                    for block in msg.content:
+                                        if isinstance(block, dict):
+                                            block_type = block.get('type', 'unknown')
+                                            if block_type == 'text':
+                                                text_content = block.get('text', '')
+                                                if text_content:
+                                                    final_output = text_content
+                                                    # NEW: Log preview of message content
+                                                    preview = text_content[:300].replace('\n', ' ')
+                                                    print(f"      ✅ Got text output ({len(text_content)} chars)")
+                                                    print(f"         PREVIEW: {preview}...")
+                                            elif block_type == 'tool_use':
+                                                # NEW: Log tool calls from SDK agent
+                                                tool_name = block.get('name', 'unknown')
+                                                tool_input = str(block.get('input', {}))[:150]
+                                                print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                                print(f"         Input preview: {tool_input}...")
+                                        elif hasattr(block, 'text'):
+                                            text_content = block.text
+                                            if text_content:
+                                                final_output = text_content
+                                                preview = text_content[:300].replace('\n', ' ')
+                                                print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
+                                                print(f"         PREVIEW: {preview}...")
+                                        elif hasattr(block, 'type') and block.type == 'tool_use':
+                                            # Object-style tool_use block
+                                            tool_name = getattr(block, 'name', 'unknown')
+                                            tool_input = str(getattr(block, 'input', {}))[:150]
+                                            print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                            print(f"         Input preview: {tool_input}...")
+                                elif hasattr(msg.content, 'text'):
+                                    text_content = msg.content.text
                                     if text_content:
                                         final_output = text_content
                                         preview = text_content[:300].replace('\n', ' ')
-                                        print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
+                                        print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
                                         print(f"         PREVIEW: {preview}...")
-                                elif hasattr(block, 'type') and block.type == 'tool_use':
-                                    # Object-style tool_use block
-                                    tool_name = getattr(block, 'name', 'unknown')
-                                    tool_input = str(getattr(block, 'input', {}))[:150]
-                                    print(f"      🔧 SDK Agent calling tool: {tool_name}")
-                                    print(f"         Input preview: {tool_input}...")
-                        elif hasattr(msg.content, 'text'):
-                            text_content = msg.content.text
-                            if text_content:
-                                final_output = text_content
-                                preview = text_content[:300].replace('\n', ' ')
-                                print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
-                                print(f"         PREVIEW: {preview}...")
 
-                                # Check for tool_use in content blocks (object style)
-                                if hasattr(msg.content, '__iter__'):
-                                    for item in msg.content:
-                                        if hasattr(item, 'type') and item.type == 'tool_use':
-                                            tool_name = getattr(item, 'name', 'unknown')
-                                            print(f"      🔧 SDK Agent calling tool: {tool_name}")
-                    elif hasattr(msg, 'text'):
-                        text_content = msg.text
-                        if text_content:
-                            final_output = text_content
-                            preview = text_content[:300].replace('\n', ' ')
-                            print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
-                            print(f"         PREVIEW: {preview}...")
+                                    # Check for tool_use in content blocks (object style)
+                                    if hasattr(msg.content, '__iter__'):
+                                        for item in msg.content:
+                                            if hasattr(item, 'type') and item.type == 'tool_use':
+                                                tool_name = getattr(item, 'name', 'unknown')
+                                                print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                            elif hasattr(msg, 'text'):
+                                text_content = msg.text
+                                if text_content:
+                                    final_output = text_content
+                                    preview = text_content[:300].replace('\n', ' ')
+                                    print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
+                                    print(f"         PREVIEW: {preview}...")
+
+                # Call the collection function with timeout
+                await asyncio.wait_for(
+                    collect_response(),
+                    timeout=120.0  # 2 minute timeout for response collection
+                )
+
+            except asyncio.TimeoutError:
+                print(f"❌ Timeout: Response collection took longer than 120 seconds", flush=True)
+                print(f"   Received {message_count} messages before timeout", flush=True)
+                # If we got some output, try to use it
+                if final_output:
+                    print(f"   Using partial output ({len(final_output)} chars)", flush=True)
+                else:
+                    raise Exception("LinkedIn SDK response timeout after 120 seconds")
 
             print(f"\n   ✅ Stream complete after {message_count} messages")
             print(f"   📝 Final output: {len(final_output)} chars")
@@ -1061,7 +1138,8 @@ async def create_linkedin_post_workflow(
     agent = LinkedInSDKAgent(
         user_id=user_id,
         channel_id=channel_id,
-        thread_ts=thread_ts
+        thread_ts=thread_ts,
+        batch_mode=True  # Always use batch mode for workflow calls (99% of usage)
     )
 
     # Map style to post type
