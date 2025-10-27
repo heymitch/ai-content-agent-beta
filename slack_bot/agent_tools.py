@@ -225,10 +225,31 @@ def get_thread_context(
         # Add conversation summary
         if conv_result.data:
             context_parts.append(f"CONVERSATION ({len(conv_result.data)} messages):")
-            for msg in conv_result.data[-10:]:  # Last 10 messages
-                role = msg.get('role', 'user')
-                content = msg.get('content', '')[:200]
-                context_parts.append(f"{role}: {content}")
+
+            # Smart truncation: If thread is very long, return first 5 + last 20 messages
+            # This ensures we get the initial context (like batch plans) AND recent messages
+            messages = conv_result.data
+            if len(messages) > 30:
+                # Include first 5 messages (often contains plans/instructions)
+                for msg in messages[:5]:
+                    role = msg.get('role', 'user')
+                    content = msg.get('content', '')
+                    # Don't truncate first 5 messages - they might contain important plans
+                    context_parts.append(f"{role}: {content}")
+
+                context_parts.append(f"\n... [{len(messages) - 25} messages omitted] ...\n")
+
+                # Include last 20 messages (recent conversation)
+                for msg in messages[-20:]:
+                    role = msg.get('role', 'user')
+                    content = msg.get('content', '')[:500]  # Increased from 200 chars
+                    context_parts.append(f"{role}: {content}")
+            else:
+                # For shorter threads, return everything with minimal truncation
+                for msg in messages:
+                    role = msg.get('role', 'user')
+                    content = msg.get('content', '')[:1000]  # Allow up to 1000 chars per message
+                    context_parts.append(f"{role}: {content}")
 
         # Add content created
         if content_result.data:
