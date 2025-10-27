@@ -345,16 +345,26 @@ class YouTubeSDKAgent:
     Outputs scripts with timing markers (Option 2)
     """
 
-    def __init__(self, user_id: str = "default", isolated_mode: bool = False):
+    def __init__(
+        self,
+        user_id: str = "default",
+        isolated_mode: bool = False,
+        channel_id: Optional[str] = None,
+        thread_ts: Optional[str] = None
+    ):
         """Initialize YouTube SDK Agent with memory and tools
 
         Args:
             user_id: User identifier for session management
             isolated_mode: If True, creates isolated sessions (for testing only)
+            channel_id: Slack channel ID for tracking
+            thread_ts: Slack thread timestamp for tracking
         """
         self.user_id = user_id
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
+        self.channel_id = channel_id  # Slack channel for Supabase/Airtable
+        self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
 
         # YouTube-specific base prompt with quality thresholds
         base_prompt = """You are a YouTube script creation agent. Your goal: scripts that score 18+ out of 25 without needing 3 rounds of revision.
@@ -842,7 +852,8 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Cole's script style examples."""
                 'status': 'draft',
                 'quality_score': score,
                 'iterations': 3,
-                'slack_thread_ts': getattr(self, 'session_id', None),
+                'slack_thread_ts': self.thread_ts,
+                'slack_channel_id': self.channel_id,
                 'user_id': self.user_id,
                 'created_by_agent': 'youtube_sdk_agent',
                 'embedding': embedding,
@@ -917,7 +928,10 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Cole's script style examples."""
 async def create_youtube_workflow(
     topic: str,
     context: str = "",
-    script_type: str = "short_form"
+    script_type: str = "short_form",
+    channel_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> str:
     """
     Main entry point for YouTube script creation
@@ -925,7 +939,11 @@ async def create_youtube_workflow(
     Returns structured response with hook preview, timing, and links
     """
 
-    agent = YouTubeSDKAgent()
+    agent = YouTubeSDKAgent(
+        user_id=user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts
+    )
 
     result = await agent.create_script(
         topic=topic,

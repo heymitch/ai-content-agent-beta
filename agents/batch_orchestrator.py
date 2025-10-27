@@ -326,8 +326,9 @@ def extract_score_from_result(result) -> int:
         return result.get('score', 20)
 
     # Handle string result (workflow functions)
-    # Formats: "Quality Score: 22/25", "Score: 90/100", "score:22/25"
-    score_match = re.search(r'(?:Quality\s+)?Score[:\s]*(\d+)\s*/\s*(\d+)', str(result), re.IGNORECASE)
+    # Formats: "**Quality Score:** 22/25", "Quality Score: 22/25", "Score: 90/100"
+    # Updated pattern to handle markdown asterisks and any formatting
+    score_match = re.search(r'Quality\s+Score.*?(\d+)\s*/\s*(\d+)', str(result), re.IGNORECASE | re.DOTALL)
 
     if score_match:
         score = int(score_match.group(1))

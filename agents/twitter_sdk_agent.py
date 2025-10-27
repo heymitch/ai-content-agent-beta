@@ -455,16 +455,26 @@ class TwitterSDKAgent:
     Orchestrates Tier 3 tools and maintains platform-specific context
     """
 
-    def __init__(self, user_id: str = "default", isolated_mode: bool = False):
+    def __init__(
+        self,
+        user_id: str = "default",
+        isolated_mode: bool = False,
+        channel_id: Optional[str] = None,
+        thread_ts: Optional[str] = None
+    ):
         """Initialize Twitter SDK Agent with memory and tools
 
         Args:
             user_id: User identifier for session management
             isolated_mode: If True, creates isolated sessions (for testing only)
+            channel_id: Slack channel ID for tracking
+            thread_ts: Slack thread timestamp for tracking
         """
         self.user_id = user_id
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
+        self.channel_id = channel_id  # Slack channel for Supabase/Airtable
+        self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
 
         # Twitter-specific base prompt with quality thresholds
         base_prompt = """You are a Twitter thread creation agent. Your goal: threads that score 18+ out of 25 without needing 3 rounds of revision.
@@ -973,7 +983,8 @@ The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
                 'status': 'draft',
                 'quality_score': score,
                 'iterations': 3,
-                'slack_thread_ts': getattr(self, 'session_id', None),
+                'slack_thread_ts': self.thread_ts,
+                'slack_channel_id': self.channel_id,
                 'user_id': self.user_id,
                 'created_by_agent': 'twitter_sdk_agent',
                 'embedding': embedding
