@@ -488,27 +488,29 @@ async def test_batch_orchestrator(results: TestResults):
 
         print(f"1. Testing batch plan creation...")
 
-        # Create a test plan
-        test_plan_request = {
-            'objective': 'Test batch system',
-            'num_posts': 2,
-            'platforms': ['linkedin', 'twitter'],
-            'topics': {
-                'linkedin': 'AI automation benefits',
-                'twitter': 'Quick AI tips'
+        # Create a test plan using current API (matches production usage)
+        test_posts = [
+            {
+                "platform": "linkedin",
+                "topic": "AI automation benefits",
+                "context": "Test context for LinkedIn post",
+                "style": "professional"
+            },
+            {
+                "platform": "twitter",
+                "topic": "Quick AI tips",
+                "context": "Test context for Twitter post",
+                "style": "casual"
             }
-        }
+        ]
 
-        plan = await create_batch_plan(
-            objective=test_plan_request['objective'],
-            num_posts=test_plan_request['num_posts'],
-            platforms=test_plan_request['platforms'],
-            topic_guidelines=test_plan_request['topics'],
-            user_context="Test user context"
+        plan = create_batch_plan(
+            posts=test_posts,
+            description="Test batch system"
         )
 
-        if plan and 'plan_id' in plan:
-            print(f"   {GREEN}✓{RESET} Batch plan created: {plan['plan_id']}")
+        if plan and 'id' in plan:
+            print(f"   {GREEN}✓{RESET} Batch plan created: {plan['id']}")
         else:
             raise Exception("Plan creation failed")
 
