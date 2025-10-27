@@ -72,7 +72,6 @@ archive/
 DEPLOYMENT_TESTS.md
 WHITE_GLOVE_DEPLOYMENT.md
 DEV_CONTEXT.md
-ROADMAP.md
 SDK_DOCS.md
 # Keep tests/ folder for pre-deployment testing
 # But ignore loose test files in root (NOT in tests/ folder)
