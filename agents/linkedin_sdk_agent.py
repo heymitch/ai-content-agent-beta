@@ -1081,7 +1081,7 @@ async def create_linkedin_post_workflow(
 **Hook Preview:**
 _{result.get('hook', result['post'][:200])}..._
 
-**Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Quality Score:** {result.get('score', 20)}/25 (Iterations: {result.get('iterations', 3)})
 
 **Full Post:**
 {result['post']}

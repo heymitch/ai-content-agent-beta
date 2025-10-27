@@ -1086,7 +1086,10 @@ Be harsh but constructive. We need 85+ quality."""
 async def create_twitter_thread_workflow(
     topic: str,
     context: str = "",
-    style: str = "thought_leadership"
+    style: str = "thought_leadership",
+    channel_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> str:
     """
     Main entry point for Twitter content creation
@@ -1094,7 +1097,11 @@ async def create_twitter_thread_workflow(
     Returns structured response with hook preview and links
     """
 
-    agent = TwitterSDKAgent()
+    agent = TwitterSDKAgent(
+        user_id=user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts
+    )
 
     result = await agent.create_thread(
         topic=topic,
@@ -1110,7 +1117,7 @@ async def create_twitter_thread_workflow(
 **Hook Preview:**
 _{result.get('hook', result['thread'][:280])}..._
 
-**Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Quality Score:** {result.get('score', 20)}/25 (Iterations: {result.get('iterations', 3)})
 
 **Full Thread:**
 {result['thread']}

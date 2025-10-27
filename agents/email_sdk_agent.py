@@ -931,7 +931,7 @@ async def create_email_workflow(
 **Subject Preview:**
 _{result.get('subject', result['email'][:60])}..._
 
-**Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Quality Score:** {result.get('score', 20)}/25 (Iterations: {result.get('iterations', 3)})
 
 **Full Email:**
 {result['email']}

@@ -942,7 +942,7 @@ async def create_youtube_workflow(
 _{result.get('hook', result['script'][:60])}..._
 
 **Duration:** {result.get('estimated_duration', '60s')} | **Words:** {result.get('word_count', 150)}
-**Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Quality Score:** {result.get('score', 20)}/25 (Iterations: {result.get('iterations', 3)})
 **Timing Markers:** {result.get('timing_markers_found', 0)} sections
 
 **Full Script:**

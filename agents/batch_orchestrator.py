@@ -307,22 +307,27 @@ Apply the learnings above to improve this post. Focus on what worked well in pre
 
 # ============= Helper Functions for Extracting Data from SDK Agent Results =============
 
-def extract_score_from_result(result: str) -> int:
+def extract_score_from_result(result) -> int:
     """
-    Extract quality score from SDK agent result string
+    Extract quality score from SDK agent result
 
-    SDK agents return formatted strings like:
-    "Quality Score: 22/100" or "Quality Score: 22/25"
+    SDK agents can return either:
+    - A dict with 'score' key (when in isolated mode)
+    - A formatted string with "Quality Score: 22/25"
 
     Args:
-        result: Result string from SDK agent
+        result: Result from SDK agent (dict or string)
 
     Returns:
-        Score as integer (0-25 or 0-100, normalized to 25)
+        Score as integer (0-25)
     """
-    # Try to find score pattern - handle multiple formats
+    # Handle dict result (SDK agents in isolated mode)
+    if isinstance(result, dict):
+        return result.get('score', 20)
+
+    # Handle string result (workflow functions)
     # Formats: "Quality Score: 22/25", "Score: 90/100", "score:22/25"
-    score_match = re.search(r'(?:Quality\s+)?Score[:\s]*(\d+)\s*/\s*(\d+)', result, re.IGNORECASE)
+    score_match = re.search(r'(?:Quality\s+)?Score[:\s]*(\d+)\s*/\s*(\d+)', str(result), re.IGNORECASE)
 
     if score_match:
         score = int(score_match.group(1))
@@ -338,26 +343,32 @@ def extract_score_from_result(result: str) -> int:
         return min(25, max(0, score))
 
     # Fallback: Default to 20 if not found
-    print(f"⚠️ Could not extract score from result (first 200 chars): {result[:200]}...")
+    result_preview = str(result)[:200] if result else "Empty result"
+    print(f"⚠️ Could not extract score from result (first 200 chars): {result_preview}...")
     print(f"   Defaulting to 20/25")
     return 20
 
 
-def extract_airtable_url_from_result(result: str) -> str:
+def extract_airtable_url_from_result(result) -> str:
     """
-    Extract Airtable URL from SDK agent result string
+    Extract Airtable URL from SDK agent result
 
-    SDK agents include URLs like:
-    "Airtable Record: https://airtable.com/app.../rec..."
+    SDK agents can return either:
+    - A dict with 'airtable_url' key
+    - A formatted string with the URL
 
     Args:
-        result: Result string from SDK agent
+        result: Result from SDK agent (dict or string)
 
     Returns:
         Airtable URL or placeholder
     """
-    # Try to find Airtable URL
-    url_match = re.search(r'https://airtable\.com/[^\s\)]+', result)
+    # Handle dict result
+    if isinstance(result, dict):
+        return result.get('airtable_url')
+
+    # Handle string result - try to find Airtable URL
+    url_match = re.search(r'https://airtable\.com/[^\s\)]+', str(result))
 
     if url_match:
         return url_match.group(0)
@@ -367,21 +378,30 @@ def extract_airtable_url_from_result(result: str) -> str:
     return "https://airtable.com/[record_not_found]"
 
 
-def extract_hook_from_result(result: str) -> str:
+def extract_hook_from_result(result) -> str:
     """
-    Extract post hook from SDK agent result string
+    Extract post hook from SDK agent result
 
-    SDK agents include hook preview like:
-    "Hook Preview: [hook text]"
+    SDK agents can return either:
+    - A dict with 'hook' key
+    - A formatted string with hook preview
 
     Args:
-        result: Result string from SDK agent
+        result: Result from SDK agent (dict or string)
 
     Returns:
         Hook text (first 100 chars)
     """
-    # Try to find hook preview section
-    hook_match = re.search(r'Hook Preview[:\s]+([^\n]+)', result, re.IGNORECASE)
+    # Handle dict result
+    if isinstance(result, dict):
+        hook = result.get('hook', '')
+        if not hook:
+            # Fallback to post/thread/caption content
+            hook = result.get('post', result.get('thread', result.get('caption', '')))[:200]
+        return hook[:100] if hook else "No hook found"
+
+    # Handle string result - try to find hook preview section
+    hook_match = re.search(r'Hook Preview[:\s]+([^\n]+)', str(result), re.IGNORECASE)
 
     if hook_match:
         hook = hook_match.group(1).strip()
@@ -390,7 +410,7 @@ def extract_hook_from_result(result: str) -> str:
         return hook[:100]
 
     # Fallback: Try to find "Full Post:" and extract first line
-    post_match = re.search(r'Full Post[:\s]+([^\n]+)', result, re.IGNORECASE)
+    post_match = re.search(r'Full Post[:\s]+([^\n]+)', str(result), re.IGNORECASE)
     if post_match:
         hook = post_match.group(1).strip()
         hook = re.sub(r'[_*`]', '', hook)

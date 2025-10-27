@@ -803,7 +803,7 @@ async def create_instagram_caption_workflow(
 **Hook Preview (first 125 chars):**
 _{result.get('hook', result['caption'][:125])}..._
 
-**Quality Score:** {result.get('score', 90)}/100 (Iterations: {result.get('iterations', 3)})
+**Quality Score:** {result.get('score', 20)}/25 (Iterations: {result.get('iterations', 3)})
 **Length:** {char_status}
 
 **Full Caption:**
