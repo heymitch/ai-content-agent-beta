@@ -745,15 +745,13 @@ Return the final post (either their text with surgical fixes, or newly generated
             if not query_sent:
                 raise Exception("Failed to send query to LinkedIn SDK")
 
-            print(f"⏳ LinkedIn agent processing (this takes 30-60s)...", flush=True)
+            print(f"⏳ LinkedIn agent processing...", flush=True)
 
-            # Collect the response with overall timeout
+            # Collect the response WITHOUT timeout (supports bulk operations)
             final_output = ""
             message_count = 0
 
-            # Wrap the entire response collection in a timeout
-            try:
-                async def collect_response():
+            async def collect_response():
                     nonlocal final_output, message_count
                     async for msg in client.receive_response():
                         message_count += 1
@@ -816,20 +814,8 @@ Return the final post (either their text with surgical fixes, or newly generated
                                     print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
                                     print(f"         PREVIEW: {preview}...")
 
-                # Call the collection function with timeout
-                await asyncio.wait_for(
-                    collect_response(),
-                    timeout=120.0  # 2 minute timeout for response collection
-                )
-
-            except asyncio.TimeoutError:
-                print(f"❌ Timeout: Response collection took longer than 120 seconds", flush=True)
-                print(f"   Received {message_count} messages before timeout", flush=True)
-                # If we got some output, try to use it
-                if final_output:
-                    print(f"   Using partial output ({len(final_output)} chars)", flush=True)
-                else:
-                    raise Exception("LinkedIn SDK response timeout after 120 seconds")
+            # Call the collection function WITHOUT timeout (supports bulk operations)
+            await collect_response()
 
             print(f"\n   ✅ Stream complete after {message_count} messages")
             print(f"   📝 Final output: {len(final_output)} chars")

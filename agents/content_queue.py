@@ -215,11 +215,8 @@ class ContentQueueManager:
                 logger.warning(f"Failed to send Slack progress message: {e}")
 
         try:
-            # NEW: Wrap workflow execution in timeout (120 seconds = 2 minutes)
-            result = await asyncio.wait_for(
-                self._execute_workflow(job),
-                timeout=120
-            )
+            # Execute workflow WITHOUT timeout (supports bulk operations that may take hours)
+            result = await self._execute_workflow(job)
 
             # Success!
             job.status = ContentStatus.COMPLETED
