@@ -71,6 +71,7 @@ archive/
 # Development and testing documentation
 # (Hidden from client deployments for cleaner codebase)
 DEPLOYMENT_TESTS.md
+DEPLOYMENT_NOTES.md
 WHITE_GLOVE_DEPLOYMENT.md
 DEV_CONTEXT.md
 SDK_DOCS.md
