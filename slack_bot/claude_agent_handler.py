@@ -1116,6 +1116,24 @@ If user provides 3 anchors for 15 posts:
 99% of content creation requests should use BATCH MODE.
 Only use CO-WRITE MODE when explicitly requested.
 
+**MULTI-POST REQUEST PATTERNS (ALWAYS USE BATCH):**
+
+Recognize these patterns as multiple posts → USE BATCH:
+- "turn this into X and Y and Z" → Parse as multiple posts
+- "create a carousel post and a twitter thread" → 2 posts (LinkedIn + Twitter)
+- "make versions for different platforms" → Multiple posts
+- "create content for LinkedIn, Twitter, and YouTube" → 3 posts
+
+Platform name mapping:
+- "carousel post" or "carousel" → LinkedIn platform (multi-slide post format)
+- "twitter thread" or "thread" → Twitter platform
+- "youtube script" or "video script" → YouTube platform
+- "instagram caption" or "IG post" → Instagram platform
+- "email newsletter" or "newsletter" → Email platform
+
+CRITICAL: NEVER generate multiple posts inline in conversation!
+ALWAYS use plan_content_batch → execute_post_from_plan → SDK subagents.
+
 **BATCH MODE (DEFAULT - 99% of requests)**
 
 This is the DEFAULT for ALL content creation requests.
@@ -1538,10 +1556,10 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             print(f"[{request_id}]    System prompt preview: {self.system_prompt[:80]}...")
 
             # DEBUG: Verify which prompt version is loaded
-            if "TWO CONTENT CREATION MODES" in self.system_prompt:
-                print(f"[{request_id}]    ✅ Using NEW architecture (CO-WRITE vs BATCH)")
+            if "BATCH MODE IS THE DEFAULT" in self.system_prompt:
+                print(f"[{request_id}]    ✅ Using NEW architecture (BATCH-first with SDK subagents)")
             else:
-                print(f"[{request_id}]    ⚠️ Using OLD architecture (count-based routing)")
+                print(f"[{request_id}]    ⚠️ Using OLD architecture (missing batch emphasis)")
         else:
             print(f"[{request_id}]    ✅ Reusing existing session (version: {self._session_prompt_versions.get(thread_ts, 'unknown')})")
 
@@ -1622,7 +1640,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             self.cowrite_mode = True
 
             # Clear existing sessions to force reconnection with new tools
-            self._sessions.clear()
+            self._thread_sessions.clear()
             self._connected_sessions.clear()
 
             print(f"[{request_id}] ✅ Co-write tools loaded (15 additional tools)")
