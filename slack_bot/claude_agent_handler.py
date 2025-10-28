@@ -451,392 +451,11 @@ async def delegate_to_workflow(args):
     }
 
 
-# ================== PLATFORM-SPECIFIC GENERATE POST TOOLS ==================
-# These tools allow the CMO to generate initial drafts using WRITE_LIKE_HUMAN_RULES
 
-@tool(
-    "generate_post_linkedin",
-    "Generate LinkedIn post using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
-    {"topic": str, "context": str}
-)
-async def generate_post_linkedin(args):
-    """Generate LinkedIn post draft"""
-    print(f"📝 generate_post_linkedin CALLED - Topic: {args.get('topic', 'N/A')[:50]}")
-    import json
-    from anthropic import Anthropic
-    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
-
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    topic = args.get('topic', '')
-    context = args.get('context', '')
-
-    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
-
-TASK: Write a LinkedIn post
-
-Topic: {topic}
-Context: {context}
-
-LINKEDIN POST STRUCTURE:
-- Hook (first 2-3 lines): Question, bold claim, or specific stat
-- Body (150-300 words): One main idea with specific examples/numbers
-- Call-to-action: Specific question or engagement trigger
-
-CRITICAL RULES:
-✗ NO contrast framing ("It's not X, it's Y")
-✗ NO rule of three ("Same X. Same Y. Over Z%.")
-✗ NO cringe questions ("The truth?" / "Sound familiar?")
-✗ NO AI buzzwords (leverage, seamless, robust, game-changer)
-
-Return ONLY the post text. No markdown formatting (**bold** or *italic*). No metadata or explanations."""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    print(f"✅ generate_post_linkedin COMPLETED - Generated {len(response.content[0].text)} chars")
-    return {"content": [{"type": "text", "text": response.content[0].text}]}
-
-
-@tool(
-    "generate_post_twitter",
-    "Generate Twitter thread using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
-    {"topic": str, "context": str}
-)
-async def generate_post_twitter(args):
-    """Generate Twitter thread draft"""
-    import json
-    from anthropic import Anthropic
-    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
-
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    topic = args.get('topic', '')
-    context = args.get('context', '')
-
-    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
-
-TASK: Write a Twitter thread
-
-Topic: {topic}
-Context: {context}
-
-TWITTER THREAD STRUCTURE:
-- Tweet 1 (Hook): Bold claim, specific stat, or question (under 280 chars)
-- Tweets 2-5: One idea per tweet, build on each other
-- Final tweet: Recap + CTA
-
-TWITTER-SPECIFIC RULES:
-- Each tweet under 280 characters
-- First tweet must hook (people decide in 2 seconds)
-- Use line breaks for readability
-- Numbers tweets (1/, 2/, 3/ etc.)
-
-CRITICAL RULES:
-✗ NO contrast framing ("It's not X, it's Y")
-✗ NO rule of three
-✗ NO cringe questions
-✗ NO AI buzzwords
-
-Return thread as numbered tweets. Format: "1/ [tweet]\\n\\n2/ [tweet]" etc."""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return {"content": [{"type": "text", "text": response.content[0].text}]}
-
-
-@tool(
-    "generate_post_email",
-    "Generate email newsletter using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
-    {"topic": str, "context": str}
-)
-async def generate_post_email(args):
-    """Generate email newsletter draft"""
-    import json
-    from anthropic import Anthropic
-    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
-
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    topic = args.get('topic', '')
-    context = args.get('context', '')
-
-    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
-
-TASK: Write an email newsletter
-
-Topic: {topic}
-Context: {context}
-
-EMAIL NEWSLETTER STRUCTURE:
-- Subject line: Specific, benefit-focused (under 60 chars)
-- Opening: Personal, direct (2-3 sentences)
-- Body: One main insight with examples (200-400 words)
-- CTA: Clear next step (reply, click, try)
-
-EMAIL-SPECIFIC RULES:
-- Conversational tone (like talking to a friend)
-- Short paragraphs (2-3 sentences max)
-- Specific examples over theory
-- One clear action at the end
-
-CRITICAL RULES:
-✗ NO contrast framing
-✗ NO rule of three
-✗ NO cringe questions
-✗ NO AI buzzwords
-
-Return format:
-Subject: [subject line]
-
-[email body]
-
-CTA: [call to action]"""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=2500,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return {"content": [{"type": "text", "text": response.content[0].text}]}
-
-
-@tool(
-    "generate_post_youtube",
-    "Generate YouTube script using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
-    {"topic": str, "context": str}
-)
-async def generate_post_youtube(args):
-    """Generate YouTube script draft"""
-    import json
-    from anthropic import Anthropic
-    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
-
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    topic = args.get('topic', '')
-    context = args.get('context', '')
-
-    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
-
-TASK: Write a YouTube video script
-
-Topic: {topic}
-Context: {context}
-
-YOUTUBE SCRIPT STRUCTURE:
-- Title: Specific, searchable, benefit-focused
-- Hook (first 15 seconds): Bold statement or question
-- Intro (15-30 seconds): What viewers will learn
-- Main content: 3-5 clear points with examples
-- Outro: Recap + CTA (like, subscribe, comment)
-
-YOUTUBE-SPECIFIC RULES:
-- Write for speaking (contractions, natural rhythm)
-- Include [B-ROLL] markers for visual suggestions
-- Time estimates in parentheses
-- Conversational, energetic tone
-
-CRITICAL RULES:
-✗ NO contrast framing
-✗ NO rule of three
-✗ NO cringe questions
-✗ NO AI buzzwords
-
-Return format:
-Title: [video title]
-
-HOOK (0:00-0:15):
-[opening hook]
-
-INTRO (0:15-0:45):
-[introduction]
-
-[Continue with timestamped sections]"""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=3000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return {"content": [{"type": "text", "text": response.content[0].text}]}
-
-
-@tool(
-    "generate_post_instagram",
-    "Generate Instagram caption using WRITE_LIKE_HUMAN_RULES. Returns clean draft without quality analysis.",
-    {"topic": str, "context": str}
-)
-async def generate_post_instagram(args):
-    """Generate Instagram caption draft"""
-    import json
-    from anthropic import Anthropic
-    from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
-
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-    topic = args.get('topic', '')
-    context = args.get('context', '')
-
-    prompt = f"""{WRITE_LIKE_HUMAN_RULES}
-
-TASK: Write an Instagram caption
-
-Topic: {topic}
-Context: {context}
-
-INSTAGRAM CAPTION STRUCTURE:
-- Hook (first 125 chars): Must work in preview before "...more"
-- Body (under 2,200 chars total): Short paragraphs, line breaks every 2-3 sentences
-- Visual pairing: Add context the image/Reel can't show
-- CTA: Specific engagement trigger
-- Hashtags: 3-5 relevant tags at end
-
-INSTAGRAM-SPECIFIC RULES:
-- 2,200 character HARD LIMIT (includes hashtags)
-- First 125 chars appear before "...more" (must create curiosity)
-- Line breaks for mobile readability
-- 1-2 strategic emojis (not spam)
-- Reference visual naturally ("swipe", "above")
-
-CRITICAL RULES:
-✗ NO contrast framing ("It's not X, it's Y")
-✗ NO rule of three ("Same X. Same Y. Over Z%.")
-✗ NO cringe questions ("The truth?" / "Sound familiar?")
-✗ NO AI buzzwords (game-changer, unlock, revolutionary)
-
-Return ONLY the caption text with hashtags. No markdown formatting. No metadata."""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return {"content": [{"type": "text", "text": response.content[0].text}]}
-
-
-# ================== PLATFORM-SPECIFIC QUALITY CHECK TOOLS ==================
-# These tools allow the CMO to directly check quality and apply fixes during co-writing
-
-@tool(
-    "quality_check_linkedin",
-    "Evaluate LinkedIn post with 5-axis rubric, detect AI tells, verify facts with web search.",
-    {"post": str}
-)
-async def quality_check_linkedin(args):
-    """Quality check tool for LinkedIn posts"""
-    from agents.linkedin_sdk_agent import quality_check as linkedin_quality_check
-    return await linkedin_quality_check(args)
-
-
-@tool(
-    "quality_check_twitter",
-    "Evaluate Twitter thread with 5-axis rubric, detect AI tells, verify facts with web search.",
-    {"post": str}
-)
-async def quality_check_twitter(args):
-    """Quality check tool for Twitter threads"""
-    from agents.twitter_sdk_agent import quality_check as twitter_quality_check
-    return await twitter_quality_check(args)
-
-
-@tool(
-    "quality_check_email",
-    "Evaluate email newsletter with 5-axis rubric, detect AI tells, verify facts with web search.",
-    {"post": str}
-)
-async def quality_check_email(args):
-    """Quality check tool for email newsletters"""
-    from agents.email_sdk_agent import quality_check as email_quality_check
-    return await email_quality_check(args)
-
-
-@tool(
-    "quality_check_youtube",
-    "Evaluate YouTube script with 5-axis rubric, detect AI tells, verify facts with web search.",
-    {"post": str}
-)
-async def quality_check_youtube(args):
-    """Quality check tool for YouTube scripts"""
-    from agents.youtube_sdk_agent import quality_check as youtube_quality_check
-    return await youtube_quality_check(args)
-
-
-@tool(
-    "quality_check_instagram",
-    "Evaluate Instagram caption with 5-axis rubric (hook/visual/readability/proof/cta), detect AI tells, verify facts.",
-    {"post": str}
-)
-async def quality_check_instagram(args):
-    """Quality check tool for Instagram captions"""
-    from agents.instagram_sdk_agent import quality_check as instagram_quality_check
-    return await instagram_quality_check(args)
-
-
-# ================== PLATFORM-SPECIFIC APPLY FIXES TOOLS ==================
-
-@tool(
-    "apply_fixes_linkedin",
-    "Apply surgical fixes to LinkedIn post based on quality_check feedback and user requests.",
-    {"post": str, "issues_json": str}
-)
-async def apply_fixes_linkedin(args):
-    """Apply fixes tool for LinkedIn posts"""
-    print(f"🔧 apply_fixes_linkedin CALLED with args: {list(args.keys())}")
-    from agents.linkedin_sdk_agent import apply_fixes as linkedin_apply_fixes
-    result = await linkedin_apply_fixes(args)
-    print(f"✅ apply_fixes_linkedin COMPLETED")
-    return result
-
-
-@tool(
-    "apply_fixes_twitter",
-    "Apply surgical fixes to Twitter thread based on quality_check feedback and user requests.",
-    {"post": str, "issues_json": str}
-)
-async def apply_fixes_twitter(args):
-    """Apply fixes tool for Twitter threads"""
-    from agents.twitter_sdk_agent import apply_fixes as twitter_apply_fixes
-    return await twitter_apply_fixes(args)
-
-
-@tool(
-    "apply_fixes_email",
-    "Apply surgical fixes to email newsletter based on quality_check feedback and user requests.",
-    {"post": str, "issues_json": str}
-)
-async def apply_fixes_email(args):
-    """Apply fixes tool for email newsletters"""
-    from agents.email_sdk_agent import apply_fixes as email_apply_fixes
-    return await email_apply_fixes(args)
-
-
-@tool(
-    "apply_fixes_youtube",
-    "Apply surgical fixes to YouTube script based on quality_check feedback and user requests.",
-    {"post": str, "issues_json": str}
-)
-async def apply_fixes_youtube(args):
-    """Apply fixes tool for YouTube scripts"""
-    from agents.youtube_sdk_agent import apply_fixes as youtube_apply_fixes
-    return await youtube_apply_fixes(args)
-
-
-@tool(
-    "apply_fixes_instagram",
-    "Apply surgical fixes to Instagram caption based on quality_check feedback and user requests.",
-    {"post": str, "issues_json": str}
-)
-async def apply_fixes_instagram(args):
-    """Apply fixes tool for Instagram captions"""
-    from agents.instagram_sdk_agent import apply_fixes as instagram_apply_fixes
-    return await instagram_apply_fixes(args)
-
+# ================== CO-WRITE TOOLS MOVED TO cowrite_tools.py ==================
+# Co-write tools (generate_post_*, quality_check_*, apply_fixes_*) are now
+# lazy-loaded only when user explicitly requests co-write mode.
+# This ensures batch mode is used by default (99% of requests).
 
 # ================== BATCH ORCHESTRATION TOOLS ==================
 
@@ -1787,50 +1406,73 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         self.prompt_version = hashlib.md5(self.system_prompt.encode()).hexdigest()[:8]
         print(f"   Prompt version: {self.prompt_version}")
 
-        # Create MCP server with our tools
+        # Initialize co-write mode as False by default (will be set per message)
+        self.cowrite_mode = False
+
+        # Build tool list - always include batch tools (default mode)
+        self.base_tools = [
+            # Core tools - always available
+            web_search,
+            search_knowledge_base,
+            search_company_documents,  # NEW in v2.5.0: User-uploaded docs for context enrichment
+            search_past_posts,
+            get_content_calendar,
+            get_thread_context,
+            analyze_content_performance,
+            send_to_calendar,  # Save approved drafts to calendar
+            # Batch orchestration tools - ALWAYS available (default mode)
+            plan_content_batch,
+            execute_post_from_plan,
+            compact_learnings,
+            checkpoint_with_user,
+            cancel_batch_tool,
+            get_batch_status_tool
+        ]
+
+        # Create MCP server with base tools initially
         self.mcp_server = create_sdk_mcp_server(
             name="slack_tools",
-            version="2.5.0",
-            tools=[
-                web_search,
-                search_knowledge_base,
-                search_company_documents,  # NEW in v2.5.0: User-uploaded docs for context enrichment
-                search_past_posts,
-                get_content_calendar,
-                get_thread_context,
-                analyze_content_performance,
-                # REMOVED: delegate_to_workflow - replaced by batch orchestration (plan_content_batch + execute_post_from_plan)
-                send_to_calendar,  # Save approved drafts to calendar
-                # Batch orchestration tools (NEW in v2.4.0)
-                plan_content_batch,
-                execute_post_from_plan,
-                compact_learnings,
-                checkpoint_with_user,
-                # Generate post tools for co-writing (one per platform)
-                generate_post_linkedin,
-                generate_post_twitter,
-                generate_post_email,
-                generate_post_youtube,
-                generate_post_instagram,
-                # Quality check tools for co-writing (one per platform)
-                quality_check_linkedin,
-                quality_check_twitter,
-                quality_check_email,
-                quality_check_youtube,
-                quality_check_instagram,
-                # Apply fixes tools for co-writing (one per platform)
-                apply_fixes_linkedin,
-                apply_fixes_twitter,
-                apply_fixes_email,
-                apply_fixes_youtube,
-                apply_fixes_instagram,
-                # Batch control tools (NEW Phase 6A)
-                cancel_batch_tool,
-                get_batch_status_tool
-            ]
+            version="2.6.0",  # Bumped for lazy-loading feature
+            tools=self.base_tools
         )
 
-        print(f"✅ Handler [{self.handler_id}] ready with 29 tools (8 general + 6 batch + 15 co-writing)")
+        print(f"✅ Handler [{self.handler_id}] ready with batch tools (default mode)")
+
+    def _detect_cowrite_mode(self, message: str) -> bool:
+        """
+        Detect if user explicitly wants co-write mode
+
+        Args:
+            message: User's message text
+
+        Returns:
+            True if co-write keywords detected, False for batch mode (default)
+        """
+        if not message:
+            return False
+
+        message_lower = message.lower()
+
+        # EXACT keywords that trigger co-write mode
+        cowrite_keywords = [
+            "co-write",
+            "cowrite",
+            "collaborate with me",
+            "iterate with me",
+            "iterate with you",  # Added to match test case
+            "work with me on this",
+            "let's collaborate",
+            "let's iterate"
+        ]
+
+        # Check for exact keyword matches
+        for keyword in cowrite_keywords:
+            if keyword in message_lower:
+                print(f"🔍 Co-write keyword detected: '{keyword}'")
+                return True
+
+        # Default to batch mode
+        return False
 
     def _get_or_create_session(self, thread_ts: str, request_id: str = "NONE") -> ClaudeSDKClient:
         """Get existing session for thread or create new one"""
@@ -1957,6 +1599,37 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         # Simple message with date context - instructions are already in system prompt
         contextualized_message = f"[Today is {today}] {message}"
+
+        # Check if this message requires co-write mode
+        message_needs_cowrite = self._detect_cowrite_mode(message)
+
+        # If co-write mode is needed and not already loaded, update the MCP server
+        if message_needs_cowrite and not self.cowrite_mode:
+            print(f"[{request_id}] 📝 Co-write mode requested - loading co-write tools...")
+
+            # Load co-write tools
+            from slack_bot.cowrite_tools import get_cowrite_tools
+            all_tools = self.base_tools + get_cowrite_tools()
+
+            # Recreate MCP server with all tools
+            self.mcp_server = create_sdk_mcp_server(
+                name="slack_tools",
+                version="2.6.0",
+                tools=all_tools
+            )
+
+            # Mark that co-write mode is loaded
+            self.cowrite_mode = True
+
+            # Clear existing sessions to force reconnection with new tools
+            self._sessions.clear()
+            self._connected_sessions.clear()
+
+            print(f"[{request_id}] ✅ Co-write tools loaded (15 additional tools)")
+        elif message_needs_cowrite:
+            print(f"[{request_id}] 📝 Co-write mode already active")
+        else:
+            print(f"[{request_id}] 🚀 Using batch mode (default)")
 
         try:
             # Get or create cached session for this thread

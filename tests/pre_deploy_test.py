@@ -759,6 +759,85 @@ async def test_slack_metadata_flow(results: TestResults):
         results.add_fail("Slack metadata flow", str(e))
 
 
+async def test_agent_routing(results: TestResults):
+    """Test agent routing (batch vs co-write mode)"""
+    print(f"\n{BLUE}{'='*70}{RESET}")
+    print(f"{BLUE}TEST 13: Agent Routing (Batch vs Co-Write){RESET}")
+    print(f"{BLUE}{'='*70}{RESET}")
+
+    try:
+        from slack_bot.claude_agent_handler import ClaudeAgentHandler
+        from unittest.mock import Mock
+
+        print(f"1. Testing batch mode detection (default)...")
+
+        # Create handler with mocked dependencies
+        handler = ClaudeAgentHandler(memory_handler=None, slack_client=None)
+
+        # Test batch mode messages (should return False for co-write)
+        batch_messages = [
+            "Create 5 LinkedIn posts about AI",
+            "Write a post about marketing",
+            "Draft 5 posts for next week",
+            "Help me create content",
+            "Show me content about AI",
+            "Generate posts for our campaign"
+        ]
+
+        batch_pass = True
+        for msg in batch_messages:
+            if handler._detect_cowrite_mode(msg):
+                print(f"   {RED}✗{RESET} '{msg[:50]}...' incorrectly triggered co-write")
+                batch_pass = False
+            else:
+                print(f"   {GREEN}✓{RESET} '{msg[:50]}...' correctly uses batch mode")
+
+        print(f"\n2. Testing co-write mode detection...")
+
+        # Test co-write mode messages (should return True)
+        cowrite_messages = [
+            "Co-write a LinkedIn post with me",
+            "Let's collaborate on content together",
+            "I want to iterate with you on this post",
+            "Can you cowrite with me?",
+            "Let's iterate on this draft"
+        ]
+
+        cowrite_pass = True
+        for msg in cowrite_messages:
+            if handler._detect_cowrite_mode(msg):
+                print(f"   {GREEN}✓{RESET} '{msg[:50]}...' correctly triggers co-write")
+            else:
+                print(f"   {RED}✗{RESET} '{msg[:50]}...' incorrectly uses batch mode")
+                cowrite_pass = False
+
+        print(f"\n3. Verifying batch mode is default...")
+
+        # Check system prompt for batch mode emphasis
+        prompt_checks = [
+            ("BATCH MODE IS THE DEFAULT", "Batch mode default declaration"),
+            ("99% of content creation requests should use BATCH MODE", "99% batch mode rule"),
+            ("CO-WRITE MODE (RARE - 1% of requests)", "Co-write rarity declaration")
+        ]
+
+        prompt_pass = True
+        for check_text, description in prompt_checks:
+            if check_text in handler.system_prompt:
+                print(f"   {GREEN}✓{RESET} {description} found in prompt")
+            else:
+                print(f"   {RED}✗{RESET} {description} missing from prompt")
+                prompt_pass = False
+
+        # Overall test result
+        if batch_pass and cowrite_pass and prompt_pass:
+            results.add_pass("Agent routing (batch vs co-write)")
+        else:
+            results.add_fail("Agent routing", "Some routing tests failed")
+
+    except Exception as e:
+        results.add_fail("Agent routing", str(e))
+
+
 async def main():
     """Run all pre-deployment tests"""
     print(f"\n{BLUE}{'='*70}{RESET}")
@@ -783,6 +862,7 @@ async def main():
     await test_mcp_tool_structure(results)
     await test_validation_prompts(results)
     await test_slack_metadata_flow(results)
+    await test_agent_routing(results)  # NEW: Agent routing test
 
     # Print summary
     success = results.summary()
