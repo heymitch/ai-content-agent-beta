@@ -120,7 +120,7 @@ class ContentWorkflow:
             'final_draft': draft,
             'final_score': grading['score'],
             'iterations': iterations,
-            'revision_history': json.dumps(revision_history),
+            'revision_history': json.dumps(revision_history, ensure_ascii=False),
             'created_at': datetime.utcnow().isoformat()
         }
 

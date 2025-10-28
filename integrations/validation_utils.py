@@ -257,7 +257,7 @@ async def run_all_validators(content: str, platform: str) -> str:
     }
 
     # Convert to JSON string for Airtable
-    json_str = json.dumps(validation_data, indent=2)
+    json_str = json.dumps(validation_data, indent=2, ensure_ascii=False)
 
     logger.info("📋 Validation summary:")
     logger.info(f"   Quality Score: {quality_result.get('scores', {}).get('total', 0)}/25")

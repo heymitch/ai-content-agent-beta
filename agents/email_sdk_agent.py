@@ -182,7 +182,7 @@ async def create_human_draft(args):
         json_result = json.loads(response_text)
         # Validate schema
         if "email_body" in json_result and "self_assessment" in json_result:
-            return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
+            return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2, ensure_ascii=False)}]}
     except json.JSONDecodeError:
         pass
 
@@ -243,7 +243,7 @@ Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web search
                 return {
                     "content": [{
                         "type": "text",
-                        "text": json.dumps(json_result, indent=2)
+                        "text": json.dumps(json_result, indent=2, ensure_ascii=False)
                     }]
                 }
         except json.JSONDecodeError:
@@ -316,7 +316,7 @@ async def apply_fixes(args):
     try:
         json_result = json.loads(response_text)
         if "revised_post" in json_result:
-            return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
+            return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2, ensure_ascii=False)}]}
     except json.JSONDecodeError:
         pass
 
@@ -975,6 +975,6 @@ if __name__ == "__main__":
             target_score=85
         )
 
-        print(json.dumps(result, indent=2))
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
     asyncio.run(test())

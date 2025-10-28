@@ -176,7 +176,7 @@ async def create_human_draft(args):
             for tweet in json_result["tweets"]:
                 if tweet.get("char_count", 0) > 280:
                     tweet["WARNING"] = f"Tweet exceeds 280 chars ({tweet['char_count']})"
-            return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
+            return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2, ensure_ascii=False)}]}
     except json.JSONDecodeError:
         pass
 
@@ -268,7 +268,7 @@ async def search_viral_patterns(args):
     return {
         "content": [{
             "type": "text",
-            "text": json.dumps(patterns, indent=2)
+            "text": json.dumps(patterns, indent=2, ensure_ascii=False)
         }]
     }
 
@@ -353,7 +353,7 @@ Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web search
                 return {
                     "content": [{
                         "type": "text",
-                        "text": json.dumps(json_result, indent=2)
+                        "text": json.dumps(json_result, indent=2, ensure_ascii=False)
                     }]
                 }
         except json.JSONDecodeError:
@@ -427,7 +427,7 @@ async def apply_fixes(args):
     try:
         json_result = json.loads(response_text)
         if "revised_thread" in json_result:
-            return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2)}]}
+            return {"content": [{"type": "text", "text": json.dumps(json_result, indent=2, ensure_ascii=False)}]}
     except json.JSONDecodeError:
         pass
 
@@ -1154,6 +1154,6 @@ if __name__ == "__main__":
             target_score=85
         )
 
-        print(json.dumps(result, indent=2))
+        print(json.dumps(result, indent=2, ensure_ascii=False))
 
     asyncio.run(test())

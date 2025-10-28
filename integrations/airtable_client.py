@@ -130,7 +130,7 @@ class AirtableContentCalendar:
         # Store metadata as JSON string in Suggested Edits if no edits provided
         if metadata and not suggested_edits:
             import json
-            fields['Suggested Edits'] = json.dumps(metadata)
+            fields['Suggested Edits'] = json.dumps(metadata, ensure_ascii=False)
 
         try:
             record = self.table.create(fields)
