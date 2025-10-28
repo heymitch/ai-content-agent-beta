@@ -4,8 +4,14 @@ Simple Airtable configuration test
 Run this in your Replit to verify Airtable is working
 
 Usage in Replit:
-    python test_airtable_simple.py
+    python tests/test_airtable_simple.py
 """
+
+import sys
+import os
+
+# Add parent directory to path to import project modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_airtable():
     import os
