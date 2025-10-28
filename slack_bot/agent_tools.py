@@ -103,12 +103,15 @@ def search_past_posts(
         posts_summary = ["📚 PAST CONTENT:\n"]
         for i, post in enumerate(all_posts[:10], 1):
             score = post['score']
-            content_preview = post['content'][:150] if post['content'] else '[No content]'
-            created = post['created'][:10]
-            platform_name = post['platform']
+            # Ensure content is properly handled as UTF-8 string
+            content = str(post['content']) if post['content'] else ''
+            content_preview = content[:150] if content else '[No content]'
+            created = str(post['created'])[:10]
+            platform_name = str(post['platform'])
             iterations = post['iterations']
-            source = post['source']
-            hook = post['hook'][:80] if post['hook'] else content_preview[:80]
+            source = str(post['source'])
+            # Ensure hook is properly handled as UTF-8 string
+            hook = str(post['hook'])[:80] if post['hook'] else content_preview[:80]
             status_emoji = "📅" if source == "QUEUE" else "✅"
 
             posts_summary.append(
@@ -117,7 +120,9 @@ def search_past_posts(
                 f"   Hook: {hook}...\n"
             )
 
-        return "\n".join(posts_summary)
+        # Ensure final string is properly encoded as UTF-8
+        result = "\n".join(posts_summary)
+        return result
 
     except Exception as e:
         return f"Error searching posts: {str(e)}"

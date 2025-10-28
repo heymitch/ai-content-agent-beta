@@ -3,6 +3,15 @@ Slack-Only Content Agent
 Clean implementation with only essential Slack functionality
 """
 
+import sys
+import io
+
+# Force UTF-8 encoding for Replit compatibility
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 from anthropic import Anthropic, RateLimitError
 from fastapi import FastAPI, Request, BackgroundTasks
 from supabase import create_client, Client
