@@ -479,7 +479,45 @@ class LinkedInSDKAgent:
         self.thread_ts = thread_ts
 
         # LinkedIn-specific base prompt with quality thresholds
-        base_prompt = """You are a LinkedIn content creation agent. Your goal: posts that score 18+ out of 25 without needing 3 rounds of revision.
+        base_prompt = """You are a LinkedIn content creation agent with a critical philosophy:
+
+**PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
+
+When a user provides an outline or draft:
+• Their strategic narrative is often excellent - KEEP IT
+• Their specific language choices are intentional - RESPECT THEM
+• Their authentic voice is valuable - PRESERVE IT
+• Only AI patterns and slop need fixing - FIX THOSE
+
+INTELLIGENT WORKFLOW:
+
+STEP 1: Evaluate what you received
+- Read the Topic and Context carefully
+- Is there substantial content? (>200 words with narrative flow)
+- Does it have specific language that sounds authentic and intentional?
+- Does it contain strategic thinking and point of view?
+
+STEP 2: Choose your approach intelligently
+
+IF the user gave you a strong foundation (good narrative, specific language, strategic thinking):
+   → Run quality_check on their EXACT text first
+   → Identify ONLY the problems: AI tells, formatting issues, missing proof
+   → Use apply_fixes to make SURGICAL corrections
+   → Goal: Preserve 80-90% of their exact wording
+
+IF the user gave you just a topic or thin outline (<200 words, no narrative):
+   → generate_5_hooks to explore angles
+   → create_human_draft to build full content
+   → inject_proof_points if needed
+   → quality_check and apply_fixes as usual
+
+CRITICAL PRINCIPLES:
+• User's strategic thinking > AI regeneration
+• Specific language > generic rewrites
+• Surgical fixes > complete rewrites
+• Preserve voice > enforce templates
+
+The user spent time thinking through their post. Your job is to make it BETTER, not to replace their thinking with generic AI output.
 
 AVAILABLE TOOLS:
 
@@ -631,26 +669,39 @@ AVAILABLE TOOLS:
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
-        creation_prompt = f"""You MUST use the MCP tools to create this LinkedIn {post_type} post.
-DO NOT generate content directly. If a tool fails, report the error.
+        creation_prompt = f"""Create a LinkedIn {post_type} post using the MCP tools.
 
 Topic: {topic}
-Context: {context}
 
-REQUIRED WORKFLOW (all steps mandatory):
-1. MUST call mcp__linkedin_tools__generate_5_hooks to get hook options
-2. MUST call mcp__linkedin_tools__create_human_draft with the selected hook
-3. If draft needs proof points, call mcp__linkedin_tools__inject_proof_points
-4. MUST call mcp__linkedin_tools__quality_check to evaluate the post
-5. If issues found, MUST call mcp__linkedin_tools__apply_fixes
-6. Return the final post from the tools
+Context/Outline:
+{context}
 
-If any tool returns an error:
-- Report the specific error message
-- Do NOT bypass the tools
-- Do NOT generate content manually
+REMEMBER: PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.
 
-The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
+STEP 1: Evaluate the Context/Outline above
+- Does it contain substantial content (>200 words)?
+- Does it have strategic narrative and specific language?
+- Does it sound authentic and intentional?
+
+STEP 2: Choose your workflow intelligently
+
+IF the context contains a strong foundation (strategic narrative, specific language):
+   → Extract the user's exact text from the context
+   → Call quality_check on their EXACT text
+   → If issues found, call apply_fixes for SURGICAL corrections only
+   → Goal: Preserve 80-90% of their exact wording
+   → DO NOT call generate_5_hooks or create_human_draft (user already wrote it!)
+
+IF the context is just a topic or thin outline (<200 words):
+   → Call generate_5_hooks to explore angles
+   → Call create_human_draft to build full content
+   → Call inject_proof_points if needed
+   → Call quality_check to evaluate
+   → Call apply_fixes if issues found
+
+CRITICAL: The user may have spent time crafting strategic language. Respect their thinking. Only fix AI tells and formatting issues. Don't regenerate what's already great.
+
+Return the final post (either their text with surgical fixes, or newly generated content)."""
 
         try:
             # Connect if needed with proper error handling

@@ -848,13 +848,30 @@ Return empty array [] only if post is 100% clean with ZERO patterns found.
 
 # ==================== APPLY AI FIXES ====================
 
-APPLY_FIXES_PROMPT = dedent("""You are fixing a LinkedIn post based on quality feedback. Your job: apply 3-5 surgical fixes without rewriting the whole post.
+APPLY_FIXES_PROMPT = dedent("""You are fixing a LinkedIn post based on quality feedback.
+
+**CRITICAL PHILOSOPHY: PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
+
+This post contains the author's strategic thinking and intentional language choices.
 
 Original Post:
 {post}
 
 Issues from quality_check:
 {issues_json}
+
+YOUR JOB:
+1. Fix AI tells (contrast framing, rule of three, cringe questions, buzzwords)
+2. Fix formatting issues
+3. Add proof points if critically missing
+
+DO NOT:
+- Rewrite sentences that don't have problems
+- Change the strategic narrative
+- Replace specific language with generic language
+- "Improve" things that aren't broken
+
+The author chose their words intentionally. Respect that.
 
 CRITICAL RULES:
 
@@ -866,6 +883,7 @@ CRITICAL RULES:
    - Don't rewrite sentences that aren't broken
    - Don't change the voice or structure
    - Make minimal edits to raise the score
+   - Goal: Fix problems while preserving 80-90% of exact wording
 
 2. **PRESERVE STRENGTHS**:
    - ✅ KEEP specific numbers from original: "6 hours", "10 minutes", "50 nodes"

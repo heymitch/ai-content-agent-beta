@@ -611,8 +611,9 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
 
 **Target quality score:** {target_score}+/25
 
-**INSTRUCTION:** If a strategic outline is provided above, follow it closely.
-The outline represents the exact narrative flow and key points to hit."""
+**INSTRUCTION:** If a strategic outline is provided above, it contains the user's thinking and language.
+Preserve their narrative structure and specific phrases. Only fix AI patterns (contrast framing,
+rule of three, cringe questions) and formatting issues. Don't regenerate what's already great."""
 
     try:
         # Execute post using SDK agent with enhanced context AND Slack metadata
