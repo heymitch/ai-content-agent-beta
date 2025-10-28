@@ -1,16 +1,18 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Slack-Only Content Agent
 Clean implementation with only essential Slack functionality
 """
 
 import sys
-import io
+import codecs
 
 # Force UTF-8 encoding for Replit compatibility
-if sys.stdout.encoding != 'utf-8':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-if sys.stderr.encoding != 'utf-8':
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+if hasattr(sys.stderr, 'buffer'):
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 from anthropic import Anthropic, RateLimitError
 from fastapi import FastAPI, Request, BackgroundTasks
