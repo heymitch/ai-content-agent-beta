@@ -638,7 +638,11 @@ rule of three, cringe questions) and formatting issues. Don't regenerate what's 
         # NEW: Check strategic alignment if outline was provided
         if post_spec.get('detailed_outline'):
             context_mgr.add_strategic_context(post_index, post_spec['detailed_outline'])
-            content = result.get('content', '')
+            # Handle both dict and string results
+            if isinstance(result, dict):
+                content = result.get('content', result.get('post', ''))
+            else:
+                content = str(result)
             alignment = context_mgr.check_alignment(post_index, content)
 
             if alignment < 0.5:
