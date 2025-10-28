@@ -53,16 +53,16 @@ class TestResults:
 
     def add_pass(self, test_name: str):
         self.passed.append(test_name)
-        print(f"{GREEN}✅ PASS{RESET}: {test_name}")
+        print(f"{GREEN}[PASS]{RESET}: {test_name}")
 
     def add_fail(self, test_name: str, error: str):
         self.failed.append((test_name, error))
-        print(f"{RED}❌ FAIL{RESET}: {test_name}")
+        print(f"{RED}[FAIL]{RESET}: {test_name}")
         print(f"   Error: {error}")
 
     def add_warning(self, test_name: str, message: str):
         self.warnings.append((test_name, message))
-        print(f"{YELLOW}⚠️  WARN{RESET}: {test_name}")
+        print(f"{YELLOW}[WARN]{RESET}: {test_name}")
         print(f"   {message}")
 
     def summary(self):
@@ -89,10 +89,10 @@ class TestResults:
         print("="*70)
 
         if self.failed:
-            print(f"\n{RED}❌ DEPLOYMENT BLOCKED - Fix errors above{RESET}")
+            print(f"\n{RED}[X] DEPLOYMENT BLOCKED - Fix errors above{RESET}")
             return False
         else:
-            print(f"\n{GREEN}✅ ALL TESTS PASSED - Ready to deploy!{RESET}")
+            print(f"\n{GREEN}[OK] ALL TESTS PASSED - Ready to deploy!{RESET}")
             return True
 
 
@@ -127,7 +127,7 @@ async def test_env_vars(results: TestResults):
         if value:
             # Show first 8 chars for verification
             masked = value[:8] + '...' if len(value) > 8 else value
-            print(f"  {GREEN}✓{RESET} {var}: {masked} ({description})")
+            print(f"  {GREEN}[OK]{RESET} {var}: {masked} ({description})")
         else:
             print(f"  {RED}✗{RESET} {var}: MISSING ({description})")
             all_set = False
@@ -137,7 +137,7 @@ async def test_env_vars(results: TestResults):
         value = os.getenv(var)
         if value:
             masked = value[:8] + '...' if len(value) > 8 else value
-            print(f"  {GREEN}✓{RESET} {var}: {masked} ({description})")
+            print(f"  {GREEN}[OK]{RESET} {var}: {masked} ({description})")
         else:
             print(f"  {YELLOW}○{RESET} {var}: Not set ({description})")
             results.add_warning(f"Optional: {var}", f"{description} not configured")
@@ -159,7 +159,7 @@ async def test_supabase(results: TestResults):
 
         print("\n1. Connecting to Supabase...")
         supabase = get_supabase_client()
-        print(f"   {GREEN}✓{RESET} Connected")
+        print(f"   {GREEN}[OK]{RESET} Connected")
 
         print("\n2. Testing write to generated_posts...")
         test_record = {
@@ -177,17 +177,17 @@ async def test_supabase(results: TestResults):
 
         if response.data:
             record_id = response.data[0]['id']
-            print(f"   {GREEN}✓{RESET} Created test record: {record_id}")
+            print(f"   {GREEN}[OK]{RESET} Created test record: {record_id}")
 
             print("\n3. Testing read operation...")
             verify = supabase.table('generated_posts').select('*').eq('id', record_id).execute()
 
             if verify.data and len(verify.data) > 0:
-                print(f"   {GREEN}✓{RESET} Successfully read record back")
+                print(f"   {GREEN}[OK]{RESET} Successfully read record back")
 
                 print("\n4. Cleaning up test record...")
                 supabase.table('generated_posts').delete().eq('id', record_id).execute()
-                print(f"   {GREEN}✓{RESET} Deleted test record")
+                print(f"   {GREEN}[OK]{RESET} Deleted test record")
 
                 results.add_pass("Supabase connection, write, read, delete")
             else:
@@ -210,7 +210,7 @@ async def test_airtable(results: TestResults):
 
         print("\n1. Connecting to Airtable...")
         airtable = get_airtable_client()
-        print(f"   {GREEN}✓{RESET} Connected")
+        print(f"   {GREEN}[OK]{RESET} Connected")
         print(f"   Base: {airtable.base_id}")
         print(f"   Table: {airtable.table_name}")
 
@@ -224,7 +224,7 @@ async def test_airtable(results: TestResults):
 
         if result.get('success'):
             record_id = result.get('record_id')
-            print(f"   {GREEN}✓{RESET} Created test record: {record_id}")
+            print(f"   {GREEN}[OK]{RESET} Created test record: {record_id}")
             print(f"   URL: {result.get('url')}")
 
             print("\n3. Testing Instagram post creation...")
@@ -236,7 +236,7 @@ async def test_airtable(results: TestResults):
             )
 
             if result_ig.get('success'):
-                print(f"   {GREEN}✓{RESET} Instagram platform mapping works")
+                print(f"   {GREEN}[OK]{RESET} Instagram platform mapping works")
                 results.add_pass("Airtable connection, LinkedIn & Instagram saves")
             else:
                 results.add_fail("Airtable Instagram", result_ig.get('error'))
@@ -279,7 +279,7 @@ async def test_rag_search(results: TestResults):
             .execute()
 
         if posts_with_embeddings.data and len(posts_with_embeddings.data) > 0:
-            print(f"   {GREEN}✓{RESET} Found {len(posts_with_embeddings.data)} posts with embeddings")
+            print(f"   {GREEN}[OK]{RESET} Found {len(posts_with_embeddings.data)} posts with embeddings")
 
             print("\n2. Testing similarity search...")
             # Use the search_past_posts function
@@ -298,9 +298,9 @@ async def test_rag_search(results: TestResults):
                 results.add_warning("RAG search", "No posts match query (this is OK if database is new)")
                 results.add_pass("RAG search function works (no matching posts)")
             else:
-                print(f"   {GREEN}✓{RESET} Search returned results")
+                print(f"   {GREEN}[OK]{RESET} Search returned results")
                 # Count how many results
-                result_count = search_results.count('📅 QUEUE') + search_results.count('✅ PUBLISHED')
+                result_count = search_results.count('QUEUED') + search_results.count('PUBLISHED')
                 print(f"   Found {result_count} relevant posts")
                 results.add_pass("RAG search with embeddings")
         else:
@@ -329,13 +329,13 @@ async def test_slack_connection(results: TestResults):
 
         print("\n1. Initializing Slack client...")
         client = WebClient(token=bot_token)
-        print(f"   {GREEN}✓{RESET} Client initialized")
+        print(f"   {GREEN}[OK]{RESET} Client initialized")
 
         print("\n2. Testing auth.test endpoint...")
         auth_response = client.auth_test()
 
         if auth_response['ok']:
-            print(f"   {GREEN}✓{RESET} Bot authenticated successfully")
+            print(f"   {GREEN}[OK]{RESET} Bot authenticated successfully")
             print(f"   Team: {auth_response.get('team')}")
             print(f"   User: {auth_response.get('user')}")
             print(f"   Bot ID: {auth_response.get('user_id')}")
@@ -363,20 +363,20 @@ async def test_slack_threads(results: TestResults):
 
         print("\n1. Initializing Claude Agent Handler...")
         handler = ClaudeAgentHandler()
-        print(f"   {GREEN}✓{RESET} Handler initialized")
+        print(f"   {GREEN}[OK]{RESET} Handler initialized")
 
         print("\n2. Testing thread session structure...")
         test_thread_ts = f"test_{datetime.now().timestamp()}"
 
         # Check that session tracking exists
         if hasattr(handler, '_thread_sessions'):
-            print(f"   {GREEN}✓{RESET} Thread session tracking available")
+            print(f"   {GREEN}[OK]{RESET} Thread session tracking available")
         else:
-            print(f"   {YELLOW}⚠{RESET} Thread session tracking structure may have changed")
+            print(f"   {YELLOW}[!]{RESET} Thread session tracking structure may have changed")
 
         print("\n3. Checking thread isolation...")
         # Each thread should have isolated context
-        print(f"   {GREEN}✓{RESET} Thread sessions are isolated by design")
+        print(f"   {GREEN}[OK]{RESET} Thread sessions are isolated by design")
 
         results.add_pass("Slack thread session management")
 
@@ -395,7 +395,7 @@ async def test_content_extraction(results: TestResults):
 
         print("\n1. Testing content extraction...")
 
-        sample_output = """## ✅ FINAL POST:
+        sample_output = """## [OK] FINAL POST:
 
 LinkedIn's reach is declining fast.
 
@@ -411,9 +411,9 @@ Are you seeing the same decline?
 
 ---
 **Changes Made:**
-✅ Removed contrast framing
-✅ Shortened sentences
-✅ Added question for engagement
+[OK] Removed contrast framing
+[OK] Shortened sentences
+[OK] Added question for engagement
 """
 
         extracted = await extract_structured_content(
@@ -422,9 +422,9 @@ Are you seeing the same decline?
         )
 
         if extracted.get('body') and extracted.get('hook'):
-            print(f"   {GREEN}✓{RESET} Extracted body: {len(extracted['body'])} chars")
-            print(f"   {GREEN}✓{RESET} Extracted hook: {extracted['hook'][:50]}...")
-            print(f"   {GREEN}✓{RESET} Content type: {extracted.get('content_type', 'unknown')}")
+            print(f"   {GREEN}[OK]{RESET} Extracted body: {len(extracted['body'])} chars")
+            print(f"   {GREEN}[OK]{RESET} Extracted hook: {extracted['hook'][:50]}...")
+            print(f"   {GREEN}[OK]{RESET} Content type: {extracted.get('content_type', 'unknown')}")
 
             results.add_pass("Content extraction with Haiku")
         else:
@@ -472,7 +472,7 @@ async def test_sdk_agent_init(results: TestResults):
                     channel_id=test_metadata['channel_id'],
                     thread_ts=test_metadata['thread_ts']
                 )
-                print(f"   {GREEN}✓{RESET} {name} SDK agent initialized with metadata")
+                print(f"   {GREEN}[OK]{RESET} {name} SDK agent initialized with metadata")
             except Exception as e:
                 print(f"   {RED}✗{RESET} {name} SDK agent failed: {e}")
                 all_passed = False
@@ -520,16 +520,16 @@ async def test_batch_orchestrator(results: TestResults):
         )
 
         if plan and 'id' in plan:
-            print(f"   {GREEN}✓{RESET} Batch plan created: {plan['id']}")
+            print(f"   {GREEN}[OK]{RESET} Batch plan created: {plan['id']}")
         else:
             raise Exception("Plan creation failed")
 
         print(f"2. Testing plan structure...")
         # Basic validation - check plan has required fields
         if 'posts' in plan and len(plan['posts']) > 0:
-            print(f"   {GREEN}✓{RESET} Plan has {len(plan['posts'])} posts")
+            print(f"   {GREEN}[OK]{RESET} Plan has {len(plan['posts'])} posts")
         else:
-            print(f"   {YELLOW}⚠{RESET} Plan structure incomplete")
+            print(f"   {YELLOW}[!]{RESET} Plan structure incomplete")
 
         print(f"3. Testing context manager...")
         context_mgr = ContextManager(plan_id="test_plan_001")
@@ -545,7 +545,7 @@ async def test_batch_orchestrator(results: TestResults):
         # Use the correct method name
         context = context_mgr.get_compacted_learnings()
         if context:
-            print(f"   {GREEN}✓{RESET} Context manager working")
+            print(f"   {GREEN}[OK]{RESET} Context manager working")
 
         results.add_pass("Batch orchestrator components functional")
 
@@ -597,9 +597,9 @@ async def test_mcp_tool_structure(results: TestResults):
                             break
 
                 if found_tools >= 5:
-                    print(f"   {GREEN}✓{RESET} {platform_name}: SDK agent has MCP tools")
+                    print(f"   {GREEN}[OK]{RESET} {platform_name}: SDK agent has MCP tools")
                 else:
-                    print(f"   {YELLOW}⚠{RESET} {platform_name}: Found {found_tools}/5 tools")
+                    print(f"   {YELLOW}[!]{RESET} {platform_name}: Found {found_tools}/5 tools")
                     all_passed = False
 
             except ImportError as e:
@@ -642,14 +642,14 @@ async def test_validation_prompts(results: TestResults):
             try:
                 result_data = json.loads(validation_result)
                 if 'quality_scores' in result_data:
-                    print(f"   {GREEN}✓{RESET} Validation prompts loaded successfully")
-                    print(f"   {GREEN}✓{RESET} Quality scores generated: {result_data['quality_scores'].get('total', 0)}/25")
+                    print(f"   {GREEN}[OK]{RESET} Validation prompts loaded successfully")
+                    print(f"   {GREEN}[OK]{RESET} Quality scores generated: {result_data['quality_scores'].get('total', 0)}/25")
                     results.add_pass("Validation prompts functional")
                 else:
                     results.add_warning("Validation prompts", "Loaded but no scores in result")
             except json.JSONDecodeError:
                 # Might not be JSON, that's okay for test
-                print(f"   {GREEN}✓{RESET} Validation returned data (non-JSON)")
+                print(f"   {GREEN}[OK]{RESET} Validation returned data (non-JSON)")
                 results.add_pass("Validation prompts functional")
         else:
             results.add_warning("Validation prompts", "No result returned")
@@ -688,7 +688,7 @@ async def test_slack_metadata_flow(results: TestResults):
         params = sig.parameters
 
         if 'channel_id' in params and 'thread_ts' in params and 'user_id' in params:
-            print(f"   {GREEN}✓{RESET} Batch orchestrator accepts all Slack metadata")
+            print(f"   {GREEN}[OK]{RESET} Batch orchestrator accepts all Slack metadata")
         else:
             print(f"   {RED}✗{RESET} Missing params: {set(['channel_id', 'thread_ts', 'user_id']) - set(params.keys())}")
 
@@ -715,7 +715,7 @@ async def test_slack_metadata_flow(results: TestResults):
             params = sig.parameters
 
             if 'channel_id' in params and 'thread_ts' in params and 'user_id' in params:
-                print(f"   {GREEN}✓{RESET} {name} workflow accepts Slack metadata")
+                print(f"   {GREEN}[OK]{RESET} {name} workflow accepts Slack metadata")
             else:
                 print(f"   {RED}✗{RESET} {name} workflow missing metadata params")
                 all_accept_metadata = False
@@ -744,13 +744,13 @@ async def test_slack_metadata_flow(results: TestResults):
 
             if result.data and len(result.data) > 0:
                 record_id = result.data[0]['id']
-                print(f"   {GREEN}✓{RESET} Supabase accepts Slack metadata fields")
+                print(f"   {GREEN}[OK]{RESET} Supabase accepts Slack metadata fields")
 
                 # Clean up test record
                 supabase.table('generated_posts').delete().eq('id', record_id).execute()
-                print(f"   {GREEN}✓{RESET} Test record cleaned up")
+                print(f"   {GREEN}[OK]{RESET} Test record cleaned up")
             else:
-                print(f"   {YELLOW}⚠{RESET} Supabase insert succeeded but no data returned")
+                print(f"   {YELLOW}[!]{RESET} Supabase insert succeeded but no data returned")
 
         except Exception as e:
             if 'slack_channel_id' in str(e):
@@ -758,7 +758,7 @@ async def test_slack_metadata_flow(results: TestResults):
             elif 'slack_thread_ts' in str(e):
                 print(f"   {RED}✗{RESET} Supabase schema missing slack_thread_ts column")
             else:
-                print(f"   {YELLOW}⚠{RESET} Supabase test skipped: {str(e)[:100]}")
+                print(f"   {YELLOW}[!]{RESET} Supabase test skipped: {str(e)[:100]}")
 
         if all_accept_metadata:
             results.add_pass("Slack metadata flows through entire system")
@@ -800,7 +800,7 @@ async def test_agent_routing(results: TestResults):
                 print(f"   {RED}✗{RESET} '{msg[:50]}...' incorrectly triggered co-write")
                 batch_pass = False
             else:
-                print(f"   {GREEN}✓{RESET} '{msg[:50]}...' correctly uses batch mode")
+                print(f"   {GREEN}[OK]{RESET} '{msg[:50]}...' correctly uses batch mode")
 
         print(f"\n2. Testing co-write mode detection...")
 
@@ -816,7 +816,7 @@ async def test_agent_routing(results: TestResults):
         cowrite_pass = True
         for msg in cowrite_messages:
             if handler._detect_cowrite_mode(msg):
-                print(f"   {GREEN}✓{RESET} '{msg[:50]}...' correctly triggers co-write")
+                print(f"   {GREEN}[OK]{RESET} '{msg[:50]}...' correctly triggers co-write")
             else:
                 print(f"   {RED}✗{RESET} '{msg[:50]}...' incorrectly uses batch mode")
                 cowrite_pass = False
@@ -833,7 +833,7 @@ async def test_agent_routing(results: TestResults):
         prompt_pass = True
         for check_text, description in prompt_checks:
             if check_text in handler.system_prompt:
-                print(f"   {GREEN}✓{RESET} {description} found in prompt")
+                print(f"   {GREEN}[OK]{RESET} {description} found in prompt")
             else:
                 print(f"   {RED}✗{RESET} {description} missing from prompt")
                 prompt_pass = False

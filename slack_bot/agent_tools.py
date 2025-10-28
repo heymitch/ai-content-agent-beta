@@ -100,7 +100,7 @@ def search_past_posts(
         all_posts.sort(key=lambda x: x['created'], reverse=True)
 
         # Format results
-        posts_summary = ["📚 PAST CONTENT:\n"]
+        posts_summary = ["PAST CONTENT:\n"]
         for i, post in enumerate(all_posts[:10], 1):
             score = post['score']
             # Ensure content is properly handled as UTF-8 string
@@ -112,10 +112,10 @@ def search_past_posts(
             source = str(post['source'])
             # Ensure hook is properly handled as UTF-8 string
             hook = str(post['hook'])[:80] if post['hook'] else content_preview[:80]
-            status_emoji = "📅" if source == "QUEUE" else "✅"
+            status_marker = "[QUEUE]" if source == "QUEUE" else "[PUBLISHED]"
 
             posts_summary.append(
-                f"{i}. {status_emoji} [{platform_name.upper()}] {source} | Score: {score}/100 ({iterations} iterations)\n"
+                f"{i}. {status_marker} [{platform_name.upper()}] {source} | Score: {score}/100 ({iterations} iterations)\n"
                 f"   Created: {created}\n"
                 f"   Hook: {hook}...\n"
             )
