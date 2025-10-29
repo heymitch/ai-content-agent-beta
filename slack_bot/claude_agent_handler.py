@@ -4,7 +4,8 @@ Following official docs at https://docs.claude.com/en/api/agent-sdk/python
 """
 from claude_agent_sdk import (
     ClaudeSDKClient,
-    ClaudeAgentOptions
+    ClaudeAgentOptions,
+    tool  # Still needed for legacy tool definitions (not used with stdio server)
 )
 import os
 from typing import Dict, Optional, Any

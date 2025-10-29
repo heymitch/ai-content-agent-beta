@@ -29,7 +29,7 @@ from agents.batch_orchestrator import (
 )
 
 # Initialize FastMCP server
-mcp = FastMCP(name="slack_tools", version="2.6.0")
+mcp = FastMCP(name="slack_tools")
 
 
 @mcp.tool()
