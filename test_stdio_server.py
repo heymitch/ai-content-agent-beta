@@ -252,13 +252,19 @@ def main():
     # Summary
     section_print("TEST SUMMARY")
 
-    passed = sum(1 for _, (success, *_) in results if success)
+    passed = 0
     total = len(results)
 
     for name, result in results:
-        success = result[0] if isinstance(result, tuple) else result
+        # Handle both bool and tuple returns
+        if isinstance(result, tuple):
+            success = result[0]
+        else:
+            success = result
+
         if success:
             test_print("✅", f"{name}: PASS")
+            passed += 1
         else:
             test_print("❌", f"{name}: FAIL", False)
 
