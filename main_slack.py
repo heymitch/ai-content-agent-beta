@@ -332,6 +332,11 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
             print("✏️ Skipping message edit")
             return {'status': 'skipped_edit'}
 
+        # Skip empty messages (reactions, file uploads, etc.)
+        if not message_text or not message_text.strip():
+            print("⏭️ Skipping empty message")
+            return {'status': 'skipped_empty_message'}
+
         # bot_user_id already retrieved above
         is_bot_mentioned = bot_user_id and f'<@{bot_user_id}>' in message_text
 
