@@ -4,8 +4,7 @@ Following official docs at https://docs.claude.com/en/api/agent-sdk/python
 """
 from claude_agent_sdk import (
     ClaudeSDKClient,
-    ClaudeAgentOptions,
-    McpStdioServerConfig  # For stdio server workaround (issue #266)
+    ClaudeAgentOptions
 )
 import os
 from typing import Dict, Optional, Any
@@ -1470,11 +1469,12 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         # Create MCP server with STDIO transport (workaround for ProcessTransport bug #266)
         # https://github.com/anthropics/claude-agent-sdk-python/issues/266
         import sys
-        self.mcp_server = McpStdioServerConfig(
-            command=sys.executable,  # Use same Python interpreter
-            args=["-m", "slack_bot.mcp_server_stdio"],  # Run as module
-            env=dict(os.environ)  # Pass all environment variables (API keys, etc.)
-        )
+        self.mcp_server = {
+            "type": "stdio",
+            "command": sys.executable,  # Use same Python interpreter
+            "args": ["-m", "slack_bot.mcp_server_stdio"],  # Run as module
+            "env": dict(os.environ)  # Pass all environment variables (API keys, etc.)
+        }
 
         print(f"✅ Handler [{self.handler_id}] ready with stdio MCP server (ProcessTransport bug workaround)")
 
