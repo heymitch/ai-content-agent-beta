@@ -1079,10 +1079,13 @@ When user requests content creation, follow this workflow:
    - Call execute_post_from_plan for each post in the plan
    - SDK subagents handle actual content generation
    - Posts auto-save to Airtable
+   - CRITICAL: The tool returns a summary (score + hook + Airtable link)
+   - DO NOT show the full post content in Slack - only show the tool's summary
+   - Full post is in Airtable, user can click the link to see it
 
 **Tools to use:**
 - plan_content_batch → Creates structured plan with post specs
-- execute_post_from_plan → Delegates to LinkedIn/Twitter/Email/YouTube/Instagram SDK agents
+- execute_post_from_plan → Returns summary with score, hook preview, Airtable link (DO NOT add full post)
 
 **Examples (ALL use batch mode):**
 ✅ "Write a LinkedIn post about X" → plan_content_batch + execute_post_from_plan
