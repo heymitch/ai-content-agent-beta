@@ -185,6 +185,10 @@ async def plan_content_batch(posts: list, description: str = "Content batch") ->
         posts: List of post specs [{"platform": "linkedin", "topic": "...", "context": "...", "style": "..."}]
         description: High-level description of the batch
     """
+    import sys
+    print(f"📋 [MCP] plan_content_batch called with {len(posts) if posts else 0} posts", file=sys.stderr)
+    sys.stderr.flush()
+
     if not posts or len(posts) == 0:
         return "❌ No posts provided. Please specify at least one post in the batch."
 
@@ -197,6 +201,8 @@ async def plan_content_batch(posts: list, description: str = "Content batch") ->
             thread_ts=None,
             user_id=None
         )
+        print(f"✅ [MCP] Plan created: {plan['id']}", file=sys.stderr)
+        sys.stderr.flush()
 
         # Format plan summary
         summary = f"""✅ **Batch Plan Created**
@@ -231,6 +237,10 @@ async def execute_post_from_plan(plan_id: str, post_index: int) -> str:
         plan_id: ID from plan_content_batch
         post_index: Which post to create (0-indexed)
     """
+    import sys
+    print(f"🚀 [MCP] execute_post_from_plan called: plan={plan_id}, index={post_index}", file=sys.stderr)
+    sys.stderr.flush()
+
     if not plan_id:
         return "❌ No plan_id provided. Create a plan first with plan_content_batch."
 
@@ -258,8 +268,10 @@ async def execute_post_from_plan(plan_id: str, post_index: int) -> str:
             full_result = result.get('full_result', '')
 
             if full_result:
-                # Use the SDK agent's formatted output directly
-                output = full_result
+                # full_result is already a formatted string from the SDK agent
+                output = str(full_result)
+                print(f"✅ [MCP] Returning full_result ({len(output)} chars)", file=sys.stderr)
+                sys.stderr.flush()
             else:
                 # Fallback if full_result not available
                 output = f"""✅ **Post Created & Saved to Airtable**
@@ -406,6 +418,16 @@ The content is now scheduled in your Airtable calendar. You can edit the posting
 
 # Run the server
 if __name__ == "__main__":
-    print("🚀 Starting Stdio MCP Server (workaround for ProcessTransport bug)")
-    print("📋 Tools available: web_search, search_knowledge_base, search_company_documents, search_past_posts, get_content_calendar, get_thread_context, analyze_content_performance, search_templates, get_template, check_ai_detection, plan_content_batch, execute_post_from_plan, compact_learnings, checkpoint_with_user, send_to_calendar")
-    mcp.run(transport="stdio")
+    import sys
+    print("🚀 Starting Stdio MCP Server (workaround for ProcessTransport bug)", file=sys.stderr)
+    print("📋 Tools available: web_search, search_knowledge_base, search_company_documents, search_past_posts, get_content_calendar, get_thread_context, analyze_content_performance, search_templates, get_template, check_ai_detection, plan_content_batch, execute_post_from_plan, compact_learnings, checkpoint_with_user, send_to_calendar", file=sys.stderr)
+    print("📡 Listening on stdin/stdout for MCP requests...", file=sys.stderr)
+    sys.stderr.flush()
+
+    try:
+        mcp.run(transport="stdio")
+    except Exception as e:
+        print(f"❌ MCP Server crashed: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
