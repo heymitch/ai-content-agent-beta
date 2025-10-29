@@ -58,18 +58,17 @@ async def extract_structured_content(
     client = Anthropic(api_key=api_key)
 
     # Build extraction prompt
-    prompt = f"""Extract the {platform} post from this agent output into structured JSON.
+    prompt = f"""Extract the FINAL, COMPLETE {platform} post from this agent output.
 
 AGENT OUTPUT:
 {raw_output}
 
-USER REQUEST (for date parsing):
-{user_message or "Not provided"}
+The agent output may contain multiple versions (drafts, iterations, improvements). You must find and extract the FINAL, LONGEST, MOST COMPLETE version - the one that will be published.
 
 Return ONLY valid JSON with this exact structure:
 {{
-  "body": "the actual post content ONLY",
-  "hook": "the opening line or first sentence",
+  "body": "the complete final post - every word, all formatting",
+  "hook": "the opening line",
   "platform": "{platform}",
   "publish_date": null,
   "metadata": {{
@@ -81,13 +80,27 @@ Return ONLY valid JSON with this exact structure:
 
 EXTRACTION RULES:
 
-1. body: Extract ONLY the post content
-   - REMOVE: "What changed:", scores, commentary, summaries
-   - REMOVE: Headers like "1. LINKEDIN POST", "Tweet 1:", "POST 1:", etc.
-   - REMOVE: "Post now scores X/25" type lines
-   - REMOVE: "✅ ALL CONTENT COMPLETE", "Key themes", etc.
-   - REMOVE: "Final Score:", "Changes Applied:", etc.
-   - KEEP: Only the actual post text users will see
+1. body: Extract the FINAL, COMPLETE, VERBATIM post content
+   - CRITICAL: This is a COPY-PASTE operation, not summarization
+   - Find the LONGEST, MOST DETAILED version in the output (usually the final one)
+   - Extract EVERY SINGLE WORD exactly as written
+   - Preserve ALL line breaks, bullet points, numbered lists, formatting
+   - DO NOT extract summaries, outlines, or condensed versions
+   - DO NOT extract intermediate drafts - find the FINAL polished post
+   - REMOVE ONLY agent metadata (NOT post content):
+     * Commentary: "What changed:", "Post now scores X/25", "✅ ALL CONTENT COMPLETE"
+     * Headers: "1. LINKEDIN POST:", "Final version:", "Tweet 1:"
+     * Metrics: "Final Score:", "Changes Applied:", "Iterations:"
+
+   HOW TO IDENTIFY THE FINAL POST:
+   - It's the LONGEST continuous block of actual post text
+   - It appears AFTER any drafting/iteration commentary
+   - It does NOT contain metadata headers mixed in
+   - It's formatted as publishable content (not bullet summaries)
+
+   EXAMPLE - WRONG vs RIGHT:
+   WRONG: "My 3-point framework: 1. Build trust 2. Add value 3. Close deals" (this is a summary)
+   RIGHT: Full detailed post with stories, examples, all formatting - the actual publishable content
 
 2. hook: Extract the most compelling opening
    - LinkedIn: First 1-2 sentences that grab attention

@@ -1,0 +1,205 @@
+{
+  "template_id": "website_landing_page_v1",
+  "name": "Sales Page Template",
+  "platform": "website",
+  "description": "High-converting sales page for low-ticket digital products",
+  "use_when": [
+    "Launching a new digital product",
+    "Creating a sales page for an online course",
+    "Converting website visitors to customers",
+    "Selling information products or templates"
+  ],
+  "structure": {
+    "hero": {
+      "word_count": [50, 100],
+      "format": "Strong headline and sub-headline that clearly communicate value proposition",
+      "guidelines": [
+        "Include clear value proposition",
+        "Consider adding VSL or product mockup",
+        "Keep headline under 15 words for impact"
+      ]
+    },
+    "quiz": {
+      "word_count": [100, 150],
+      "purpose": "Breakdown of 2-3 key archetypes who would benefit from this product",
+      "guidelines": [
+        "Be specific about each archetype",
+        "Help visitors self-identify",
+        "Use relatable pain points for each"
+      ]
+    },
+    "instructor": {
+      "word_count": [100, 150],
+      "purpose": "Establish authority and trust with creator credentials",
+      "guidelines": [
+        "Include relevant background information",
+        "Focus on expertise related to product topic",
+        "Add personal touch to build connection"
+      ]
+    },
+    "proof": {
+      "word_count": [100, 150],
+      "format": "Bulleted list of tangible results and milestones",
+      "guidelines": [
+        "Use specific numbers and achievements",
+        "Focus on results relevant to product topic",
+        "Include social proof when available"
+      ]
+    },
+    "problems": {
+      "word_count": [150, 200],
+      "format": "List of 7-10 major pain points the product solves",
+      "guidelines": [
+        "Use voice-of-customer language",
+        "Make each problem specific and relatable",
+        "Order from most to least impactful"
+      ]
+    },
+    "mistakes": {
+      "word_count": [200, 300],
+      "format": "Deep dive into 3 biggest mistakes with solutions",
+      "guidelines": [
+        "Explain why each mistake is harmful",
+        "Show how the product helps avoid each mistake",
+        "Use specific examples for clarity"
+      ]
+    },
+    "everything_included": {
+      "word_count": [200, 300],
+      "format": "Detailed breakdown of product content and components",
+      "guidelines": [
+        "List modules/lessons with key takeaways",
+        "Consider adding value estimates for each component",
+        "Use bullet points for scanability"
+      ]
+    },
+    "bonuses": {
+      "word_count": [100, 150],
+      "format": "Compelling breakdown of additional bonuses",
+      "guidelines": [
+        "Explain specific value of each bonus",
+        "Connect bonuses to main product benefits",
+        "Consider adding bonus value amounts"
+      ]
+    },
+    "last_nudge": {
+      "word_count": [100, 150],
+      "purpose": "Reinforce value and create urgency",
+      "guidelines": [
+        "Summarize total value proposition",
+        "Add deadline or scarcity if applicable",
+        "Remind of main transformation"
+      ]
+    },
+    "faq": {
+      "word_count": [200, 300],
+      "format": "Answers to common objections and questions",
+      "guidelines": [
+        "Address price objections directly",
+        "Cover time commitment concerns",
+        "Answer technical/access questions"
+      ]
+    },
+    "guarantee": {
+      "word_count": [50, 100],
+      "purpose": "Remind of risk-free nature of offer",
+      "guidelines": [
+        "Clearly state guarantee terms (14-day, no questions asked)",
+        "Explain refund process if applicable",
+        "Reinforce confidence in product value"
+      ]
+    }
+  },
+  "quality_criteria": [
+    {
+      "axis": "headline",
+      "threshold": 5,
+      "description": "Clearly communicates main benefit or outcome"
+    },
+    {
+      "axis": "clarity",
+      "threshold": 5,
+      "description": "Offer is instantly understandable"
+    },
+    {
+      "axis": "credibility",
+      "threshold": 4,
+      "description": "Establishes creator as trustworthy authority"
+    },
+    {
+      "axis": "specificity",
+      "threshold": 4,
+      "description": "Uses concrete details rather than vague claims"
+    },
+    {
+      "axis": "objection_handling",
+      "threshold": 4,
+      "description": "Addresses common concerns preemptively"
+    }
+  ],
+  "formatting_guidelines": [
+    "Use clear section headers",
+    "Break up text with bullet points",
+    "Include testimonials throughout when available",
+    "Use occasional bold text for emphasis",
+    "Keep paragraphs under 3-4 lines",
+    "Add relevant images or icons for each section"
+  ],
+  "forbidden_patterns": [
+    "Don't use hype without substance",
+    "Avoid unrealistic income claims",
+    "Don't use vague descriptions of benefits",
+    "Avoid complex jargon unless audience-appropriate",
+    "Don't make guarantees you can't fulfill"
+  ],
+  "required_inputs": [
+    "Product name",
+    "Main problems solved",
+    "Key benefits/outcomes",
+    "Target audience description",
+    "Common mistakes made by audience",
+    "Price point",
+    "Features/resources included",
+    "Creator bio",
+    "Credibility statements/milestones"
+  ],
+  "copywriting_rules": {
+    "tone": [
+      "Conversational but data-driven",
+      "Professional yet approachable",
+      "Practical, not aspirational; show don't tell",
+      "Technical depth without jargon"
+    ],
+    "structure": [
+      "Hero section must have headline under 15 words for maximum impact",
+      "Quiz section should help visitors immediately self-identify",
+      "Problems section should use actual voice-of-customer language",
+      "Mistakes section must explain why each mistake is harmful before offering solution",
+      "Everything Included section should assign value estimates to each component",
+      "FAQ section must address price objections directly",
+      "Guarantee section should clearly state 14-day, no-questions-asked terms"
+    ],
+    "forbidden": [
+      "No hype without substance",
+      "No unrealistic income claims",
+      "No vague descriptions of benefits",
+      "No complex jargon unless audience-appropriate",
+      "No guarantees you can't fulfill",
+      "No paragraphs longer than 3-4 lines"
+    ],
+    "required_elements": [
+      "Strong headline that communicates main benefit in under 15 words",
+      "2-3 specific audience archetypes in Quiz section",
+      "Tangible proof with specific numbers and achievements",
+      "7-10 specific customer pain points in voice-of-customer language",
+      "3 biggest mistakes with detailed explanations and solutions",
+      "Detailed breakdown of all product components with value estimates",
+      "Clear bonus value amounts connected to main benefits",
+      "Direct addressing of common objections in FAQ section",
+      "14-day guarantee terms clearly stated",
+      "Testimonials throughout when available",
+      "Occasional bold text for emphasis",
+      "Relevant images or icons for each section"
+    ]
+  }
+}

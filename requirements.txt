@@ -6,6 +6,7 @@ python-multipart
 # AI/ML libraries
 anthropic>=0.39.0
 claude-agent-sdk>=0.1.0
+mcp[cli]  # MCP SDK for stdio server (workaround for ProcessTransport bug)
 openai
 langfuse
 anyio  # Required for Claude Agent SDK

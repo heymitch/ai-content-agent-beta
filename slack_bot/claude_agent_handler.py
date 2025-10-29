@@ -5,8 +5,7 @@ Following official docs at https://docs.claude.com/en/api/agent-sdk/python
 from claude_agent_sdk import (
     ClaudeSDKClient,
     ClaudeAgentOptions,
-    tool,
-    create_sdk_mcp_server
+    McpStdioServerConfig  # For stdio server workaround (issue #266)
 )
 import os
 from typing import Dict, Optional, Any
@@ -1063,8 +1062,8 @@ PHASE 1: Strategic Conversation (BEFORE content creation decision)
 - Help user refine thesis and make strategic decisions
 - When user says "create", "write", "draft", "make" + content type → PHASE 2
 
-**SPECIAL: Batch Content Requests (5+ posts)**
-When user requests 5+ posts, PROACTIVELY search company documents BEFORE asking questions:
+**SPECIAL: Batch Content Requests (1+ posts)**
+PROACTIVELY search company documents BEFORE asking questions:
 
 1. **Immediate Search:**
    Call search_company_documents(query="[topic] case studies examples testimonials")
@@ -1243,7 +1242,25 @@ CMO: *calls plan_content_batch with FINAL 7-post plan*
 3. Only call plan_content_batch when user confirms ("execute", "create", "go ahead")
 4. The FINAL plan should have the ORIGINAL count (no duplicates from edits)
 
-**STEP 3: BATCH TOOLS:**
+**STEP 3: IMMEDIATE EXECUTION (CRITICAL - Don't Stop After Planning!)**
+
+AFTER plan_content_batch returns:
+- ❌ WRONG: Stop and wait for user
+- ✅ RIGHT: IMMEDIATELY start calling execute_post_from_plan for each post
+
+EXECUTION LOOP:
+```
+1. Call plan_content_batch → get plan_id
+2. For i in range(0, post_count):
+   a. Call execute_post_from_plan(plan_id, i)
+   b. If i % 10 == 9: Call compact_learnings(plan_id)
+   c. If i % 10 == 9: Call checkpoint_with_user(plan_id, i+1)
+3. After all posts complete: Return final summary
+```
+
+NEVER stop after plan_content_batch - execution is automatic!
+
+**STEP 4: BATCH TOOLS:**
 
 1. **plan_content_batch**: Create structured plan (AFTER user confirms)
    - Input: List of post specs [{"platform": "linkedin", "topic": "...", "context": "..."}]
@@ -1316,24 +1333,27 @@ Example A: Single post batch
 ```
 User: "Create 1 LinkedIn post about AI, direct to calendar"
 CMO: *calls plan_content_batch with 1 post spec*
-CMO: "✅ Batch plan created! ID: batch_123. Creating post 1/1..."
-CMO: *calls execute_post_from_plan(plan_id, 0)*
-CMO: "✅ Post 1 complete (score 21/25). Saved to Airtable!"
+     → plan_content_batch returns: plan_id="batch_123"
+CMO: *IMMEDIATELY calls execute_post_from_plan(plan_id="batch_123", post_index=0)*
+     → execute_post_from_plan returns: score=21, airtable_url="https://..."
+CMO: "✅ Post complete! Score 21/25. Saved to Airtable!"
 ```
 
 Example B: Large batch with progress updates
 ```
 User: "Create 15 LinkedIn posts, direct to calendar"
 CMO: *calls plan_content_batch with 15 post specs*
-CMO: "✅ Batch plan created! Creating post 1/15..."
-CMO: *calls execute_post_from_plan sequentially*
-[... after post 5 ...]
-User: "How's it going?"
-CMO: *calls get_batch_status* → "[====  ] 33% - 5/15 complete"
-[... continues ...]
-CMO: *calls checkpoint_with_user at post 10*
+     → plan_content_batch returns: plan_id="batch_456"
+CMO: *IMMEDIATELY starts execution loop*
+     *calls execute_post_from_plan(plan_id="batch_456", post_index=0)*
+     *calls execute_post_from_plan(plan_id="batch_456", post_index=1)*
+     *calls execute_post_from_plan(plan_id="batch_456", post_index=2)*
+     ... [continues for all 15 posts]
+     *calls checkpoint_with_user at post 10*
 CMO: "✅ All 15 posts complete! Average score: 22/25."
 ```
+
+CRITICAL: Do NOT stop after plan_content_batch returns! The execution is automatic.
 
 Example C: User cancellation
 ```
@@ -1447,14 +1467,16 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             get_batch_status_tool
         ]
 
-        # Create MCP server with base tools initially
-        self.mcp_server = create_sdk_mcp_server(
-            name="slack_tools",
-            version="2.6.0",  # Bumped for lazy-loading feature
-            tools=self.base_tools
+        # Create MCP server with STDIO transport (workaround for ProcessTransport bug #266)
+        # https://github.com/anthropics/claude-agent-sdk-python/issues/266
+        import sys
+        self.mcp_server = McpStdioServerConfig(
+            command=sys.executable,  # Use same Python interpreter
+            args=["-m", "slack_bot.mcp_server_stdio"],  # Run as module
+            env=dict(os.environ)  # Pass all environment variables (API keys, etc.)
         )
 
-        print(f"✅ Handler [{self.handler_id}] ready with batch tools (default mode)")
+        print(f"✅ Handler [{self.handler_id}] ready with stdio MCP server (ProcessTransport bug workaround)")
 
     def _detect_cowrite_mode(self, message: str) -> bool:
         """
@@ -1621,31 +1643,12 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         # Check if this message requires co-write mode
         message_needs_cowrite = self._detect_cowrite_mode(message)
 
-        # If co-write mode is needed and not already loaded, update the MCP server
-        if message_needs_cowrite and not self.cowrite_mode:
-            print(f"[{request_id}] 📝 Co-write mode requested - loading co-write tools...")
-
-            # Load co-write tools
-            from slack_bot.cowrite_tools import get_cowrite_tools
-            all_tools = self.base_tools + get_cowrite_tools()
-
-            # Recreate MCP server with all tools
-            self.mcp_server = create_sdk_mcp_server(
-                name="slack_tools",
-                version="2.6.0",
-                tools=all_tools
-            )
-
-            # Mark that co-write mode is loaded
-            self.cowrite_mode = True
-
-            # Clear existing sessions to force reconnection with new tools
-            self._thread_sessions.clear()
-            self._connected_sessions.clear()
-
-            print(f"[{request_id}] ✅ Co-write tools loaded (15 additional tools)")
-        elif message_needs_cowrite:
-            print(f"[{request_id}] 📝 Co-write mode already active")
+        # NOTE: With stdio MCP server, all tools are available from start
+        # Co-write tools should be added to mcp_server_stdio.py if needed
+        # Dynamic tool loading is not supported with stdio transport
+        if message_needs_cowrite:
+            print(f"[{request_id}] 📝 Co-write mode requested")
+            print(f"[{request_id}] ⚠️  Note: Co-write tools must be pre-loaded in stdio server")
         else:
             print(f"[{request_id}] 🚀 Using batch mode (default)")
 
@@ -1656,15 +1659,25 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             # Only connect if this is a NEW session (not already connected)
             if thread_ts not in self._connected_sessions:
                 print(f"[{request_id}] 🔌 Connecting NEW client session...")
-                await client.connect()
-                self._connected_sessions.add(thread_ts)
-                print(f"[{request_id}] ✅ Client connected successfully")
+                try:
+                    # Add timeout to prevent hanging
+                    await asyncio.wait_for(client.connect(), timeout=30.0)
+                    self._connected_sessions.add(thread_ts)
+                    print(f"[{request_id}] ✅ Client connected successfully")
+                except asyncio.TimeoutError:
+                    print(f"[{request_id}] ❌ Connection timeout after 30s")
+                    raise Exception("Agent connection timed out - please try again")
             else:
                 print(f"[{request_id}] ♻️ Reusing connected client...")
 
             # Send the query
             print(f"[{request_id}] 📨 Sending query to Claude SDK...")
-            await client.query(contextualized_message)
+            try:
+                # Add timeout for query (5 minutes for complex requests)
+                await asyncio.wait_for(client.query(contextualized_message), timeout=300.0)
+            except asyncio.TimeoutError:
+                print(f"[{request_id}] ❌ Query timeout after 5 minutes")
+                raise Exception("Agent request timed out - please try a simpler request or try again")
 
             # Collect ONLY the latest response (memory stays intact in session)
             latest_response = ""
@@ -1720,6 +1733,11 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
             final_text = latest_response  # Only use the latest response
             print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
+
+            # Safety check: If response is empty, the agent got stuck
+            if not final_text or len(final_text.strip()) == 0:
+                print(f"[{request_id}] ⚠️ WARNING: Empty response from agent!")
+                final_text = "⚠️ I started processing your request but didn't finish my response. This usually means I got stuck after calling a tool. Please try again, or check the server logs for details."
 
             # Format for Slack
             final_text = self._format_for_slack(final_text)
