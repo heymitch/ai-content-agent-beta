@@ -63,7 +63,12 @@ async def extract_structured_content(
 AGENT OUTPUT:
 {raw_output}
 
-The agent output may contain multiple versions (drafts, iterations, improvements). You must find and extract the FINAL, LONGEST, MOST COMPLETE version - the one that will be published.
+The agent output contains MULTIPLE versions from the iteration process:
+1. Initial drafts (condensed, incomplete)
+2. Revised versions (intermediate improvements)
+3. FINAL version (most refined, usually marked or appears last)
+
+CRITICAL: The agent iterates and improves the post multiple times. You MUST find the FINAL version, not early drafts!
 
 Return ONLY valid JSON with this exact structure:
 {{
@@ -81,26 +86,35 @@ Return ONLY valid JSON with this exact structure:
 EXTRACTION RULES:
 
 1. body: Extract the FINAL, COMPLETE, VERBATIM post content
-   - CRITICAL: This is a COPY-PASTE operation, not summarization
-   - Find the LONGEST, MOST DETAILED version in the output (usually the final one)
-   - Extract EVERY SINGLE WORD exactly as written
-   - Preserve ALL line breaks, bullet points, numbered lists, formatting
-   - DO NOT extract summaries, outlines, or condensed versions
-   - DO NOT extract intermediate drafts - find the FINAL polished post
-   - REMOVE ONLY agent metadata (NOT post content):
-     * Commentary: "What changed:", "Post now scores X/25", "✅ ALL CONTENT COMPLETE"
-     * Headers: "1. LINKEDIN POST:", "Final version:", "Tweet 1:"
-     * Metrics: "Final Score:", "Changes Applied:", "Iterations:"
 
-   HOW TO IDENTIFY THE FINAL POST:
-   - It's the LONGEST continuous block of actual post text
-   - It appears AFTER any drafting/iteration commentary
-   - It does NOT contain metadata headers mixed in
-   - It's formatted as publishable content (not bullet summaries)
+   PRIORITY 1 - Look for EXPLICIT FINAL MARKERS:
+   - "## ✅ **FINAL LINKEDIN POST**" → Extract everything after this
+   - "## FINAL VERSION:" → Extract everything after this
+   - "Final post:" → Extract everything after this
+   - If you find these markers, ALWAYS use the content that follows them
 
-   EXAMPLE - WRONG vs RIGHT:
-   WRONG: "My 3-point framework: 1. Build trust 2. Add value 3. Close deals" (summary)
-   RIGHT: Full detailed post with stories, examples, all formatting - publishable content
+   PRIORITY 2 - If no markers, find the LAST complete post:
+   - Scan the ENTIRE output from beginning to end
+   - Identify ALL complete posts (>500 chars with proper structure)
+   - Take the LAST/MOST RECENT complete post (not the first!)
+   - The final version appears AFTER iterations/revisions
+
+   WHAT TO EXCLUDE:
+   - "What it delivers:" analysis sections
+   - "Score:", "Changes Applied:", quality metrics
+   - "Let me extract..." agent commentary
+   - Early drafts that appear before the final version
+
+   PRESERVE EXACTLY:
+   - Every word, line break, bullet point, formatting
+   - This is COPY-PASTE, not summarization
+
+   WRONG EXTRACTION (taking first version found):
+   "I've been quiet for 8 weeks..." [1200 chars - condensed early draft]
+
+   RIGHT EXTRACTION (taking final marked version):
+   After "## ✅ **FINAL LINKEDIN POST**":
+   "I haven't posted here in 8 weeks..." [2000+ chars - detailed final version]
 
 2. hook: Extract the most compelling opening
    - LinkedIn: First 1-2 sentences that grab attention
