@@ -528,9 +528,10 @@ AVAILABLE TOOLS:
 
 2. mcp__linkedin_tools__create_human_draft
    Input: {"topic": str, "hook": str, "context": str}
-   Returns: JSON with {post_text, self_assessment: {hook: 0-5, audience: 0-5, headers: 0-5, proof: 0-5, cta: 0-5, total: 0-25}}
+   Returns: JSON with {post_text} ONLY (no self-assessment)
    What it does: Creates LinkedIn post using 127-line WRITE_LIKE_HUMAN_RULES (cached)
    Quality: Trained on Nicolas Cole, Dickie Bush examples - produces human-sounding content
+   CRITICAL: This tool does NOT score posts. It just writes. Real scoring happens in quality_check.
    When to use: After selecting best hook from generate_5_hooks
 
 3. mcp__linkedin_tools__inject_proof_points
@@ -542,19 +543,23 @@ AVAILABLE TOOLS:
 4. mcp__linkedin_tools__quality_check
    Input: {"post": str}
    Returns: JSON with {scores: {hook/audience/headers/proof/cta/total, ai_deductions}, decision: accept/revise/reject, issues: [{axis, severity, original, fix, impact}], searches_performed: [...]}
-   What it does: 
+   What it does:
+   - This is the ONLY tool that scores posts (0-25)
    - Evaluates 5-axis rubric (0-5 each, total 0-25)
    - AUTO-DETECTS AI tells with -2pt deductions: contrast framing, rule of three, cringe questions
    - WEB SEARCHES to verify names/companies/titles for fabrication detection
    - Returns SURGICAL fixes (specific text replacements, not full rewrites)
-   When to use: After inject_proof_points to evaluate quality
-   
+   When to use: MANDATORY - Always call after inject_proof_points
+
    CRITICAL UNDERSTANDING:
-   - decision="accept" (score ≥20): Post is high quality, no changes needed
+   - This is MANDATORY. Always call quality_check.
+   - Do NOT skip this because create_human_draft "seemed good"
+   - Only quality_check provides real validation and scoring
+   - decision="accept" (score ≥20): Post is high quality, still run apply_fixes
    - decision="revise" (score 18-19): Good but could be better, surgical fixes provided
    - decision="reject" (score <18): Multiple issues, surgical fixes provided
    - issues array has severity: critical/high/medium/low
-   
+
    AI TELL SEVERITIES:
    - Contrast framing: ALWAYS severity="critical" (must fix)
    - Rule of three: ALWAYS severity="critical" (must fix)
@@ -566,12 +571,12 @@ AVAILABLE TOOLS:
 5. mcp__linkedin_tools__apply_fixes
    Input: {"post": str, "issues_json": str}
    Returns: JSON with {revised_post, changes_made: [{issue_addressed, original, revised, impact}], estimated_new_score: int}
-   What it does: 
+   What it does:
    - Applies 3-5 SURGICAL fixes (doesn't rewrite whole post)
    - PRESERVES all specifics: numbers, names, dates, emotional language, contractions
    - Targets exact problems from issues array
    - Uses WRITE_LIKE_HUMAN_RULES to ensure fixes sound natural
-   When to use: When quality_check returns issues that need fixing"""
+   When to use: MANDATORY - Always call after quality_check (even if score is 24/25)"""
 
         # Compose base prompt + client context (if exists)
         from integrations.prompt_loader import load_system_prompt
@@ -676,32 +681,53 @@ Topic: {topic}
 Context/Outline:
 {context}
 
-REMEMBER: PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.
+MANDATORY WORKFLOW (NO SHORTCUTS, NO SELF-ASSESSMENT):
 
-STEP 1: Evaluate the Context/Outline above
-- Does it contain substantial content (>200 words)?
-- Does it have strategic narrative and specific language?
-- Does it sound authentic and intentional?
+═══════════════════════════════════════════════════════════
+PHASE 1: DRAFT CREATION
+═══════════════════════════════════════════════════════════
 
-STEP 2: Choose your workflow intelligently
+Evaluate the Context/Outline:
+- Does it contain strategic narrative (>200 words with specific language)?
 
-IF the context contains a strong foundation (strategic narrative, specific language):
-   → Extract the user's exact text from the context
-   → Call quality_check on their EXACT text
-   → If issues found, call apply_fixes for SURGICAL corrections only
-   → Goal: Preserve 80-90% of their exact wording
+IF YES (rich strategic context):
+   → Extract the user's exact thinking
+   → Build on it, don't replace it
    → DO NOT call generate_5_hooks or create_human_draft (user already wrote it!)
 
-IF the context is just a topic or thin outline (<200 words):
+IF NO (topic or thin outline):
    → Call generate_5_hooks to explore angles
-   → Call create_human_draft to build full content
-   → Call inject_proof_points if needed
-   → Call quality_check to evaluate
-   → Call apply_fixes if issues found
+   → Call create_human_draft to build full content (returns ONLY post_text, no scoring)
+   → Call inject_proof_points to add metrics
 
-CRITICAL: The user may have spent time crafting strategic language. Respect their thinking. Only fix AI tells and formatting issues. Don't regenerate what's already great.
+═══════════════════════════════════════════════════════════
+PHASE 2: QUALITY GATE (MANDATORY - NEVER SKIP)
+═══════════════════════════════════════════════════════════
 
-Return the final post (either their text with surgical fixes, or newly generated content)."""
+No matter which path you took in Phase 1, you MUST run:
+
+1. Call quality_check on the draft
+   - This is the ONLY tool that scores posts (0-25)
+   - Detects AI tells (contrast framing, lists, jargon)
+   - Verifies facts with web searches
+   - Returns surgical fix instructions
+
+2. Call apply_fixes with the issues from quality_check
+   - ALWAYS call this (even if score is 24/25)
+   - ALWAYS call this (even if only 1 minor issue)
+   - Surgical corrections preserve 90%+ of original
+
+CRITICAL RULES:
+- create_human_draft does NOT score posts (it just writes)
+- quality_check is the ONLY tool that scores (MANDATORY)
+- apply_fixes is MANDATORY (even for high scores)
+- You do NOT estimate quality yourself
+- Never skip quality_check because you "think it's good"
+
+STRICT WORKFLOW ORDER:
+Draft → quality_check (ALWAYS) → apply_fixes (ALWAYS) → Return final post
+
+Return ONLY the final post after apply_fixes."""
 
         try:
             # Connect if needed with proper error handling
