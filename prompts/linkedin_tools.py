@@ -733,19 +733,13 @@ WRITING CLARITY (Flesch Reading Ease 70+):
 - Break complex ideas into multiple short sentences
 - PRESERVE all details when simplifying (don't drop examples/numbers/names)
 
-Output JSON:
+Output JSON (ONLY post_text, NO self-assessment):
 {{
-  "post_text": "...",
-  "self_assessment": {{
-    "hook": 5,
-    "audience": 4,
-    "headers": 5,
-    "proof": 5,
-    "cta": 4,
-    "total": 23,
-    "notes": "Strong specificity on hook and proof. Audience could include problem statement for score 5."
-  }}
+  "post_text": "..."
 }}
+
+CRITICAL: Do NOT include self_assessment, estimated scores, or quality notes.
+Real validation happens in the quality_check tool. Your job is to write human-sounding content, not to score it.
 
 Character limit for post_text: 2800 chars max.
 NO commentary in post_text. NO labels like "Hook:" or "Section 1:". Just natural post text.

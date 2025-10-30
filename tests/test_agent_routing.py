@@ -79,23 +79,24 @@ class TestAgentRouting:
 
         # For this test, we'll verify the system prompt has correct routing
         assert "BATCH MODE IS THE DEFAULT" in mock_handler.system_prompt
-        assert '99% of content creation requests should use BATCH MODE' in mock_handler.system_prompt
+        assert "RARE EXCEPTION - Co-write mode (1% of requests)" in mock_handler.system_prompt
 
     @pytest.mark.asyncio
     async def test_batch_with_draft_keyword_multipost(self, mock_handler):
         """Test: 'Draft 5 posts' should use BATCH (count overrides 'draft')"""
         user_message = "Draft 5 LinkedIn posts about AI agents"
 
-        # Even though it says "draft", the count >1 means BATCH mode
-        assert "✅ \"Draft 5 posts about AI\" → BATCH (count >1 = BATCH, ignore \"draft\")" in mock_handler.system_prompt
+        # Even though it says "draft", batch mode should be default
+        assert "BATCH MODE IS THE DEFAULT" in mock_handler.system_prompt
 
     @pytest.mark.asyncio
     async def test_batch_help_request(self, mock_handler):
         """Test: 'Help me create content' should use BATCH mode"""
         user_message = "Help me create 10 posts for next week"
 
-        # Generic "help" should not trigger co-write
-        assert "❌ \"Help me write posts\" → BATCH (generic help request)" in mock_handler.system_prompt
+        # Generic "help" should not trigger co-write - check for negative examples
+        assert '"draft", "help", "write", "show me"' in mock_handler.system_prompt
+        assert "DO NOT" in mock_handler.system_prompt
 
     # ============= CO-WRITE MODE TESTS (Should ASK or use co-write tools) =============
 
@@ -104,25 +105,24 @@ class TestAgentRouting:
         """Test: 'Co-write a post with me' should trigger CO-WRITE confirmation"""
         user_message = "Co-write a LinkedIn post with me about AI"
 
-        # Should contain the ASK confirmation text
-        assert 'Check message for EXACT keywords: "co-write", "collaborate with me", "iterate with me"' \
-            in mock_handler.system_prompt
+        # Should contain the explicit co-write keywords
+        assert '"co-write", "collaborate with me", "iterate with me"' in mock_handler.system_prompt
 
     @pytest.mark.asyncio
     async def test_cowrite_collaborate_keyword(self, mock_handler):
         """Test: 'Let's collaborate on content' should trigger CO-WRITE confirmation"""
         user_message = "Let's collaborate on content together"
 
-        # Verify co-write examples are in prompt
-        assert '⚠️ "Let\'s collaborate on content together" → ASK TO CONFIRM' in mock_handler.system_prompt
+        # Verify co-write keyword "collaborate with me" is in prompt
+        assert '"co-write", "collaborate with me", "iterate with me"' in mock_handler.system_prompt
 
     @pytest.mark.asyncio
     async def test_cowrite_iterate_keyword(self, mock_handler):
         """Test: 'I want to iterate with you' should trigger CO-WRITE confirmation"""
         user_message = "I want to iterate with you on this post"
 
-        # Verify iterate is a co-write trigger
-        assert '⚠️ "I want to iterate with you on this" → ASK TO CONFIRM' in mock_handler.system_prompt
+        # Verify "iterate with me" is a co-write trigger keyword
+        assert '"co-write", "collaborate with me", "iterate with me"' in mock_handler.system_prompt
 
     # ============= NEGATIVE TESTS (Should NOT trigger CO-WRITE) =============
 
@@ -131,24 +131,24 @@ class TestAgentRouting:
         """Test: 'Draft a post' (without 'co-write') should use BATCH"""
         user_message = "Draft a LinkedIn post"
 
-        # "Draft" alone should NOT trigger co-write
-        assert '❌ "Draft a post" → BATCH (no "co-write" keyword)' in mock_handler.system_prompt
+        # "Draft" alone should NOT trigger co-write - verify it's in DO NOT list
+        assert '"draft", "help", "write", "show me"' in mock_handler.system_prompt
 
     @pytest.mark.asyncio
     async def test_not_cowrite_show_me(self, mock_handler):
         """Test: 'Show me content' should use BATCH"""
         user_message = "Show me some content about AI"
 
-        # "Show me" should NOT trigger co-write
-        assert '❌ "Show me content about X" → BATCH (showing != co-writing)' in mock_handler.system_prompt
+        # "Show me" should NOT trigger co-write - verify it's in DO NOT list
+        assert '"draft", "help", "write", "show me"' in mock_handler.system_prompt
 
     @pytest.mark.asyncio
     async def test_not_cowrite_help_write(self, mock_handler):
         """Test: 'Help me write posts' should use BATCH"""
         user_message = "Help me write 5 posts about startups"
 
-        # Generic "help write" should NOT trigger co-write
-        assert '❌ "Help me write posts" → BATCH (generic help request)' in mock_handler.system_prompt
+        # Generic "help write" should NOT trigger co-write - verify it's in DO NOT list
+        assert '"draft", "help", "write", "show me"' in mock_handler.system_prompt
 
     # ============= SYSTEM PROMPT STRUCTURE TESTS =============
 
@@ -158,33 +158,32 @@ class TestAgentRouting:
 
         # Verify prominence of BATCH mode
         assert "BATCH MODE IS THE DEFAULT" in prompt
-        assert "99% of content creation requests should use BATCH MODE" in prompt
-        assert "ALWAYS, unless user EXPLICITLY says" in prompt
+        assert "RARE EXCEPTION - Co-write mode (1% of requests)" in prompt
+        assert "Only use if user EXPLICITLY says" in prompt
 
     def test_cowrite_is_rare(self, mock_handler):
         """Test: System prompt emphasizes CO-WRITE is rare"""
         prompt = mock_handler.system_prompt
 
         # Verify CO-WRITE is positioned as rare
-        assert "CO-WRITE MODE (RARE - 1% of requests)" in prompt
-        assert "ONLY use when user EXPLICITLY requests collaboration" in prompt
+        assert "RARE EXCEPTION - Co-write mode (1% of requests)" in prompt
+        assert "Only use if user EXPLICITLY says" in prompt
 
     def test_routing_decision_strict(self, mock_handler):
         """Test: Routing decision tree is strict and clear"""
         prompt = mock_handler.system_prompt
 
         # Verify strict routing rules
-        assert "ROUTING DECISION (STRICT):" in prompt
-        assert 'EXACT keywords: "co-write", "collaborate with me", "iterate with me"' in prompt
-        assert "USE BATCH MODE (default)" in prompt
+        assert "RARE EXCEPTION - Co-write mode" in prompt
+        assert '"co-write", "collaborate with me", "iterate with me"' in prompt
+        assert "BATCH MODE IS THE DEFAULT" in prompt
 
     def test_negative_examples_present(self, mock_handler):
         """Test: Negative examples (DO NOT trigger co-write) are present"""
         prompt = mock_handler.system_prompt
 
         # Verify negative examples exist
-        assert "IMPORTANT: These DO NOT trigger CO-WRITE:" in prompt
-        assert '"draft", "help", "write", "show me"' in prompt
+        assert "DO NOT" in prompt and '"draft", "help", "write", "show me"' in prompt
 
 
 if __name__ == "__main__":

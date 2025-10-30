@@ -673,7 +673,8 @@ rule of three, cringe questions) and formatting issues. Don't regenerate what's 
             'platform': post_spec['platform'],
             'hook': hook,
             'airtable_url': airtable_url,
-            'learnings_summary': learnings_summary
+            'learnings_summary': learnings_summary,
+            'full_result': result  # Include full SDK agent result for single-post display
         }
 
     except Exception as e:
