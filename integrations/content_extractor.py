@@ -87,11 +87,17 @@ EXTRACTION RULES:
 
 1. body: Extract the FINAL, COMPLETE, VERBATIM post content
 
-   PRIORITY 1 - Look for EXPLICIT FINAL MARKERS:
-   - "## ✅ **FINAL LINKEDIN POST**" → Extract everything after this
-   - "## FINAL VERSION:" → Extract everything after this
-   - "Final post:" → Extract everything after this
-   - If you find these markers, ALWAYS use the content that follows them
+   PRIORITY 1 - Look for EXPLICIT FINAL MARKERS (case-insensitive, flexible):
+   - Contains "FINAL POST" (with or without emoji, asterisks, platform name)
+   - Contains "FINAL LINKEDIN" or "FINAL VERSION"
+   - Examples that should match:
+     * "## ✅ **FINAL LINKEDIN POST**"
+     * "## ✅ FINAL POST (Score: 22/30 - High Quality)"
+     * "FINAL VERSION:"
+     * "Final post:"
+     * "Here's your **final LinkedIn post**"
+   - If you find ANY variation of these markers, extract ALL content after them
+   - Stop extracting when you hit dividers like "---" or "What it delivers:"
 
    PRIORITY 2 - If no markers, find the LAST complete post:
    - Scan the ENTIRE output from beginning to end
