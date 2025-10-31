@@ -1171,6 +1171,27 @@ BRIEFING_SLACK_CHANNEL=C12345  # Default channel for briefings
 
 ## Next Steps After Completion
 
+### Immediate Next Priority: Agent SDK Production Hardening
+
+After analytics features are complete (Week 4), the next critical priority is **Agent SDK Production Hardening** to prevent crashes and improve reliability.
+
+**Why:** Current implementation treats Agent SDK like Claude Code desktop (managed product with built-in error handling), but SDK is actually a **library** that requires production infrastructure to be built around it.
+
+**Key Issues to Address:**
+1. **No retry logic** - Single SDK failures crash entire workflow
+2. **Replit instability** - Network hops, CPU throttling, cold starts cause 50%+ of failures
+3. **No context compaction** - Long conversations exceed token limits
+4. **No checkpoints** - Batch operations restart from scratch on failure
+5. **No circuit breaker** - Cascading failures when API is degraded
+
+**See:** ROADMAP.md → Priority 2.5: Agent SDK Production Hardening for full implementation checklist
+
+**Timeline:** Weeks 5-6 (after analytics branch complete)
+
+---
+
+### Future Enhancements
+
 1. Monitor briefing quality (user feedback)
 2. Add A/B testing for briefing formats
 3. Build Ayrshare client for direct publishing (optional)
@@ -1184,4 +1205,6 @@ BRIEFING_SLACK_CHANNEL=C12345  # Default channel for briefings
 **Last Updated:** 2025-01-27
 **Branch:** `analytics`
 **Status:** Phase 0 starting
-**Timeline:** 4 weeks total
+**Timeline:**
+- **Weeks 1-4:** Analytics features (this plan)
+- **Weeks 5-6:** Agent SDK production hardening (see ROADMAP Priority 2.5)
