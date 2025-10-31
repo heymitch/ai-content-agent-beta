@@ -4,6 +4,74 @@ Stores thread_id -> content mapping in Supabase
 """
 from typing import Optional, Dict, Any
 from datetime import datetime
+import time
+import logging
+from functools import wraps
+
+logger = logging.getLogger(__name__)
+
+
+def retry_on_network_error(max_attempts=3, initial_delay=1.0, backoff_factor=2.0):
+    """
+    Decorator to retry operations on network errors with exponential backoff.
+
+    Handles transient network failures like DNS resolution errors, connection timeouts, etc.
+
+    Args:
+        max_attempts: Maximum number of retry attempts (default: 3)
+        initial_delay: Initial delay in seconds before first retry (default: 1.0)
+        backoff_factor: Multiplier for delay after each retry (default: 2.0)
+
+    Returns:
+        Wrapped function with retry logic
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            last_exception = None
+
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    error_type = type(e).__name__
+
+                    # Check if this is a network-related error
+                    is_network_error = (
+                        'ConnectError' in error_type or
+                        'ConnectionError' in error_type or
+                        'TimeoutError' in error_type or
+                        'Timeout' in error_type or
+                        'NetworkError' in error_type or
+                        'Name or service not known' in str(e) or
+                        'Connection refused' in str(e) or
+                        'Connection reset' in str(e)
+                    )
+
+                    if not is_network_error:
+                        # Not a network error - don't retry
+                        logger.error(f"Non-network error in {func.__name__}: {e}")
+                        raise
+
+                    if attempt < max_attempts - 1:
+                        logger.warning(
+                            f"🔄 Network error in {func.__name__} (attempt {attempt + 1}/{max_attempts}): {e}"
+                        )
+                        logger.info(f"   Retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= backoff_factor
+                    else:
+                        logger.error(
+                            f"❌ {func.__name__} failed after {max_attempts} attempts: {e}"
+                        )
+
+            # All attempts failed
+            raise last_exception
+
+        return wrapper
+    return decorator
 
 
 class SlackThreadMemory:
@@ -267,18 +335,25 @@ class SlackThreadMemory:
             'created_at': datetime.utcnow().isoformat()
         }
 
+        @retry_on_network_error(max_attempts=3, initial_delay=1.0, backoff_factor=2.0)
+        def _insert_with_retry():
+            """Inner function with retry logic for network errors"""
+            return self.supabase.table('conversation_history').insert(message_data).execute()
+
         try:
-            result = self.supabase.table('conversation_history').insert(message_data).execute()
+            result = _insert_with_retry()
             print(f"✅ Message saved to conversation_history (thread: {thread_ts[:8]}...)")
             return True
         except Exception as e:
-            print(f"❌ FAILED to save message to conversation_history!")
+            # Even after retries, still failed - log but don't crash the agent
+            print(f"❌ FAILED to save message to conversation_history after retries!")
             print(f"   Error: {e}")
             print(f"   Thread: {thread_ts}")
             print(f"   Role: {role}")
             print(f"   Content length: {len(content)} chars")
             import traceback
             traceback.print_exc()
+            # Return False but don't crash - agent can continue without saving history
             return False
 
     def get_thread_history(self, thread_ts: str, limit: int = 50) -> list:

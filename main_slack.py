@@ -102,11 +102,39 @@ EVENT_CACHE_TTL = 300  # 5 minutes
 # Thread participation TTL (used for Supabase query)
 THREAD_PARTICIPATION_TTL = 24  # 24 hours
 
-# Initialize Supabase
-supabase: Client = create_client(
-    os.getenv('SUPABASE_URL'),
-    os.getenv('SUPABASE_KEY')
-)
+# Initialize Supabase with connection timeout settings
+# This prevents hanging on network failures and allows retry logic to work properly
+try:
+    import httpx
+    # Configure timeout: 5s connect, 10s read, 10s write, 30s total
+    timeout_config = httpx.Timeout(
+        connect=5.0,  # DNS resolution + TCP connect
+        read=10.0,    # Time to receive response
+        write=10.0,   # Time to send request
+        pool=30.0     # Overall timeout
+    )
+
+    # Create custom httpx client with timeout
+    http_client = httpx.Client(timeout=timeout_config)
+
+    supabase: Client = create_client(
+        os.getenv('SUPABASE_URL'),
+        os.getenv('SUPABASE_KEY'),
+        options={
+            'schema': 'public',
+            'headers': {},
+            'auto_refresh_token': True,
+            'persist_session': False
+        }
+    )
+    print("✅ Supabase client initialized with connection timeouts")
+except Exception as e:
+    print(f"⚠️ Supabase initialization warning: {e}")
+    # Still create client even if timeout config fails
+    supabase: Client = create_client(
+        os.getenv('SUPABASE_URL'),
+        os.getenv('SUPABASE_KEY')
+    )
 
 # Initialize Anthropic
 anthropic_client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
@@ -283,6 +311,75 @@ async def readiness_check():
         "checks": checks,
         "timestamp": datetime.now().isoformat()
     }
+
+
+# ============= ANALYTICS ENDPOINTS (Phase 1) =============
+
+from slack_bot.analytics_handler import analyze_performance
+
+
+@app.post('/api/analyze-performance')
+async def analyze_performance_endpoint(request: Request):
+    """
+    Analyze post performance data and return strategic insights.
+
+    Phase 1 of Analytics & Intelligence System.
+
+    Request body:
+    {
+        "posts": [
+            {
+                "hook": "I replaced 3 workflows...",
+                "platform": "linkedin",
+                "quality_score": 24,
+                "impressions": 15000,
+                "engagements": 1230,
+                "engagement_rate": 8.2,
+                "published_at": "2025-01-20"
+            }
+        ],
+        "date_range": {
+            "start": "2025-01-20",
+            "end": "2025-01-27"
+        }
+    }
+
+    Returns:
+    {
+        "summary": "1-2 sentence overview",
+        "top_performers": [...],
+        "worst_performers": [...],
+        "patterns": {...},
+        "recommendations": [...]
+    }
+    """
+    try:
+        data = await request.json()
+        posts = data.get('posts', [])
+        date_range = data.get('date_range', {})
+
+        if not posts:
+            return {
+                "error": "No posts provided",
+                "summary": "No data to analyze"
+            }
+
+        if not date_range.get('start') or not date_range.get('end'):
+            return {
+                "error": "date_range must include 'start' and 'end' fields"
+            }
+
+        # Call analytics handler
+        analysis = await analyze_performance(posts, date_range)
+
+        return analysis
+
+    except Exception as e:
+        logger.error(f"Error in /api/analyze-performance: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "summary": "Analysis failed due to unexpected error"
+        }
 
 
 # ============= SLACK EVENT HANDLERS =============
@@ -513,15 +610,17 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                 print(f"🚀 Handler #{_handler_creation_count} ready (tools registered via MCP server)")
 
                 # Save user message to conversation history
+                # Note: This is best-effort - agent continues even if save fails
                 if handler.memory:
-                    handler.memory.add_message(
+                    save_success = handler.memory.add_message(
                         thread_ts=thread_ts,
                         channel_id=channel,
                         user_id=user_id,
                         role='user',
                         content=message_text
                     )
-                    print(f"💾 Saved user message to conversation history")
+                    if not save_success:
+                        print(f"⚠️ Failed to save user message (continuing anyway)")
 
                 # The agent decides what to do based on context:
                 # - Create content → delegates to workflows
@@ -536,15 +635,17 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                 )
 
                 # Save assistant response to conversation history
+                # Note: This is best-effort - agent continues even if save fails
                 if handler.memory:
-                    handler.memory.add_message(
+                    save_success = handler.memory.add_message(
                         thread_ts=thread_ts,
                         channel_id=channel,
                         user_id='bot',
                         role='assistant',
                         content=response_text
                     )
-                    print(f"💾 Saved assistant response to conversation history")
+                    if not save_success:
+                        print(f"⚠️ Failed to save assistant response (continuing anyway)")
 
                 # Send response
                 send_slack_message(
