@@ -285,6 +285,75 @@ async def readiness_check():
     }
 
 
+# ============= ANALYTICS ENDPOINTS (Phase 1) =============
+
+from slack_bot.analytics_handler import analyze_performance
+
+
+@app.post('/api/analyze-performance')
+async def analyze_performance_endpoint(request: Request):
+    """
+    Analyze post performance data and return strategic insights.
+
+    Phase 1 of Analytics & Intelligence System.
+
+    Request body:
+    {
+        "posts": [
+            {
+                "hook": "I replaced 3 workflows...",
+                "platform": "linkedin",
+                "quality_score": 24,
+                "impressions": 15000,
+                "engagements": 1230,
+                "engagement_rate": 8.2,
+                "published_at": "2025-01-20"
+            }
+        ],
+        "date_range": {
+            "start": "2025-01-20",
+            "end": "2025-01-27"
+        }
+    }
+
+    Returns:
+    {
+        "summary": "1-2 sentence overview",
+        "top_performers": [...],
+        "worst_performers": [...],
+        "patterns": {...},
+        "recommendations": [...]
+    }
+    """
+    try:
+        data = await request.json()
+        posts = data.get('posts', [])
+        date_range = data.get('date_range', {})
+
+        if not posts:
+            return {
+                "error": "No posts provided",
+                "summary": "No data to analyze"
+            }
+
+        if not date_range.get('start') or not date_range.get('end'):
+            return {
+                "error": "date_range must include 'start' and 'end' fields"
+            }
+
+        # Call analytics handler
+        analysis = await analyze_performance(posts, date_range)
+
+        return analysis
+
+    except Exception as e:
+        logger.error(f"Error in /api/analyze-performance: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "summary": "Analysis failed due to unexpected error"
+        }
+
+
 # ============= SLACK EVENT HANDLERS =============
 
 @app.post('/slack/events')

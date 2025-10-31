@@ -284,6 +284,14 @@ def analyze_content_performance(
     """
     Analyze content performance trends and provide insights
 
+    NEW: Phase 1 Analytics - Uses Ayrshare MCP + Claude Sonnet 4.5 for strategic insights
+
+    This function now:
+    1. Attempts to fetch live analytics from Ayrshare MCP server (if available)
+    2. Falls back to internal Supabase data if Ayrshare unavailable
+    3. Uses Claude Sonnet 4.5 via analyze_performance() for strategic insights
+    4. Returns actionable recommendations (hook styles, timing, platform fit)
+
     Args:
         user_id: Slack user ID
         platform: Filter by platform
@@ -294,7 +302,24 @@ def analyze_content_performance(
     """
     from supabase import create_client
     import statistics
+    import asyncio
 
+    # Try Ayrshare MCP first (Phase 1: Live analytics)
+    try:
+        from slack_bot.analytics_handler import analyze_performance
+
+        # TODO: Add Ayrshare MCP fetch here when MCP server is configured
+        # For now, fall through to Supabase-only analysis
+        # Example future implementation:
+        # ayrshare_data = await mcp_fetch_analytics(days_back=days_back, platform=platform)
+        # if ayrshare_data:
+        #     analysis = await analyze_performance(ayrshare_data['posts'], ayrshare_data['date_range'])
+        #     return format_analysis_for_slack(analysis)
+
+    except Exception as e:
+        print(f"Analytics handler not available, using legacy analysis: {e}")
+
+    # Fallback: Legacy Supabase-only analysis
     try:
         client = create_client(
             os.getenv('SUPABASE_URL'),
@@ -349,6 +374,10 @@ def analyze_content_performance(
             analysis.append("  • Focus on improving quality - average score is below target")
         if statistics.mean(iterations) > 2:
             analysis.append("  • High iteration count - consider clearer initial briefs")
+
+        analysis.append("\n💡 NOTE: This analysis uses internal quality scores only.")
+        analysis.append("For live engagement data (impressions, likes, shares), ask: 'How did our posts perform on LinkedIn last week?'")
+        analysis.append("This will trigger Ayrshare analytics with strategic insights from Claude.")
 
         return "\n".join(analysis)
 

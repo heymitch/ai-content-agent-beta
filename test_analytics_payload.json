@@ -1,0 +1,62 @@
+{
+  "posts": [
+    {
+      "hook": "I replaced 3 workflows with a single AI agent and saved 15 hours/week",
+      "platform": "linkedin",
+      "quality_score": 24,
+      "impressions": 15000,
+      "engagements": 1230,
+      "engagement_rate": 8.2,
+      "published_at": "2025-01-20"
+    },
+    {
+      "hook": "Here's a quick tip about content creation",
+      "platform": "linkedin",
+      "quality_score": 18,
+      "impressions": 8000,
+      "engagements": 320,
+      "engagement_rate": 4.0,
+      "published_at": "2025-01-21"
+    },
+    {
+      "hook": "Stop doing X - it's killing your engagement",
+      "platform": "twitter",
+      "quality_score": 22,
+      "impressions": 12000,
+      "engagements": 840,
+      "engagement_rate": 7.0,
+      "published_at": "2025-01-22"
+    },
+    {
+      "hook": "5 ways to automate your content workflow",
+      "platform": "linkedin",
+      "quality_score": 23,
+      "impressions": 14000,
+      "engagements": 1050,
+      "engagement_rate": 7.5,
+      "published_at": "2025-01-23"
+    },
+    {
+      "hook": "Let me share something interesting today",
+      "platform": "twitter",
+      "quality_score": 16,
+      "impressions": 5000,
+      "engagements": 150,
+      "engagement_rate": 3.0,
+      "published_at": "2025-01-24"
+    },
+    {
+      "hook": "My biggest mistake was ignoring AI for 6 months",
+      "platform": "linkedin",
+      "quality_score": 25,
+      "impressions": 18000,
+      "engagements": 1440,
+      "engagement_rate": 8.0,
+      "published_at": "2025-01-25"
+    }
+  ],
+  "date_range": {
+    "start": "2025-01-20",
+    "end": "2025-01-27"
+  }
+}
