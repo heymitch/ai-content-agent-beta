@@ -285,9 +285,10 @@ async def readiness_check():
     }
 
 
-# ============= ANALYTICS ENDPOINTS (Phase 1) =============
+# ============= ANALYTICS ENDPOINTS (Phase 1, 3-4) =============
 
 from slack_bot.analytics_handler import analyze_performance
+from slack_bot.briefing_handler import generate_briefing
 
 
 @app.post('/api/analyze-performance')
@@ -351,6 +352,152 @@ async def analyze_performance_endpoint(request: Request):
         return {
             "error": str(e),
             "summary": "Analysis failed due to unexpected error"
+        }
+
+
+@app.post('/api/generate-briefing')
+async def generate_briefing_endpoint(request: Request):
+    """
+    Generate weekly content intelligence briefing.
+
+    Phase 3 of Analytics & Intelligence System.
+
+    Request body:
+    {
+        "analytics": {
+            "summary": "Engagement up 15%...",
+            "top_performers": [...],
+            "worst_performers": [...],
+            "patterns": {...},
+            "recommendations": [...]
+        },
+        "research": {
+            "trending_topics": [...]  // Optional - from agent's web_search
+        },
+        "user_context": {
+            "recent_topics": ["AI agents", "automation"],
+            "content_goals": "thought leadership",
+            "audience": "enterprise decision makers"
+        }
+    }
+
+    Returns:
+    {
+        "briefing_markdown": "# 📊 Weekly Content Intelligence...",
+        "suggested_topics": [
+            "3 ways OpenAI's new API changes enterprise workflows",
+            "I analyzed 50 AI adoption failures—here's what worked"
+        ],
+        "priority_actions": [
+            "Create 5 posts using 'Specific Number Hook' pattern",
+            "Write about OpenAI API announcement (trending, relevance: 9)"
+        ]
+    }
+    """
+    try:
+        data = await request.json()
+        analytics = data.get('analytics', {})
+        research = data.get('research')  # Optional
+        user_context = data.get('user_context')  # Optional
+
+        if not analytics:
+            return {
+                "error": "No analytics data provided",
+                "briefing_markdown": "# Error\n\nNo analytics data to generate briefing.",
+                "suggested_topics": [],
+                "priority_actions": []
+            }
+
+        # Call briefing handler
+        briefing = await generate_briefing(
+            analytics=analytics,
+            research=research,
+            user_context=user_context
+        )
+
+        return briefing
+
+    except Exception as e:
+        logger.error(f"Error in /api/generate-briefing: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "briefing_markdown": f"# Error\n\nFailed to generate briefing: {str(e)}",
+            "suggested_topics": [],
+            "priority_actions": []
+        }
+
+
+@app.post('/api/slack/post-message')
+async def slack_post_message_endpoint(request: Request):
+    """
+    Post message to Slack (for n8n to send briefings proactively).
+
+    Phase 4 of Analytics & Intelligence System.
+
+    Request body:
+    {
+        "channel_id": "C12345",
+        "message": "# 📊 Weekly Content Intelligence\n\n...",
+        "thread_ts": null,  // Optional - post to thread
+        "user_id": "U12345"  // Optional - for context/logging
+    }
+
+    Returns:
+    {
+        "thread_ts": "1234567890.123456",
+        "channel_id": "C12345",
+        "message_url": "https://workspace.slack.com/archives/C12345/p1234567890123456"
+    }
+    """
+    try:
+        data = await request.json()
+        channel_id = data.get('channel_id')
+        message = data.get('message')
+        thread_ts = data.get('thread_ts')  # Optional
+        user_id = data.get('user_id')  # Optional, for logging
+
+        if not channel_id or not message:
+            return {
+                "error": "Missing required fields: channel_id, message"
+            }
+
+        logger.info(f"Posting message to Slack channel {channel_id} (user: {user_id or 'n8n'})")
+
+        # Post message to Slack
+        response = slack_client.chat_postMessage(
+            channel=channel_id,
+            text=message,
+            thread_ts=thread_ts,
+            mrkdwn=True
+        )
+
+        # Extract thread_ts and build message URL
+        result_thread_ts = response.get('ts')
+        workspace_url = "https://app.slack.com"  # Fallback if we can't get team domain
+
+        # Try to get workspace URL from team info
+        try:
+            team_info = slack_client.team_info()
+            team_domain = team_info.get('team', {}).get('domain', 'app')
+            workspace_url = f"https://{team_domain}.slack.com"
+        except Exception as e:
+            logger.warning(f"Could not get team domain: {e}")
+
+        # Build message permalink
+        message_url = f"{workspace_url}/archives/{channel_id}/p{result_thread_ts.replace('.', '')}"
+
+        logger.info(f"Message posted successfully: {message_url}")
+
+        return {
+            "thread_ts": result_thread_ts,
+            "channel_id": channel_id,
+            "message_url": message_url
+        }
+
+    except Exception as e:
+        logger.error(f"Error in /api/slack/post-message: {e}", exc_info=True)
+        return {
+            "error": str(e)
         }
 
 

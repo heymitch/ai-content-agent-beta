@@ -1,0 +1,99 @@
+{
+  "analytics": {
+    "summary": "Your engagement is up 15% this week. Best performer: 'I replaced 3 workflows' (8.2% engagement vs 5.3% avg)",
+    "top_performers": [
+      {
+        "hook": "I replaced 3 workflows with a single AI agent and saved 15 hours/week",
+        "platform": "linkedin",
+        "engagement_rate": 8.2,
+        "why_it_worked": "Specific Number Hook with concrete outcome (3 workflows, 15 hours/week). Personal success story with measurable results."
+      },
+      {
+        "hook": "My biggest mistake was ignoring AI for 6 months",
+        "platform": "linkedin",
+        "engagement_rate": 8.0,
+        "why_it_worked": "Mistake Admission hook creates vulnerability. Specific timeframe (6 months) adds credibility."
+      },
+      {
+        "hook": "5 ways to automate your content workflow",
+        "platform": "linkedin",
+        "engagement_rate": 7.5,
+        "why_it_worked": "Specific Number Hook (5 ways) with actionable promise. Clear value proposition."
+      }
+    ],
+    "worst_performers": [
+      {
+        "hook": "Let me share something interesting today",
+        "platform": "twitter",
+        "engagement_rate": 3.0,
+        "why_it_failed": "Generic hook with no specificity or curiosity gap. No clear value proposition."
+      },
+      {
+        "hook": "Here's a quick tip about content creation",
+        "platform": "linkedin",
+        "engagement_rate": 4.0,
+        "why_it_failed": "Vague and overused pattern. No specific promise or unique angle."
+      }
+    ],
+    "patterns": {
+      "best_hook_style": "Specific Number Hook (8.2% avg engagement)",
+      "best_platform": "LinkedIn (6.1% avg engagement)",
+      "best_time": "Tuesday mornings (2.3x avg)",
+      "avg_engagement_rate": 5.3,
+      "quality_score_correlation": "Posts with quality_score 23+ averaged 1.8x engagement"
+    },
+    "recommendations": [
+      "Use more Specific Number Hooks - they averaged 8.2% engagement vs 4.1% for Generic hooks",
+      "Focus on LinkedIn over Twitter - 6.1% vs 2.8% avg engagement",
+      "Post on Tuesday mornings when engagement is 2.3x higher",
+      "Maintain quality_score above 23 - posts above this threshold averaged 1.8x engagement",
+      "Avoid Generic hooks like 'Let me share' - they consistently underperformed at 4.1% engagement"
+    ]
+  },
+  "research": {
+    "trending_topics": [
+      {
+        "title": "OpenAI launches GPT-4.5 Turbo with 40% cost reduction",
+        "url": "https://techcrunch.com/2025/01/openai-gpt4-5-turbo",
+        "summary": "OpenAI announced GPT-4.5 Turbo with significantly faster response times and 40% lower API costs compared to GPT-4 Turbo.",
+        "relevance": 9,
+        "why_relevant": "Your audience cares deeply about API costs and efficiency gains. Cost reduction is a major pain point for enterprise AI adoption.",
+        "content_angle": "Compare your current AI spend before/after switching to GPT-4.5. Show actual invoice screenshots with dollar amounts saved per month."
+      },
+      {
+        "title": "Enterprise AI adoption doubles in 2025, new study finds",
+        "url": "https://venturebeat.com/2025/01/enterprise-ai-adoption-study",
+        "summary": "New research shows enterprise AI adoption grew 2x year-over-year, with 67% of Fortune 500 companies now using AI in production.",
+        "relevance": 8,
+        "why_relevant": "Validates the market opportunity and urgency. Decision makers need proof that AI is becoming table stakes.",
+        "content_angle": "Interview 3 decision makers who implemented AI in 2024 - what worked, what failed, what they'd do differently. Get specific numbers on ROI."
+      },
+      {
+        "title": "The hidden cost of AI hallucinations in enterprise",
+        "url": "https://forbes.com/2025/01/ai-hallucinations-enterprise-cost",
+        "summary": "Analysis reveals AI hallucinations cost enterprises an average of $2.3M annually in wasted effort and reputation damage.",
+        "relevance": 7,
+        "why_relevant": "Major concern for risk-averse enterprise buyers. Contrarian angle - not just celebrating AI wins.",
+        "content_angle": "Share 3 real hallucination stories from your experience. Show the monitoring/validation tools you use to catch them. Specific prevention tactics."
+      }
+    ],
+    "search_queries_used": [
+      "AI automation news 7 days",
+      "enterprise AI trends 2025"
+    ],
+    "sources": [
+      "TechCrunch",
+      "VentureBeat",
+      "Forbes"
+    ]
+  },
+  "user_context": {
+    "recent_topics": [
+      "AI agents",
+      "workflow automation",
+      "content creation tools"
+    ],
+    "content_goals": "thought leadership and enterprise credibility",
+    "audience": "enterprise decision makers and startup founders"
+  }
+}
