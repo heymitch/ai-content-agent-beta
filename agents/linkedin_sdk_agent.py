@@ -773,75 +773,139 @@ Return ONLY the final post after apply_fixes."""
 
             print(f"⏳ LinkedIn agent processing...", flush=True)
 
-            # Collect the response WITHOUT timeout (supports bulk operations)
+            # Collect the response WITH timeouts to prevent silent hangs
             final_output = ""
             message_count = 0
 
-            async def collect_response():
-                    nonlocal final_output, message_count
-                    async for msg in client.receive_response():
-                        message_count += 1
-                        msg_type = type(msg).__name__
-                        print(f"   📬 Received message {message_count}: type={msg_type}", flush=True)
+            # Timeout configuration (Phase 0: Async/Reliability Fixes)
+            idle_timeout = 60  # seconds - no message triggers recovery
+            overall_deadline = 240  # seconds - max total time
+            max_stream_retries = 2  # reconnect attempts
 
-                        # Track all AssistantMessages with text content
-                        if msg_type == 'AssistantMessage':
-                            if hasattr(msg, 'content'):
-                                if isinstance(msg.content, list):
-                                    for block in msg.content:
-                                        if isinstance(block, dict):
-                                            block_type = block.get('type', 'unknown')
-                                            if block_type == 'text':
-                                                text_content = block.get('text', '')
-                                                if text_content:
-                                                    final_output = text_content
-                                                    # NEW: Log preview of message content
-                                                    preview = text_content[:300].replace('\n', ' ')
-                                                    print(f"      ✅ Got text output ({len(text_content)} chars)")
-                                                    print(f"         PREVIEW: {preview}...")
-                                            elif block_type == 'tool_use':
-                                                # NEW: Log tool calls from SDK agent
-                                                tool_name = block.get('name', 'unknown')
-                                                tool_input = str(block.get('input', {}))[:150]
-                                                print(f"      🔧 SDK Agent calling tool: {tool_name}")
-                                                print(f"         Input preview: {tool_input}...")
-                                        elif hasattr(block, 'text'):
-                                            text_content = block.text
+            async def collect_response_with_timeout():
+                nonlocal final_output, message_count
+
+                attempt = 0
+                start_time = asyncio.get_event_loop().time()
+
+                while attempt <= max_stream_retries:
+                    try:
+                        # Get async iterator from receive_response()
+                        aiter = client.receive_response().__aiter__()
+
+                        while True:
+                            # Check overall deadline
+                            elapsed = asyncio.get_event_loop().time() - start_time
+                            if elapsed > overall_deadline:
+                                raise TimeoutError(f"Stream deadline exceeded ({overall_deadline}s)")
+
+                            try:
+                                # Wait for next message with idle timeout
+                                msg = await asyncio.wait_for(aiter.__anext__(), timeout=idle_timeout)
+                                message_count += 1
+                                msg_type = type(msg).__name__
+                                print(f"   📬 Received message {message_count}: type={msg_type}", flush=True)
+
+                                # Track all AssistantMessages with text content
+                                if msg_type == 'AssistantMessage':
+                                    if hasattr(msg, 'content'):
+                                        if isinstance(msg.content, list):
+                                            for block in msg.content:
+                                                if isinstance(block, dict):
+                                                    block_type = block.get('type', 'unknown')
+                                                    if block_type == 'text':
+                                                        text_content = block.get('text', '')
+                                                        if text_content:
+                                                            final_output = text_content
+                                                            preview = text_content[:300].replace('\n', ' ')
+                                                            print(f"      ✅ Got text output ({len(text_content)} chars)")
+                                                            print(f"         PREVIEW: {preview}...")
+                                                    elif block_type == 'tool_use':
+                                                        tool_name = block.get('name', 'unknown')
+                                                        tool_input = str(block.get('input', {}))[:150]
+                                                        print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                                        print(f"         Input preview: {tool_input}...")
+                                                elif hasattr(block, 'text'):
+                                                    text_content = block.text
+                                                    if text_content:
+                                                        final_output = text_content
+                                                        preview = text_content[:300].replace('\n', ' ')
+                                                        print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
+                                                        print(f"         PREVIEW: {preview}...")
+                                                elif hasattr(block, 'type') and block.type == 'tool_use':
+                                                    tool_name = getattr(block, 'name', 'unknown')
+                                                    tool_input = str(getattr(block, 'input', {}))[:150]
+                                                    print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                                    print(f"         Input preview: {tool_input}...")
+                                        elif hasattr(msg.content, 'text'):
+                                            text_content = msg.content.text
                                             if text_content:
                                                 final_output = text_content
                                                 preview = text_content[:300].replace('\n', ' ')
-                                                print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
+                                                print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
                                                 print(f"         PREVIEW: {preview}...")
-                                        elif hasattr(block, 'type') and block.type == 'tool_use':
-                                            # Object-style tool_use block
-                                            tool_name = getattr(block, 'name', 'unknown')
-                                            tool_input = str(getattr(block, 'input', {}))[:150]
-                                            print(f"      🔧 SDK Agent calling tool: {tool_name}")
-                                            print(f"         Input preview: {tool_input}...")
-                                elif hasattr(msg.content, 'text'):
-                                    text_content = msg.content.text
-                                    if text_content:
-                                        final_output = text_content
-                                        preview = text_content[:300].replace('\n', ' ')
-                                        print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
-                                        print(f"         PREVIEW: {preview}...")
 
-                                    # Check for tool_use in content blocks (object style)
-                                    if hasattr(msg.content, '__iter__'):
-                                        for item in msg.content:
-                                            if hasattr(item, 'type') and item.type == 'tool_use':
-                                                tool_name = getattr(item, 'name', 'unknown')
-                                                print(f"      🔧 SDK Agent calling tool: {tool_name}")
-                            elif hasattr(msg, 'text'):
-                                text_content = msg.text
-                                if text_content:
-                                    final_output = text_content
-                                    preview = text_content[:300].replace('\n', ' ')
-                                    print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
-                                    print(f"         PREVIEW: {preview}...")
+                                            # Check for tool_use in content blocks (object style)
+                                            if hasattr(msg.content, '__iter__'):
+                                                for item in msg.content:
+                                                    if hasattr(item, 'type') and item.type == 'tool_use':
+                                                        tool_name = getattr(item, 'name', 'unknown')
+                                                        print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                    elif hasattr(msg, 'text'):
+                                        text_content = msg.text
+                                        if text_content:
+                                            final_output = text_content
+                                            preview = text_content[:300].replace('\n', ' ')
+                                            print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
+                                            print(f"         PREVIEW: {preview}...")
 
-            # Call the collection function WITHOUT timeout (supports bulk operations)
-            await collect_response()
+                            except asyncio.TimeoutError:
+                                # Idle timeout - no message received in {idle_timeout} seconds
+                                attempt += 1
+                                logger.warning(
+                                    f"⚠️  Stream idle timeout (attempt {attempt}/{max_stream_retries + 1}). "
+                                    f"No message received in {idle_timeout}s. Reconnecting..."
+                                )
+
+                                if attempt > max_stream_retries:
+                                    raise TimeoutError(
+                                        f"Max stream retries exceeded ({max_stream_retries}). "
+                                        f"Last message count: {message_count}"
+                                    )
+
+                                # Recreate session and reconnect
+                                print(f"   🔄 Recreating session and reconnecting (attempt {attempt})...")
+
+                                # Delete old session to force recreation
+                                if session_id in self.sessions:
+                                    del self.sessions[session_id]
+
+                                client = self.get_or_create_session(session_id)
+                                await client.connect()
+
+                                # Resume with note to avoid duplicating work
+                                resume_prompt = creation_prompt + "\n\n[RESUME: Previous stream timed out. Continue where you left off.]"
+                                await client.query(resume_prompt)
+
+                                # Start new iterator
+                                break  # Exit inner while loop to restart with new iterator
+
+                            except StopAsyncIteration:
+                                # Normal completion
+                                print(f"   ✅ Stream completed normally")
+                                return
+
+                    except TimeoutError:
+                        # Overall deadline exceeded or max retries hit
+                        raise
+
+                    except Exception as e:
+                        # Other errors
+                        logger.error(f"❌ Error in stream collection: {type(e).__name__}: {e}")
+                        raise
+
+            # Call the collection function with timeout protection
+            await collect_response_with_timeout()
 
             print(f"\n   ✅ Stream complete after {message_count} messages")
             print(f"   📝 Final output: {len(final_output)} chars")
