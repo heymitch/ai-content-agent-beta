@@ -102,39 +102,13 @@ EVENT_CACHE_TTL = 300  # 5 minutes
 # Thread participation TTL (used for Supabase query)
 THREAD_PARTICIPATION_TTL = 24  # 24 hours
 
-# Initialize Supabase with connection timeout settings
-# This prevents hanging on network failures and allows retry logic to work properly
-try:
-    import httpx
-    # Configure timeout: 5s connect, 10s read, 10s write, 30s total
-    timeout_config = httpx.Timeout(
-        connect=5.0,  # DNS resolution + TCP connect
-        read=10.0,    # Time to receive response
-        write=10.0,   # Time to send request
-        pool=30.0     # Overall timeout
-    )
-
-    # Create custom httpx client with timeout
-    http_client = httpx.Client(timeout=timeout_config)
-
-    supabase: Client = create_client(
-        os.getenv('SUPABASE_URL'),
-        os.getenv('SUPABASE_KEY'),
-        options={
-            'schema': 'public',
-            'headers': {},
-            'auto_refresh_token': True,
-            'persist_session': False
-        }
-    )
-    print("✅ Supabase client initialized with connection timeouts")
-except Exception as e:
-    print(f"⚠️ Supabase initialization warning: {e}")
-    # Still create client even if timeout config fails
-    supabase: Client = create_client(
-        os.getenv('SUPABASE_URL'),
-        os.getenv('SUPABASE_KEY')
-    )
+# Initialize Supabase
+# Network reliability is handled by retry logic in slack_bot/memory.py
+supabase: Client = create_client(
+    os.getenv('SUPABASE_URL'),
+    os.getenv('SUPABASE_KEY')
+)
+print("✅ Supabase client initialized (retry logic enabled in memory layer)")
 
 # Initialize Anthropic
 anthropic_client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
