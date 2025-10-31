@@ -24,6 +24,10 @@ httpx  # For async API calls (GPTZero)
 python-dotenv
 inflection
 
+# Production hardening (Priority 2.5)
+structlog==24.1.0           # Structured logging with context
+circuitbreaker==1.4.0       # Circuit breaker pattern
+
 # Document processing (optional - not used in Slack-only)
 pypdf2
 python-docx
