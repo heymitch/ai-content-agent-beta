@@ -40,6 +40,61 @@ load_dotenv()
 # Initialize FastAPI
 app = FastAPI()
 
+# ============= BACKGROUND TASK SUPERVISION (Phase 0.2) =============
+# Prevents silent failures by logging all exceptions and optionally restarting tasks
+
+import logging
+logger = logging.getLogger(__name__)
+
+def supervise_task(coro, *, name: str, max_restarts: int = 0):
+    """
+    Supervise async coroutine with exception logging and optional restart.
+
+    Args:
+        coro: Async coroutine to supervise
+        name: Task name for logging
+        max_restarts: Number of automatic restarts on failure (0 = no restart)
+
+    Returns:
+        asyncio.Task with done_callback for exception logging
+    """
+    attempts = 0
+
+    async def runner():
+        nonlocal attempts
+        while True:
+            try:
+                return await coro
+            except Exception as e:
+                attempts += 1
+                logger.exception(
+                    f"❌ Background task '{name}' failed (attempt {attempts})",
+                    exc_info=e
+                )
+
+                if attempts > max_restarts:
+                    logger.error(f"🛑 Task '{name}' exceeded max restarts ({max_restarts}), giving up")
+                    raise
+
+                # Exponential backoff before retry
+                backoff_seconds = min(1.0 * (2 ** (attempts - 1)), 30)  # Max 30s
+                logger.info(f"🔄 Retrying task '{name}' in {backoff_seconds}s...")
+                await asyncio.sleep(backoff_seconds)
+
+    task = asyncio.create_task(runner(), name=name)
+
+    # Add done callback to catch any exceptions that slip through
+    def log_exception(t: asyncio.Task):
+        try:
+            t.result()  # This will raise if task failed
+        except asyncio.CancelledError:
+            logger.info(f"⚠️  Task '{name}' was cancelled")
+        except Exception as e:
+            logger.error(f"💥 Task '{name}' crashed with uncaught exception: {e}")
+
+    task.add_done_callback(log_exception)
+    return task
+
 # Event deduplication cache (stores event_id for 5 minutes)
 processed_events = {}
 EVENT_CACHE_TTL = 300  # 5 minutes
@@ -187,12 +242,48 @@ def format_for_slack(text: str) -> str:
 
 @app.get('/healthz')
 def health_check():
-    """Health check endpoint"""
+    """Basic health check - returns 200 if server is up"""
     return {
-        'status': 'healthy',
+        'status': 'ok',
         'timestamp': datetime.now().isoformat(),
         'service': 'slack-content-agent'
     }
+
+
+@app.get('/readyz')
+async def readiness_check():
+    """
+    Readiness check - verifies agent can actually function.
+    Phase 0.3: Enhanced health checks
+    """
+    checks = {}
+    ready = True
+
+    # Check 1: Anthropic API key present
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    checks["anthropic_key"] = "present" if anthropic_key else "missing"
+    if not anthropic_key:
+        ready = False
+
+    # Check 2: Supabase credentials present
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    checks["supabase"] = "configured" if (supabase_url and supabase_key) else "missing"
+    if not (supabase_url and supabase_key):
+        ready = False
+
+    # Check 3: Slack bot token present
+    slack_token = os.getenv("SLACK_BOT_TOKEN")
+    checks["slack_token"] = "present" if slack_token else "missing"
+    if not slack_token:
+        ready = False
+
+    return {
+        "ready": ready,
+        "checks": checks,
+        "timestamp": datetime.now().isoformat()
+    }
+
 
 # ============= SLACK EVENT HANDLERS =============
 
@@ -575,15 +666,17 @@ async def slack_command_batch(request: Request):
             'text': '❌ First parameter must be a number'
         }
 
-    # Start batch creation
-    asyncio.create_task(
+    # Start batch creation with supervision (Phase 0.2)
+    supervise_task(
         handler.handle_batch_request(
             count=count,
             platform=platform,
             topic=topic,
             user_id=user_id,
             channel=channel_id
-        )
+        ),
+        name=f"batch_request_{platform}_{count}posts",
+        max_restarts=0  # Don't auto-restart batch operations
     )
 
     return {
