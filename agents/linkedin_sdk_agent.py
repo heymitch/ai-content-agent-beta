@@ -29,7 +29,7 @@ from utils.structured_logger import (
     log_retry_attempt
 )
 from utils.retry_decorator import async_retry_with_backoff, RETRIABLE_EXCEPTIONS
-from utils.circuit_breaker import CircuitBreaker
+from utils.circuit_breaker import CircuitBreaker, CircuitState
 
 # Load environment variables for API keys
 load_dotenv()
