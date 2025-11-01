@@ -1125,7 +1125,15 @@ STEP 1: SCAN FOR VIOLATIONS
 Go through the post line-by-line and find:
 - Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y", "Rather than X")
 - Masked contrast patterns ("Instead of X", "but rather")
-- Formulaic headers ("THE X:", "HERE'S HOW:", Title Case In Headings)
+- Formulaic headers (ANY case):
+  * "The X:" pattern → "The promise:", "The reality:", "The result:", "The truth:", "The catch:", "The process:", "The best part:"
+  * "HERE'S HOW:", "HERE'S WHAT:", Title Case In Headings
+  * These are AI tells - convert to natural language or delete
+- Short questions (<8 words ending in "?"):
+  * "For me?" → Delete or expand to statement: "For me, the ability to..."
+  * "The truth?" → Delete entirely
+  * "What happened?" → Expand: "What did the data show after 30 days?"
+  * Count words - if <8 words AND ends with "?", it's a violation
 - Section summaries ("In summary", "In conclusion")
 - Promotional puffery ("stands as", "testament", "rich heritage")
 - Overused conjunctions ("moreover", "furthermore")
@@ -1138,26 +1146,56 @@ For EACH violation found, create ONE issue:
 {{
   "axis": "ai_tells",
   "severity": "high" | "medium" | "low",
-  "pattern": "contrast_direct" | "contrast_masked" | "title_case" | "formulaic_header" | "puffery" | "word_substitution",
+  "pattern": "contrast_direct" | "contrast_masked" | "title_case" | "formulaic_header" | "cringe_question" | "puffery" | "word_substitution",
   "original": "[EXACT text from post - word-for-word quote]",
   "fix": "[EXACT replacement using Editor-in-Chief examples - don't paraphrase]",
   "impact": "[How this improves the post]"
 }}
 
+EXAMPLES:
+
+Formulaic header violation:
+{{
+  "axis": "ai_tells",
+  "severity": "high",
+  "pattern": "formulaic_header",
+  "original": "The promise:",
+  "fix": "Self-hosting promises",
+  "impact": "Removes AI tell pattern, makes header natural"
+}}
+
+Short question violation:
+{{
+  "axis": "ai_tells",
+  "severity": "high",
+  "pattern": "cringe_question",
+  "original": "For me?",
+  "fix": "For me, the ability to",
+  "impact": "Removes 2-word cringe question, converts to statement"
+}}
+
 STEP 3: USE REPLACEMENT STRATEGIES FROM STANDARDS
 When creating fixes, use the EXACT patterns from Editor-in-Chief standards:
 
-For contrast framing, use THIS example:
+For contrast framing:
 ❌ "Success isn't about working harder but working smarter."
 ✅ "Success comes from working smarter and more strategically."
 
-For word substitutions, use THESE:
+For formulaic headers "The X:":
+❌ "The promise:" / "The reality:" / "The catch:" / "The result:"
+✅ Convert to natural sentence: "Self-hosting promises" / "Reality showed" / "Here's the trade-off" / "We saw"
+
+For short questions (<8 words):
+❌ "For me?" → ✅ DELETE or "For me, the ability to"
+❌ "The truth?" → ✅ DELETE entirely
+❌ "What happened?" → ✅ "What did the data show after 30 days?"
+Rule: If question is <8 words, either DELETE or expand to 8+ word specific question
+
+For word substitutions:
 leverages → uses
 encompasses → includes
 facilitates → enables
 utilized → used
-
-For formulaic headers, use sentence case and tangible metrics.
 
 STEP 4: SCORE THE POST
 Hook (0-5): Framework + specific + cliffhanger?
