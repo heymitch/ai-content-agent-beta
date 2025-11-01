@@ -404,11 +404,11 @@ Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web search
 
 @tool(
     "apply_fixes",
-    "Apply 3-5 surgical fixes based on quality_check feedback",
-    {"post": str, "issues_json": str}
+    "Apply fixes based on quality score: surgical (3-5) for ≥18, comprehensive (ALL issues) for <18",
+    {"post": str, "issues_json": str, "current_score": int}
 )
 async def apply_fixes(args):
-    """Apply surgical fixes without rewriting the whole post"""
+    """Apply fixes - strategy depends on quality score"""
     import json
     from anthropic import Anthropic
     from prompts.linkedin_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
@@ -416,11 +416,20 @@ async def apply_fixes(args):
 
     post = args.get('post', '')
     issues_json = args.get('issues_json', '[]')
+    current_score = args.get('current_score', 0)
 
-    # Use new APPLY_FIXES_PROMPT with WRITE_LIKE_HUMAN_RULES
+    # Determine fix strategy based on score
+    if current_score < 18:
+        fix_strategy = "COMPREHENSIVE - Fix ALL issues, rewrite sections as needed to reach 20+"
+    else:
+        fix_strategy = "SURGICAL - Fix only critical issues to reach 20+"
+
+    # Use APPLY_FIXES_PROMPT with score-based strategy
     prompt = APPLY_FIXES_PROMPT.format(
         post=post,
         issues_json=issues_json,
+        current_score=current_score,
+        fix_strategy=fix_strategy,
         write_like_human_rules=WRITE_LIKE_HUMAN_RULES
     )
 
@@ -779,34 +788,48 @@ STOP. DO NOT RETURN THE POST YET.
 
 No matter which path you took in Phase 1, you MUST ALWAYS run these TWO tools:
 
-1. Call quality_check on the draft
+1. Call quality_check(post=your_draft)
    - This is the ONLY tool that scores posts (0-25)
-   - Detects AI tells (contrast framing, lists, jargon)
-   - Verifies facts with web searches
-   - Returns surgical fix instructions
+   - Detects AI tells (contrast framing, cringe questions, jargon)
+   - Returns: scores object + issues array + surgical_summary
+   - Extract the "total" score from scores object
 
-2. Call apply_fixes with the issues from quality_check
-   - ALWAYS call this (even if score is 24/25)
-   - ALWAYS call this (even if only 1 minor issue)
-   - Surgical corrections preserve 90%+ of original
+2. Call apply_fixes with THREE parameters:
+   - post: the original draft
+   - issues_json: stringify the issues array from quality_check
+   - current_score: the total score from quality_check
+
+   Example:
+   apply_fixes(
+     post="[your draft]",
+     issues_json=json.dumps(quality_result.issues),
+     current_score=quality_result.scores.total
+   )
+
+3. Return the REVISED post from apply_fixes
+   - Do NOT return the original draft
+   - Extract "revised_post" from apply_fixes output
+   - This is your final output
 
 CRITICAL RULES:
 - create_human_draft does NOT score posts (it just writes)
 - quality_check is the ONLY tool that scores (MANDATORY)
-- apply_fixes is MANDATORY (even for high scores)
+- apply_fixes is MANDATORY and requires current_score parameter
 - You do NOT estimate quality yourself
 - Never skip quality_check because you "think it's good"
+- ALWAYS return the revised_post from apply_fixes, NOT the original draft
 
 STRICT WORKFLOW ORDER:
-Draft → quality_check (ALWAYS) → apply_fixes (ALWAYS) → Return final post
+Draft → quality_check (extract score) → apply_fixes (pass score) → Return revised_post
 
 YOU CANNOT SKIP THIS. Even if the draft looks perfect.
 Even if it came from the user's outline.
 Even if you think it's already good quality.
 
-REQUIRED: Call quality_check, then call apply_fixes, THEN return.
+IF score <18: apply_fixes will do COMPREHENSIVE rewrite (fix ALL issues)
+IF score ≥18: apply_fixes will do SURGICAL fixes (3-5 targeted fixes)
 
-Return ONLY the final post after apply_fixes."""
+Return ONLY the revised_post from apply_fixes (NOT the original draft)."""
 
         try:
             # Connect with retry logic and exponential backoff

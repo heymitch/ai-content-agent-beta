@@ -267,13 +267,21 @@ Evaluate on these axes (0-5):
    - Do headers include metrics/outcomes/timeframes? ("Cut sales cycle from 41 to 23 days")
    - Are they skimmable and actionable?
    - Avoid generic phrases ("What I learned", "Key insights")
-   - Avoid cringe questions ("The truth?", "The result?", "Sound familiar?")
+
+   **ABSOLUTELY FORBIDDEN - 2-4 WORD TRANSITION QUESTIONS (THE #1 AI TELL):**
+   ❌ NEVER USE: "The truth?" / "The result?" / "The catch?" / "When?" / "How much?" / "Why?" / "Ready?" / "Sound familiar?" / "What happened?" / "The best part?" / "And those other models?"
+
+   These are IMMEDIATELY identifiable as AI writing. They add zero value.
+
+   ✅ IF you need a question, make it SPECIFIC (8+ words):
+     "Which step would move the needle for your workflow this month?"
+     "What's the biggest bottleneck in your current onboarding process?"
 
    Score 5: Metric/outcome/timeframe in header OR specific activity
      ✓ "1/ Collabs with other creators/writers" (specific action)
      ✓ "Step 1: All of my calls" (concrete activity)
    Score 3: Action without metric ("Define your ICP")
-   Score 0: Generic ("What I learned", "Here's what happened") OR cringe question ("The result?")
+   Score 0: Generic ("What I learned", "Here's what happened") OR ANY 2-4 word question
 
 4. NUMERIC PROOF
    - Are there concrete numbers? ($15K, 41 to 23 days, 73%, 2,847 emails)
@@ -854,6 +862,38 @@ Original Post:
 Issues from quality_check:
 {issues_json}
 
+Current Score: {current_score}/25
+Fix Strategy: {fix_strategy}
+
+═══════════════════════════════════════════════════════════
+CRINGE QUESTIONS - BANNED COMPLETELY (DELETE ON SIGHT):
+═══════════════════════════════════════════════════════════
+
+❌ **TWO-TO-FOUR WORD TRANSITION QUESTIONS (THE #1 AI TELL):**
+
+These are IMMEDIATELY IDENTIFIABLE as AI writing. Delete or expand:
+
+- "The truth?" → DELETE or "What's the reality?"
+- "The result?" → DELETE or "What happened next?"
+- "Sound familiar?" → DELETE
+- "When?" → DELETE or "What was the timeline?"
+- "How much better?" → DELETE or "What were the actual numbers?"
+- "And those other models?" → DELETE or "What about DeepSeek and Ollama?"
+- "Want to know the secret?" → DELETE
+- "The catch?" → DELETE or "What's the trade-off?"
+- "Ready?" → DELETE
+- "Why?" → DELETE or make specific: "Why does this matter for B2B founders?"
+- "What happened?" → Expand: "What did the data show after 30 days?"
+- "The best part?" → DELETE or "Here's what surprised me:"
+
+**REPLACEMENT STRATEGY:**
+1. DELETE entirely (preferred - these add no value)
+2. OR expand to 8+ word specific question:
+   ✅ "Which step would move the needle for your workflow this month?"
+   ✅ "What's the biggest bottleneck in your current onboarding process?"
+
+═══════════════════════════════════════════════════════════
+
 YOUR JOB:
 1. Fix AI tells (contrast framing, rule of three, cringe questions, buzzwords)
 2. Fix formatting issues
@@ -873,11 +913,21 @@ CRITICAL RULES:
 
 {write_like_human_rules}
 
-1. **BE SURGICAL** - Fix ONLY what's listed in issues
+1. **FIX STRATEGY (BASED ON SCORE):**
+
+   IF Current Score ≥18:
+   - **SURGICAL MODE**: Fix ONLY what's listed in issues
+   - Make 3-5 targeted fixes
+   - Preserve 80-90% of exact wording
    - Don't rewrite sentences that aren't broken
-   - Don't change the voice or structure
-   - Make minimal edits to raise the score
-   - Goal: Fix problems while preserving 80-90% of exact wording
+
+   IF Current Score <18:
+   - **COMPREHENSIVE MODE**: Fix ALL issues listed
+   - No limit on number of fixes - address every problem
+   - Rewrite entire sections if needed to eliminate AI patterns
+   - Still preserve: specific numbers, names, dates, strategic narrative
+   - But eliminate: ALL cringe questions, ALL contrast framing, ALL buzzwords
+   - Goal: Raise score from <18 to 20-24
 
 2. **PRESERVE STRENGTHS**:
    - ✅ KEEP specific numbers from original: "6 hours", "10 minutes", "50 nodes"
@@ -935,10 +985,12 @@ Output JSON:
     }}
   ],
   "estimated_new_score": 21,
-  "notes": "Applied 3 surgical fixes. Preserved all original specifics and emotional punch."
+  "notes": "Applied fixes based on score threshold. Preserved all original specifics and emotional punch."
 }}
 
-Make 3-5 surgical fixes maximum. Don't over-edit.
+Number of fixes depends on current score:
+- Score ≥18: Make 3-5 targeted fixes
+- Score <18: Fix ALL issues to reach 20-24
 
 IMPORTANT: Output plain text only. NO markdown formatting (**bold**, *italic*, ##headers).
 """)
