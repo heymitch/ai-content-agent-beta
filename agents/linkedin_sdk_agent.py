@@ -988,7 +988,13 @@ Return ONLY the final post after apply_fixes."""
 
         except Exception as e:
             # Log error with full context
-            operation_duration = asyncio.get_event_loop().time() - operation_start_time
+            # Calculate duration if operation_start_time was set
+            try:
+                operation_duration = asyncio.get_event_loop().time() - operation_start_time
+            except NameError:
+                # operation_start_time wasn't set (error happened very early)
+                operation_duration = 0.0
+
             log_error(
                 logger,
                 "LinkedIn SDK Agent error",
