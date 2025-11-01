@@ -19,12 +19,23 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from textwrap import dedent
 
+# Production hardening utilities
+from utils.structured_logger import (
+    get_logger,
+    log_operation_start,
+    log_operation_end,
+    log_error,
+    create_context,
+    log_retry_attempt
+)
+from utils.retry_decorator import async_retry_with_backoff, RETRIABLE_EXCEPTIONS
+from utils.circuit_breaker import CircuitBreaker
+
 # Load environment variables for API keys
 load_dotenv()
 
-# Setup logging
-logger = logging.getLogger(__name__)
-logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
+# Setup structured logging
+logger = get_logger(__name__)
 
 
 # ================== TIER 3 TOOL DEFINITIONS (LAZY LOADED) ==================
@@ -478,6 +489,13 @@ class LinkedInSDKAgent:
         self.channel_id = channel_id
         self.thread_ts = thread_ts
 
+        # Production hardening: Circuit breaker (3 failures → 120s cooldown)
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=3,
+            recovery_timeout=120.0,
+            name="linkedin_agent"
+        )
+
         # LinkedIn-specific base prompt with quality thresholds
         base_prompt = """You are a LinkedIn content creation agent with a critical philosophy:
 
@@ -671,6 +689,57 @@ AVAILABLE TOOLS:
             session_id = f"linkedin_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
             print(f"📋 Using unique session ID for batch safety: {session_id}", flush=True)
 
+        # Track operation timing for structured logging
+        operation_start_time = asyncio.get_event_loop().time()
+
+        # Create context for structured logging
+        log_context = create_context(
+            user_id=self.user_id,
+            thread_ts=self.thread_ts,
+            channel_id=self.channel_id,
+            platform="linkedin",
+            session_id=session_id
+        )
+
+        # Log operation start
+        log_operation_start(
+            logger,
+            "create_linkedin_post",
+            context=log_context,
+            topic=topic[:100],
+            post_type=post_type
+        )
+
+        # Check circuit breaker state - raises CircuitBreakerOpen if circuit is open
+        from utils.circuit_breaker import CircuitBreakerOpen, CircuitState
+        import time as time_module
+
+        with self.circuit_breaker._lock:
+            if self.circuit_breaker.state == CircuitState.OPEN:
+                time_remaining = self.circuit_breaker.recovery_timeout - (
+                    time_module.time() - self.circuit_breaker.last_failure_time
+                )
+                if time_module.time() - self.circuit_breaker.last_failure_time < self.circuit_breaker.recovery_timeout:
+                    logger.warning(
+                        "⛔ Circuit breaker is OPEN - rejecting request",
+                        circuit_breaker="linkedin_agent",
+                        time_remaining=f"{time_remaining:.1f}s",
+                        **log_context
+                    )
+                    return {
+                        "success": False,
+                        "error": f"Circuit breaker open. Retry in {time_remaining:.1f}s",
+                        "post": None
+                    }
+                else:
+                    # Recovery timeout elapsed - try half-open
+                    self.circuit_breaker.state = CircuitState.HALF_OPEN
+                    logger.info(
+                        "🔄 Circuit breaker entering HALF_OPEN - testing recovery",
+                        circuit_breaker="linkedin_agent",
+                        **log_context
+                    )
+
         client = self.get_or_create_session(session_id)
 
         # Build the creation prompt
@@ -730,46 +799,36 @@ Draft → quality_check (ALWAYS) → apply_fixes (ALWAYS) → Return final post
 Return ONLY the final post after apply_fixes."""
 
         try:
-            # Connect if needed with proper error handling
+            # Connect with retry logic and exponential backoff
             print(f"🔗 Connecting LinkedIn SDK client...", flush=True)
-            try:
+
+            @async_retry_with_backoff(
+                max_retries=3,
+                exceptions=RETRIABLE_EXCEPTIONS,
+                context_provider=lambda: log_context
+            )
+            async def connect_with_retry():
                 await client.connect()
-                print(f"✅ LinkedIn SDK connected successfully", flush=True)
-            except Exception as e:
-                print(f"❌ Connection failed: {str(e)}", flush=True)
-                print(f"📊 Retrying connection...", flush=True)
-                try:
-                    await client.connect()
-                    print(f"✅ LinkedIn SDK connected on retry", flush=True)
-                except Exception as retry_error:
-                    print(f"❌ Retry failed: {str(retry_error)}", flush=True)
-                    raise
+
+            await connect_with_retry()
+            print(f"✅ LinkedIn SDK connected successfully", flush=True)
 
             # Send the creation request with timeout and retry
             print(f"📤 Sending LinkedIn creation prompt...", flush=True)
-            query_sent = False
-            for attempt in range(2):  # Try twice
-                try:
-                    await asyncio.wait_for(
-                        client.query(creation_prompt),
-                        timeout=60.0  # 60 second timeout for sending query
-                    )
-                    query_sent = True
-                    break
-                except asyncio.TimeoutError:
-                    if attempt == 0:
-                        print(f"⚠️ Timeout on first attempt, retrying...", flush=True)
-                        # Create new session for retry
-                        import random
-                        retry_session_id = f"linkedin_retry_{datetime.now().strftime('%H%M%S')}_{random.randint(1000, 9999)}"
-                        client = self.get_or_create_session(retry_session_id)
-                        await client.connect()
-                    else:
-                        print(f"❌ Timeout: Query failed after 2 attempts", flush=True)
-                        raise Exception("LinkedIn SDK query timeout after 2 attempts")
 
-            if not query_sent:
-                raise Exception("Failed to send query to LinkedIn SDK")
+            @async_retry_with_backoff(
+                max_retries=3,
+                initial_delay=1.0,
+                exceptions=(asyncio.TimeoutError, *RETRIABLE_EXCEPTIONS),
+                context_provider=lambda: log_context
+            )
+            async def query_with_retry():
+                await asyncio.wait_for(
+                    client.query(creation_prompt),
+                    timeout=60.0  # 60 second timeout for sending query
+                )
+
+            await query_with_retry()
 
             print(f"⏳ LinkedIn agent processing...", flush=True)
 
@@ -864,7 +923,12 @@ Return ONLY the final post after apply_fixes."""
                                 attempt += 1
                                 logger.warning(
                                     f"⚠️  Stream idle timeout (attempt {attempt}/{max_stream_retries + 1}). "
-                                    f"No message received in {idle_timeout}s. Reconnecting..."
+                                    f"No message received in {idle_timeout}s. Reconnecting...",
+                                    operation="create_linkedin_post",
+                                    attempt=attempt,
+                                    max_retries=max_stream_retries + 1,
+                                    timeout=f"{idle_timeout}s",
+                                    **log_context
                                 )
 
                                 if attempt > max_stream_retries:
@@ -901,7 +965,14 @@ Return ONLY the final post after apply_fixes."""
 
                     except Exception as e:
                         # Other errors
-                        logger.error(f"❌ Error in stream collection: {type(e).__name__}: {e}")
+                        logger.error(
+                            f"❌ Error in stream collection: {type(e).__name__}: {e}",
+                            operation="create_linkedin_post",
+                            error_type=type(e).__name__,
+                            error_message=str(e),
+                            **log_context,
+                            exc_info=True
+                        )
                         raise
 
             # Call the collection function with timeout protection
@@ -914,7 +985,52 @@ Return ONLY the final post after apply_fixes."""
             return await self._parse_output(final_output)
 
         except Exception as e:
-            print(f"❌ LinkedIn SDK Agent error: {e}")
+            # Log error with full context
+            operation_duration = asyncio.get_event_loop().time() - operation_start_time
+            log_error(
+                logger,
+                "LinkedIn SDK Agent error",
+                error=e,
+                context=log_context
+            )
+            log_operation_end(
+                logger,
+                "create_linkedin_post",
+                duration=operation_duration,
+                success=False,
+                context=log_context,
+                error_type=type(e).__name__
+            )
+
+            # Circuit breaker: Mark operation as failed
+            with self.circuit_breaker._lock:
+                self.circuit_breaker.failure_count += 1
+                self.circuit_breaker.last_failure_time = time_module.time()
+
+                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                    logger.error(
+                        "❌ Circuit breaker test failed - RE-OPENING",
+                        circuit_breaker="linkedin_agent",
+                        failure_count=self.circuit_breaker.failure_count,
+                        **log_context
+                    )
+                    self.circuit_breaker.state = CircuitState.OPEN
+                elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
+                    logger.error(
+                        "🔥 Circuit breaker OPENING - threshold reached",
+                        circuit_breaker="linkedin_agent",
+                        failure_count=self.circuit_breaker.failure_count,
+                        threshold=self.circuit_breaker.failure_threshold,
+                        **log_context
+                    )
+                    self.circuit_breaker.state = CircuitState.OPEN
+                else:
+                    logger.warning(
+                        f"⚠️ Circuit breaker failure {self.circuit_breaker.failure_count}/{self.circuit_breaker.failure_threshold}",
+                        circuit_breaker="linkedin_agent",
+                        **log_context
+                    )
+
             return {
                 "success": False,
                 "error": str(e),
@@ -1127,6 +1243,30 @@ Status: Saved successfully but needs human QA"""
 
         # TODO: Export to Google Docs and get URL
         google_doc_url = None
+
+        # Log operation end with timing and quality score
+        operation_duration = asyncio.get_event_loop().time() - operation_start_time
+        log_operation_end(
+            logger,
+            "create_linkedin_post",
+            duration=operation_duration,
+            success=True,
+            context=log_context,
+            quality_score=score,
+            supabase_id=supabase_id,
+            airtable_url=airtable_url
+        )
+
+        # Circuit breaker: Mark operation as successful
+        with self.circuit_breaker._lock:
+            if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                logger.info(
+                    "✅ Circuit breaker test successful - CLOSING",
+                    circuit_breaker="linkedin_agent",
+                    **log_context
+                )
+            self.circuit_breaker.failure_count = 0
+            self.circuit_breaker.state = CircuitState.CLOSED
 
         return {
             "success": True,

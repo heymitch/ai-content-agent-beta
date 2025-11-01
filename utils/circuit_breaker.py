@@ -59,7 +59,7 @@ class CircuitBreaker:
 
     def call(self, func: Callable, *args, context: Optional[Dict[str, Any]] = None, **kwargs) -> Any:
         """
-        Call function through circuit breaker.
+        Call function through circuit breaker (synchronous version).
 
         Args:
             func: Function to call
@@ -109,6 +109,133 @@ class CircuitBreaker:
         # Try to call the function
         try:
             result = func(*args, **kwargs)
+
+            # Success - reset or close circuit
+            with self._lock:
+                if self.state == CircuitState.HALF_OPEN:
+                    logger.info(
+                        f"✅ Circuit breaker '{self.name}' test successful - CLOSING circuit",
+                        extra={
+                            'circuit_breaker': self.name,
+                            'state': 'closed',
+                            'previous_failures': self.failure_count,
+                            **(context or {})
+                        }
+                    )
+
+                self.failure_count = 0
+                self.state = CircuitState.CLOSED
+
+            return result
+
+        except Exception as e:
+            # Failure - increment counter and potentially open circuit
+            with self._lock:
+                self.failure_count += 1
+                self.last_failure_time = time.time()
+
+                if self.state == CircuitState.HALF_OPEN:
+                    # Failed during test - re-open circuit
+                    logger.error(
+                        f"❌ Circuit breaker '{self.name}' test failed - RE-OPENING circuit",
+                        extra={
+                            'circuit_breaker': self.name,
+                            'state': 'open',
+                            'failure_count': self.failure_count,
+                            'recovery_timeout': f"{self.recovery_timeout}s",
+                            'error_type': type(e).__name__,
+                            'error_message': str(e),
+                            **(context or {})
+                        }
+                    )
+                    self.state = CircuitState.OPEN
+
+                elif self.failure_count >= self.failure_threshold:
+                    # Reached threshold - open circuit
+                    logger.error(
+                        f"🔥 Circuit breaker '{self.name}' OPENING - failure threshold reached",
+                        extra={
+                            'circuit_breaker': self.name,
+                            'state': 'open',
+                            'failure_count': self.failure_count,
+                            'failure_threshold': self.failure_threshold,
+                            'recovery_timeout': f"{self.recovery_timeout}s",
+                            'error_type': type(e).__name__,
+                            'error_message': str(e),
+                            **(context or {})
+                        }
+                    )
+                    self.state = CircuitState.OPEN
+
+                else:
+                    # Increment but don't open yet
+                    logger.warning(
+                        f"⚠️  Circuit breaker '{self.name}' failure {self.failure_count}/{self.failure_threshold}",
+                        extra={
+                            'circuit_breaker': self.name,
+                            'state': 'closed',
+                            'failure_count': self.failure_count,
+                            'failure_threshold': self.failure_threshold,
+                            'error_type': type(e).__name__,
+                            'error_message': str(e),
+                            **(context or {})
+                        }
+                    )
+
+            raise
+
+    async def call_async(self, func: Callable, *args, context: Optional[Dict[str, Any]] = None, **kwargs) -> Any:
+        """
+        Call async function through circuit breaker (async version).
+
+        Args:
+            func: Async function to call
+            *args: Positional arguments for function
+            context: Optional context dict for logging
+            **kwargs: Keyword arguments for function
+
+        Returns:
+            Result of function call
+
+        Raises:
+            CircuitBreakerOpen: If circuit is open
+            Exception: Any exception from the function
+        """
+        with self._lock:
+            if self.state == CircuitState.OPEN:
+                # Check if recovery timeout has elapsed
+                if time.time() - self.last_failure_time >= self.recovery_timeout:
+                    logger.info(
+                        f"🔄 Circuit breaker '{self.name}' entering HALF_OPEN state (testing recovery)",
+                        extra={
+                            'circuit_breaker': self.name,
+                            'state': 'half_open',
+                            'failure_count': self.failure_count,
+                            **(context or {})
+                        }
+                    )
+                    self.state = CircuitState.HALF_OPEN
+                else:
+                    # Circuit still open - reject request
+                    time_remaining = self.recovery_timeout - (time.time() - self.last_failure_time)
+                    logger.warning(
+                        f"⛔ Circuit breaker '{self.name}' is OPEN - rejecting request",
+                        extra={
+                            'circuit_breaker': self.name,
+                            'state': 'open',
+                            'time_remaining': f"{time_remaining:.1f}s",
+                            'failure_count': self.failure_count,
+                            **(context or {})
+                        }
+                    )
+                    raise CircuitBreakerOpen(
+                        f"Circuit breaker '{self.name}' is open. "
+                        f"Retry in {time_remaining:.1f}s"
+                    )
+
+        # Try to call the async function
+        try:
+            result = await func(*args, **kwargs)
 
             # Success - reset or close circuit
             with self._lock:
@@ -249,11 +376,8 @@ def circuit_breaker(
             # Extract context if available (for logging)
             context = kwargs.pop('_circuit_breaker_context', None)
 
-            # Call through circuit breaker
-            async def call_func():
-                return await func(*args, **kwargs)
-
-            return breaker.call(call_func, context=context)
+            # Call through circuit breaker (async version)
+            return await breaker.call_async(func, *args, context=context, **kwargs)
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs) -> Any:
