@@ -763,17 +763,21 @@ IF YES (rich strategic context):
    → Extract the user's exact thinking
    → Build on it, don't replace it
    → DO NOT call generate_5_hooks or create_human_draft (user already wrote it!)
+   → SKIP to Phase 2 below (quality gate is STILL MANDATORY)
 
 IF NO (topic or thin outline):
    → Call generate_5_hooks to explore angles
    → Call create_human_draft to build full content (returns ONLY post_text, no scoring)
    → Call inject_proof_points to add metrics
+   → THEN proceed to Phase 2 below
 
 ═══════════════════════════════════════════════════════════
-PHASE 2: QUALITY GATE (MANDATORY - NEVER SKIP)
+PHASE 2: QUALITY GATE (MANDATORY - NEVER SKIP - NO EXCEPTIONS)
 ═══════════════════════════════════════════════════════════
 
-No matter which path you took in Phase 1, you MUST run:
+STOP. DO NOT RETURN THE POST YET.
+
+No matter which path you took in Phase 1, you MUST ALWAYS run these TWO tools:
 
 1. Call quality_check on the draft
    - This is the ONLY tool that scores posts (0-25)
@@ -795,6 +799,12 @@ CRITICAL RULES:
 
 STRICT WORKFLOW ORDER:
 Draft → quality_check (ALWAYS) → apply_fixes (ALWAYS) → Return final post
+
+YOU CANNOT SKIP THIS. Even if the draft looks perfect.
+Even if it came from the user's outline.
+Even if you think it's already good quality.
+
+REQUIRED: Call quality_check, then call apply_fixes, THEN return.
 
 Return ONLY the final post after apply_fixes."""
 
