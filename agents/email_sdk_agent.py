@@ -18,8 +18,23 @@ from datetime import datetime
 from dotenv import load_dotenv
 from textwrap import dedent
 
+# Production hardening utilities
+from utils.structured_logger import (
+    get_logger,
+    log_operation_start,
+    log_operation_end,
+    log_error,
+    create_context,
+    log_retry_attempt
+)
+from utils.retry_decorator import async_retry_with_backoff, RETRIABLE_EXCEPTIONS
+from utils.circuit_breaker import CircuitBreaker, CircuitState
+
 # Load environment variables for API keys
 load_dotenv()
+
+# Setup structured logging
+logger = get_logger(__name__)
 
 
 # ================== TIER 3 TOOL DEFINITIONS (LAZY LOADED) ==================
@@ -199,6 +214,102 @@ async def create_human_draft(args):
 
 
 @tool(
+    "external_validation",
+    "Run comprehensive validation: Editor-in-Chief rules + GPTZero AI detection",
+    {"post": str}
+)
+async def external_validation(args):
+    """
+    Run external validators (quality_check + GPTZero) and return structured results
+
+    Returns:
+        JSON with total_score, quality_scores, issues, gptzero_ai_pct, decision
+    """
+    import json
+
+    post = args.get('post', '')
+
+    try:
+        from integrations.validation_utils import run_all_validators
+
+        # Run all validators (quality_check + GPTZero in parallel)
+        validation_json = await run_all_validators(post, 'email')
+        val_data = json.loads(validation_json) if isinstance(validation_json, str) else validation_json
+
+        # Extract key metrics
+        quality_scores = val_data.get('quality_scores', {})
+        total_score = quality_scores.get('total', 0)
+        raw_issues = val_data.get('ai_patterns_found', [])
+        gptzero = val_data.get('gptzero', {})
+
+        # Normalize issues to dict format for consistency
+        # quality_check can return strings (old format) or dicts (new format)
+        issues = []
+        for issue in raw_issues:
+            if isinstance(issue, dict):
+                # Already in correct format
+                issues.append(issue)
+            elif isinstance(issue, str):
+                # Convert old string format to dict format
+                issues.append({
+                    "severity": "medium",
+                    "pattern": "unknown",
+                    "original": issue,
+                    "fix": "Review manually",
+                    "impact": "Potential AI tell detected"
+                })
+
+        # GPTZero: As long as it's not 100% AI, it's a win
+        # Extract AI probability and flagged sentences if GPTZero ran successfully
+        gptzero_ai_pct = None
+        gptzero_passes = None
+        gptzero_flagged_sentences = []
+
+        if gptzero and gptzero.get('status') in ['PASS', 'FLAGGED']:
+            gptzero_ai_pct = gptzero.get('ai_probability', None)
+            if gptzero_ai_pct is not None:
+                gptzero_passes = gptzero_ai_pct < 100  # Pass if not 100% AI
+
+            # Extract flagged sentences for apply_fixes to rewrite
+            gptzero_flagged_sentences = gptzero.get('flagged_sentences', [])
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "total_score": total_score,
+                    "quality_scores": quality_scores,
+                    "issues": issues,
+                    "gptzero_ai_pct": gptzero_ai_pct,
+                    "gptzero_passes": gptzero_passes,
+                    "gptzero_flagged_sentences": gptzero_flagged_sentences,
+                    "decision": val_data.get('decision', 'unknown'),
+                    "surgical_summary": val_data.get('surgical_summary', '')
+                }, indent=2, ensure_ascii=False)
+            }]
+        }
+
+    except Exception as e:
+        logger.error(f"❌ external_validation error: {e}")
+        # Return fallback result - don't block email creation
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "total_score": 18,  # Neutral score - assume decent quality
+                    "quality_scores": {"total": 18},
+                    "issues": [],
+                    "gptzero_ai_pct": None,
+                    "gptzero_passes": None,
+                    "decision": "error",
+                    "error": str(e),
+                    "surgical_summary": f"Validation error: {str(e)}"
+                }, indent=2)
+            }]
+        }
+
+
+@tool(
     "quality_check",
     "Score email on 5 axes and return surgical fixes",
     {"post": str}
@@ -284,11 +395,11 @@ Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web search
 
 @tool(
     "apply_fixes",
-    "Apply 3-5 surgical fixes based on quality_check feedback",
-    {"post": str, "issues_json": str}
+    "Apply fixes to ALL flagged issues (no limit on number of fixes)",
+    {"post": str, "issues_json": str, "current_score": int, "gptzero_ai_pct": float, "gptzero_flagged_sentences": list}
 )
 async def apply_fixes(args):
-    """Apply surgical fixes without rewriting the whole email"""
+    """Apply fixes - rewrites EVERYTHING flagged (no surgical limit)"""
     import json
     from anthropic import Anthropic
     from prompts.email_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
@@ -296,11 +407,26 @@ async def apply_fixes(args):
 
     post = args.get('post', '')
     issues_json = args.get('issues_json', '[]')
+    current_score = args.get('current_score', 0)
+    gptzero_ai_pct = args.get('gptzero_ai_pct', None)
+    gptzero_flagged_sentences = args.get('gptzero_flagged_sentences', [])
 
-    # Use APPLY_FIXES_PROMPT with WRITE_LIKE_HUMAN_RULES
+    # ALWAYS comprehensive mode - no surgical limit
+    fix_strategy = "COMPREHENSIVE - Fix ALL issues, no limit on number of changes"
+
+    # Format GPTZero flagged sentences for prompt
+    flagged_sentences_text = "Not available"
+    if gptzero_flagged_sentences:
+        flagged_sentences_text = "\n".join([f"- {sent}" for sent in gptzero_flagged_sentences])
+
+    # Use APPLY_FIXES_PROMPT with GPTZero context
     prompt = APPLY_FIXES_PROMPT.format(
         post=post,
         issues_json=issues_json,
+        current_score=current_score,
+        gptzero_ai_pct=gptzero_ai_pct if gptzero_ai_pct is not None else "Not available",
+        gptzero_flagged_sentences=flagged_sentences_text,
+        fix_strategy=fix_strategy,
         write_like_human_rules=WRITE_LIKE_HUMAN_RULES
     )
 
@@ -349,7 +475,8 @@ class EmailSDKAgent:
         user_id: str = "default",
         isolated_mode: bool = False,
         channel_id: Optional[str] = None,
-        thread_ts: Optional[str] = None
+        thread_ts: Optional[str] = None,
+        batch_mode: bool = False
     ):
         """Initialize Email SDK Agent with memory and tools
 
@@ -358,12 +485,21 @@ class EmailSDKAgent:
             isolated_mode: If True, creates isolated sessions (for testing only)
             channel_id: Slack channel ID for tracking
             thread_ts: Slack thread timestamp for tracking
+            batch_mode: If True, always create unique session IDs (prevents conflicts)
         """
         self.user_id = user_id
         self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
         self.channel_id = channel_id  # Slack channel for Supabase/Airtable
         self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
+        self.batch_mode = batch_mode  # Batch mode for workflow calls
+
+        # Circuit breaker for production stability
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=3,
+            recovery_timeout=60.0,
+            name="email_agent"
+        )
 
         # Email-specific base prompt with quality thresholds
         base_prompt = """You are an email newsletter creation agent. Your goal: emails that score 18+ out of 25 without needing 3 rounds of revision.
@@ -572,21 +708,22 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final email when thresh
         from integrations.prompt_loader import load_system_prompt
         self.system_prompt = load_system_prompt(base_prompt)
 
-        # Create MCP server with Email-specific tools (LEAN 5-TOOL WORKFLOW)
+        # Create MCP server with Email-specific tools (ENHANCED 7-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
             name="email_tools",
-            version="4.1.0",
+            version="4.2.0",
             tools=[
-                search_company_documents,  # NEW v4.1.0
+                search_company_documents,  # NEW v4.1.0: Access user-uploaded docs for proof points
                 generate_5_hooks,
                 create_human_draft,
                 inject_proof_points,  # Enhanced: Now searches company docs first
                 quality_check,  # Combined: AI patterns + fact-check
-                apply_fixes     # Combined: Fix everything in one pass
+                external_validation,  # NEW v4.2.0: Editor-in-Chief + GPTZero validation
+                apply_fixes     # ENHANCED v4.2.0: Fixes ALL issues + GPTZero flagged sentences
             ]
         )
 
-        print("📧 Email SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
+        print("📧 Email SDK Agent initialized with 7 tools (6 lean tools + external_validation + comprehensive apply_fixes)")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
@@ -638,8 +775,61 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final email when thresh
         """
 
         # Use session ID or create new one
-        if not session_id:
-            session_id = f"email_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # In batch mode, always create unique session IDs to prevent conflicts
+        if not session_id or self.batch_mode:
+            import random
+            session_id = f"email_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
+            print(f"📋 Using unique session ID for batch safety: {session_id}", flush=True)
+
+        # Track operation timing for structured logging
+        operation_start_time = asyncio.get_event_loop().time()
+
+        # Create context for structured logging
+        log_context = create_context(
+            user_id=self.user_id,
+            thread_ts=self.thread_ts,
+            channel_id=self.channel_id,
+            platform="email",
+            session_id=session_id
+        )
+
+        # Log operation start
+        log_operation_start(
+            logger,
+            "create_email",
+            context=log_context,
+            topic=topic[:100],
+            email_type=email_type
+        )
+
+        # Check circuit breaker state - raises CircuitBreakerOpen if circuit is open
+        import time as time_module
+
+        with self.circuit_breaker._lock:
+            if self.circuit_breaker.state == CircuitState.OPEN:
+                time_remaining = self.circuit_breaker.recovery_timeout - (
+                    time_module.time() - self.circuit_breaker.last_failure_time
+                )
+                if time_module.time() - self.circuit_breaker.last_failure_time < self.circuit_breaker.recovery_timeout:
+                    logger.warning(
+                        "⛔ Circuit breaker is OPEN - rejecting request",
+                        circuit_breaker="email_agent",
+                        time_remaining=f"{time_remaining:.1f}s",
+                        **log_context
+                    )
+                    return {
+                        "success": False,
+                        "error": f"Circuit breaker open. Retry in {time_remaining:.1f}s",
+                        "email": None
+                    }
+                else:
+                    # Recovery timeout elapsed - try half-open
+                    self.circuit_breaker.state = CircuitState.HALF_OPEN
+                    logger.info(
+                        "🔄 Circuit breaker entering HALF_OPEN - testing recovery",
+                        circuit_breaker="email_agent",
+                        **log_context
+                    )
 
         client = self.get_or_create_session(session_id)
 
@@ -720,21 +910,74 @@ The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style that MUST be appl
                             print(f"      ✅ Got text from msg.text ({len(final_output)} chars)")
 
             print(f"\n   ✅ Stream complete after {message_count} messages (last text at message {last_text_message})")
+            print(f"   📝 Final output: {len(final_output)} chars")
 
             # Parse the output to extract structured data
-            return await self._parse_output(final_output)
+            return await self._parse_output(final_output, operation_start_time, log_context)
 
         except Exception as e:
-            print(f"❌ Email SDK Agent error: {e}")
+            # Log error with full context
+            # Calculate duration if operation_start_time was set
+            try:
+                operation_duration = asyncio.get_event_loop().time() - operation_start_time
+            except NameError:
+                # operation_start_time wasn't set (error happened very early)
+                operation_duration = 0.0
+
+            log_error(
+                logger,
+                "Email SDK Agent error",
+                error=e,
+                context=log_context
+            )
+            log_operation_end(
+                logger,
+                "create_email",
+                duration=operation_duration,
+                success=False,
+                context=log_context,
+                error_type=type(e).__name__
+            )
+
+            # Circuit breaker: Mark operation as failed
+            with self.circuit_breaker._lock:
+                self.circuit_breaker.failure_count += 1
+                self.circuit_breaker.last_failure_time = time_module.time()
+
+                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                    logger.error(
+                        "❌ Circuit breaker test failed - RE-OPENING",
+                        circuit_breaker="email_agent",
+                        failure_count=self.circuit_breaker.failure_count,
+                        **log_context
+                    )
+                    self.circuit_breaker.state = CircuitState.OPEN
+                elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
+                    logger.error(
+                        "🔥 Circuit breaker OPENING - threshold reached",
+                        circuit_breaker="email_agent",
+                        failure_count=self.circuit_breaker.failure_count,
+                        threshold=self.circuit_breaker.failure_threshold,
+                        **log_context
+                    )
+                    self.circuit_breaker.state = CircuitState.OPEN
+                else:
+                    logger.warning(
+                        f"⚠️ Circuit breaker failure {self.circuit_breaker.failure_count}/{self.circuit_breaker.failure_threshold}",
+                        circuit_breaker="email_agent",
+                        **log_context
+                    )
+
             return {
                 "success": False,
                 "error": str(e),
                 "email": None
             }
 
-    async def _parse_output(self, output: str) -> Dict[str, Any]:
+    async def _parse_output(self, output: str, operation_start_time: float, log_context: dict) -> Dict[str, Any]:
         """Parse agent output into structured response using Haiku extraction"""
         print(f"\n🔍 _parse_output called with {len(output)} chars")
+        print(f"   First 200 chars: {output[:200]}...")
 
         if not output or len(output) < 10:
             print(f"⚠️ WARNING: Output is empty or too short!")
@@ -871,6 +1114,30 @@ The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style that MUST be appl
 
         # TODO: Export to Google Docs and get URL
         google_doc_url = None
+
+        # Log operation end with timing and quality score
+        operation_duration = asyncio.get_event_loop().time() - operation_start_time
+        log_operation_end(
+            logger,
+            "create_email",
+            duration=operation_duration,
+            success=True,
+            context=log_context,
+            quality_score=score,
+            supabase_id=supabase_id,
+            airtable_url=airtable_url
+        )
+
+        # Circuit breaker: Mark operation as successful
+        with self.circuit_breaker._lock:
+            if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                logger.info(
+                    "✅ Circuit breaker test successful - CLOSING",
+                    circuit_breaker="email_agent",
+                    **log_context
+                )
+            self.circuit_breaker.failure_count = 0
+            self.circuit_breaker.state = CircuitState.CLOSED
 
         return {
             "success": True,
