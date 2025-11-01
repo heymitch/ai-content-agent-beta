@@ -814,12 +814,15 @@ Return ONLY the final post after apply_fixes."""
 
             @async_retry_with_backoff(
                 max_retries=3,
-                exceptions=RETRIABLE_EXCEPTIONS,
+                exceptions=(asyncio.TimeoutError, *RETRIABLE_EXCEPTIONS),
                 context_provider=lambda: log_context
             )
             async def connect_with_retry():
                 nonlocal client
-                await client.connect()
+                await asyncio.wait_for(
+                    client.connect(),
+                    timeout=30.0  # 30 second timeout for connection
+                )
 
             await connect_with_retry()
             print(f"✅ LinkedIn SDK connected successfully", flush=True)
