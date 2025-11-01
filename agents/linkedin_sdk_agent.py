@@ -495,8 +495,25 @@ async def external_validation(args):
         # Extract key metrics
         quality_scores = val_data.get('quality_scores', {})
         total_score = quality_scores.get('total', 0)
-        issues = val_data.get('ai_patterns_found', [])
+        raw_issues = val_data.get('ai_patterns_found', [])
         gptzero = val_data.get('gptzero', {})
+
+        # Normalize issues to dict format for consistency
+        # quality_check can return strings (old format) or dicts (new format)
+        issues = []
+        for issue in raw_issues:
+            if isinstance(issue, dict):
+                # Already in correct format
+                issues.append(issue)
+            elif isinstance(issue, str):
+                # Convert old string format to dict format
+                issues.append({
+                    "severity": "medium",
+                    "pattern": "unknown",
+                    "original": issue,
+                    "fix": "Review manually",
+                    "impact": "Potential AI tell detected"
+                })
 
         # GPTZero: As long as it's not 100% AI, it's a win
         # Extract AI probability and flagged sentences if GPTZero ran successfully
@@ -855,8 +872,10 @@ Evaluate the Context/Outline:
 IF YES (rich strategic context):
    → Extract the user's exact thinking
    → Build on it, don't replace it
-   → DO NOT call generate_5_hooks or create_human_draft (user already wrote it!)
-   → SKIP to Phase 2 below (quality gate is STILL MANDATORY)
+   → DO NOT call generate_5_hooks (user already has an angle!)
+   → DO call create_human_draft WITH the outline as context
+   → The tool will PRESERVE user's language and structure, just polish it
+   → THEN proceed to Phase 2 below (quality gate is STILL MANDATORY)
 
 IF NO (topic or thin outline):
    → Call generate_5_hooks to explore angles
@@ -1244,18 +1263,25 @@ Return format MUST include all validation metadata for Airtable."""
             if validation_issues:
                 lines.append(f"\n⚠️ ISSUES FOUND ({len(validation_issues)} total):\n")
                 for i, issue in enumerate(validation_issues, 1):
-                    severity = issue.get('severity', 'medium').upper()
-                    pattern = issue.get('pattern', 'unknown')
-                    original = issue.get('original', '')
-                    fix = issue.get('fix', '')
-                    impact = issue.get('impact', '')
+                    # Handle both dict format (new) and string format (old)
+                    if isinstance(issue, dict):
+                        # NEW FORMAT: Issue object with severity/pattern/fix
+                        severity = issue.get('severity', 'medium').upper()
+                        pattern = issue.get('pattern', 'unknown')
+                        original = issue.get('original', '')
+                        fix = issue.get('fix', '')
+                        impact = issue.get('impact', '')
 
-                    lines.append(f"{i}. [{severity}] {pattern}")
-                    lines.append(f"   Problem: {original}")
-                    lines.append(f"   Fix: {fix}")
-                    if impact:
-                        lines.append(f"   Impact: {impact}")
-                    lines.append("")
+                        lines.append(f"{i}. [{severity}] {pattern}")
+                        lines.append(f"   Problem: {original}")
+                        lines.append(f"   Fix: {fix}")
+                        if impact:
+                            lines.append(f"   Impact: {impact}")
+                        lines.append("")
+                    else:
+                        # OLD FORMAT: String description (fallback for legacy quality_check)
+                        lines.append(f"{i}. {issue}")
+                        lines.append("")
 
             validation_formatted = "\n".join(lines)
         else:

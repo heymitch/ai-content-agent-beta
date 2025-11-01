@@ -315,6 +315,23 @@ TOPIC: {topic}
 HOOK (use exactly): {hook}
 CONTEXT: {context}
 
+=== HANDLING RICH OUTLINES VS THIN CONTEXT ===
+
+**IF CONTEXT contains a detailed outline (>200 words with strategic narrative):**
+- This is the user's strategic thinking - PRESERVE IT
+- Your job is to POLISH it, not rewrite it
+- Convert outline bullets to flowing prose
+- Keep ALL specific language, numbers, personal anecdotes, narrative choices
+- Remove any AI tells (formulaic headers like "The promise:", cringe questions like "For me?")
+- Maintain the user's voice and structure
+- DO NOT replace user's thinking with generic AI content
+- Think: "clean up and format" NOT "rewrite from scratch"
+
+**IF CONTEXT is a topic or thin outline (<200 words):**
+- You're creating from scratch
+- Follow format decision rules below
+- Use hook as starting point, build out the narrative
+
 === FORMAT DECISION (YOU CHOOSE) ===
 
 First, analyze the topic and decide which format fits best:
