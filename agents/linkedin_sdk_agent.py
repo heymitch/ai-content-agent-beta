@@ -404,11 +404,11 @@ Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web search
 
 @tool(
     "apply_fixes",
-    "Apply fixes based on quality score: surgical (3-5) for ≥18, comprehensive (ALL issues) for <18",
-    {"post": str, "issues_json": str, "current_score": int}
+    "Apply fixes to ALL flagged issues (no limit on number of fixes)",
+    {"post": str, "issues_json": str, "current_score": int, "gptzero_ai_pct": float, "gptzero_flagged_sentences": list}
 )
 async def apply_fixes(args):
-    """Apply fixes - strategy depends on quality score"""
+    """Apply fixes - rewrites EVERYTHING flagged (no surgical limit)"""
     import json
     from anthropic import Anthropic
     from prompts.linkedin_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
@@ -417,18 +417,24 @@ async def apply_fixes(args):
     post = args.get('post', '')
     issues_json = args.get('issues_json', '[]')
     current_score = args.get('current_score', 0)
+    gptzero_ai_pct = args.get('gptzero_ai_pct', None)
+    gptzero_flagged_sentences = args.get('gptzero_flagged_sentences', [])
 
-    # Determine fix strategy based on score
-    if current_score < 18:
-        fix_strategy = "COMPREHENSIVE - Fix ALL issues, rewrite sections as needed to reach 20+"
-    else:
-        fix_strategy = "SURGICAL - Fix only critical issues to reach 20+"
+    # ALWAYS comprehensive mode - no surgical limit
+    fix_strategy = "COMPREHENSIVE - Fix ALL issues, no limit on number of changes"
 
-    # Use APPLY_FIXES_PROMPT with score-based strategy
+    # Format GPTZero flagged sentences for prompt
+    flagged_sentences_text = "Not available"
+    if gptzero_flagged_sentences:
+        flagged_sentences_text = "\n".join([f"- {sent}" for sent in gptzero_flagged_sentences])
+
+    # Use APPLY_FIXES_PROMPT with GPTZero context
     prompt = APPLY_FIXES_PROMPT.format(
         post=post,
         issues_json=issues_json,
         current_score=current_score,
+        gptzero_ai_pct=gptzero_ai_pct if gptzero_ai_pct is not None else "Not available",
+        gptzero_flagged_sentences=flagged_sentences_text,
         fix_strategy=fix_strategy,
         write_like_human_rules=WRITE_LIKE_HUMAN_RULES
     )
@@ -463,6 +469,83 @@ async def apply_fixes(args):
     }
 
 
+@tool(
+    "external_validation",
+    "Run comprehensive validation: Editor-in-Chief rules + GPTZero AI detection",
+    {"post": str}
+)
+async def external_validation(args):
+    """
+    Run external validators (quality_check + GPTZero) and return structured results
+
+    Returns:
+        JSON with total_score, quality_scores, issues, gptzero_ai_pct, decision
+    """
+    import json
+
+    post = args.get('post', '')
+
+    try:
+        from integrations.validation_utils import run_all_validators
+
+        # Run all validators (quality_check + GPTZero in parallel)
+        validation_json = await run_all_validators(post, 'linkedin')
+        val_data = json.loads(validation_json) if isinstance(validation_json, str) else validation_json
+
+        # Extract key metrics
+        quality_scores = val_data.get('quality_scores', {})
+        total_score = quality_scores.get('total', 0)
+        issues = val_data.get('ai_patterns_found', [])
+        gptzero = val_data.get('gptzero', {})
+
+        # GPTZero: As long as it's not 100% AI, it's a win
+        # Extract AI probability and flagged sentences if GPTZero ran successfully
+        gptzero_ai_pct = None
+        gptzero_passes = None
+        gptzero_flagged_sentences = []
+
+        if gptzero and gptzero.get('status') in ['PASS', 'FLAGGED']:
+            gptzero_ai_pct = gptzero.get('ai_probability', None)
+            if gptzero_ai_pct is not None:
+                gptzero_passes = gptzero_ai_pct < 100  # Pass if not 100% AI
+
+            # Extract flagged sentences for apply_fixes to rewrite
+            gptzero_flagged_sentences = gptzero.get('flagged_sentences', [])
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "total_score": total_score,
+                    "quality_scores": quality_scores,
+                    "issues": issues,
+                    "gptzero_ai_pct": gptzero_ai_pct,
+                    "gptzero_passes": gptzero_passes,
+                    "gptzero_flagged_sentences": gptzero_flagged_sentences,
+                    "decision": val_data.get('decision', 'unknown'),
+                    "surgical_summary": val_data.get('surgical_summary', '')
+                }, indent=2, ensure_ascii=False)
+            }]
+        }
+
+    except Exception as e:
+        logger.error(f"❌ external_validation error: {e}")
+        # Return fallback result - don't block post creation
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "total_score": 18,  # Neutral score - assume decent quality
+                    "quality_scores": {"total": 18},
+                    "issues": [],
+                    "gptzero_ai_pct": None,
+                    "gptzero_passes": None,
+                    "decision": "error",
+                    "error": str(e),
+                    "surgical_summary": f"Validation error: {str(e)}"
+                }, indent=2)
+            }]
+        }
 
 
 # ================== LINKEDIN SDK AGENT CLASS ==================
@@ -609,21 +692,22 @@ AVAILABLE TOOLS:
         from integrations.prompt_loader import load_system_prompt
         self.system_prompt = load_system_prompt(base_prompt)
 
-        # Create MCP server with LinkedIn-specific tools (ENHANCED 6-TOOL WORKFLOW)
+        # Create MCP server with LinkedIn-specific tools (ENHANCED 7-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
             name="linkedin_tools",
-            version="4.1.0",
+            version="4.2.0",
             tools=[
                 search_company_documents,  # NEW v4.1.0: Access user-uploaded docs for proof points
                 generate_5_hooks,
                 create_human_draft,
                 inject_proof_points,  # Enhanced: Now searches company docs first
                 quality_check,  # Combined: AI patterns + fact-check
-                apply_fixes     # Combined: Fix everything in one pass
+                external_validation,  # NEW v4.2.0: Editor-in-Chief + GPTZero validation
+                apply_fixes     # Enhanced v4.2.0: Fixes ALL issues + GPTZero flagged sentences
             ]
         )
 
-        print("🎯 LinkedIn SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
+        print("🎯 LinkedIn SDK Agent initialized with 7 tools (6 lean tools + company docs RAG + external_validation)")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
@@ -781,55 +865,50 @@ IF NO (topic or thin outline):
    → THEN proceed to Phase 2 below
 
 ═══════════════════════════════════════════════════════════
-PHASE 2: QUALITY GATE (MANDATORY - NEVER SKIP - NO EXCEPTIONS)
+PHASE 2: VALIDATION & REWRITE (MANDATORY - SINGLE PASS)
 ═══════════════════════════════════════════════════════════
 
 STOP. DO NOT RETURN THE POST YET.
 
-No matter which path you took in Phase 1, you MUST ALWAYS run these TWO tools:
+WORKFLOW (ONE REWRITE ATTEMPT):
 
-1. Call quality_check(post=your_draft)
-   - This is the ONLY tool that scores posts (0-25)
-   - Detects AI tells (contrast framing, cringe questions, jargon)
-   - Returns: scores object + issues array + surgical_summary
-   - Extract the "total" score from scores object
+1. Call external_validation(post=your_draft)
+   - This runs Editor-in-Chief rules + GPTZero AI detection
+   - Returns: total_score, issues, gptzero_ai_pct, gptzero_flagged_sentences
 
-2. Call apply_fixes with THREE parameters:
-   - post: the original draft
-   - issues_json: stringify the issues array from quality_check
-   - current_score: the total score from quality_check
-
-   Example:
+2. Call apply_fixes with ALL parameters:
    apply_fixes(
-     post="[your draft]",
-     issues_json=json.dumps(quality_result.issues),
-     current_score=quality_result.scores.total
+     post=your_draft,
+     issues_json=json.dumps(validation.issues),
+     current_score=validation.total_score,
+     gptzero_ai_pct=validation.gptzero_ai_pct,
+     gptzero_flagged_sentences=validation.gptzero_flagged_sentences
    )
 
-3. Return the REVISED post from apply_fixes
-   - Do NOT return the original draft
-   - Extract "revised_post" from apply_fixes output
-   - This is your final output
+   - apply_fixes will fix EVERY issue (no 3-5 limit)
+   - Rewrites ALL GPTZero flagged sentences to sound more human
+   - Returns revised_post
 
-CRITICAL RULES:
-- create_human_draft does NOT score posts (it just writes)
-- quality_check is the ONLY tool that scores (MANDATORY)
-- apply_fixes is MANDATORY and requires current_score parameter
-- You do NOT estimate quality yourself
-- Never skip quality_check because you "think it's good"
-- ALWAYS return the revised_post from apply_fixes, NOT the original draft
+3. Return the revised_post with validation metadata:
+   {{
+     "post_text": "[revised_post from apply_fixes]",
+     "original_score": [score from external_validation],
+     "validation_issues": [issues from external_validation],
+     "gptzero_ai_pct": [AI % from external_validation],
+     "gptzero_flagged_sentences": [flagged sentences from external_validation]
+   }}
 
-STRICT WORKFLOW ORDER:
-Draft → quality_check (extract score) → apply_fixes (pass score) → Return revised_post
+CRITICAL:
+- Only ONE rewrite pass (don't re-validate after apply_fixes)
+- Return revised_post even if score was low
+- Include validation metadata so wrapper can set Airtable status
+- DO NOT run external_validation twice
+- Validation metadata is used to set "Needs Review" status if score <18
 
-YOU CANNOT SKIP THIS. Even if the draft looks perfect.
-Even if it came from the user's outline.
-Even if you think it's already good quality.
+WORKFLOW:
+Draft → external_validation → apply_fixes (ALL issues + GPTZero sentences) → Return with metadata
 
-IF score <18: apply_fixes will do COMPREHENSIVE rewrite (fix ALL issues)
-IF score ≥18: apply_fixes will do SURGICAL fixes (3-5 targeted fixes)
-
-Return ONLY the revised_post from apply_fixes (NOT the original draft)."""
+Return format MUST include all validation metadata for Airtable."""
 
         try:
             # Connect with retry logic and exponential backoff
@@ -1125,71 +1204,67 @@ Return ONLY the revised_post from apply_fixes (NOT the original draft)."""
             clean_output = ""
             hook_preview = "Extraction failed (see Suggested Edits)"
 
-        # Extract score if mentioned in output
-        score = 90  # Default fallback
+        # Extract validation metadata from SDK response (agent already ran external_validation)
+        validation_score = extracted.get('original_score', 20)  # Default 20 if not provided
+        validation_issues = extracted.get('validation_issues', [])
+        gptzero_ai_pct = extracted.get('gptzero_ai_pct', None)
+        gptzero_flagged_sentences = extracted.get('gptzero_flagged_sentences', [])
 
-        # Run EXTERNAL validators (quality check + optional GPTZero)
-        # This is a SECOND QA pass with Editor-in-Chief rules
-        # SDK agent already ran its own quality_check tool during creation
-        # This external check catches AI patterns the agent might have missed
-        validation_json = None
+        score = validation_score  # Use score from validation
+
+        # Format issues as bullet points for Airtable "Suggested Edits"
         validation_formatted = None
+        if validation_issues or gptzero_flagged_sentences:
+            lines = ["🔍 VALIDATION RESULTS:\n"]
 
-        try:
-            print(f"\n🔍 Running external validation (Editor-in-Chief rules) for {len(clean_output)} chars...")
+            # Add quality score
+            lines.append(f"Quality Score: {validation_score}/25")
+            if validation_score < 18:
+                lines.append("⚠️ Status: NEEDS REVIEW (score below 18 threshold)\n")
+            else:
+                lines.append("✅ Status: Draft (score meets threshold)\n")
 
-            from integrations.validation_utils import run_all_validators, format_validation_for_airtable
+            # Add GPTZero results if available
+            if gptzero_ai_pct is not None:
+                lines.append(f"\n🤖 GPTZero AI Detection: {gptzero_ai_pct}% AI")
+                if gptzero_ai_pct < 100:
+                    lines.append("✅ Pass (not 100% AI)\n")
+                else:
+                    lines.append("⚠️ Flagged as 100% AI\n")
 
-            validation_json = await run_all_validators(clean_output, 'linkedin')
+                # Add flagged sentences
+                if gptzero_flagged_sentences:
+                    lines.append(f"\n📝 GPTZero Flagged Sentences ({len(gptzero_flagged_sentences)} total):")
+                    for i, sentence in enumerate(gptzero_flagged_sentences[:5], 1):  # Show max 5
+                        lines.append(f"   {i}. {sentence[:150]}...")
+                    if len(gptzero_flagged_sentences) > 5:
+                        lines.append(f"   ... and {len(gptzero_flagged_sentences) - 5} more\n")
 
-            # Extract score from validation results
-            if validation_json:
-                import json
-                try:
-                    val_data = json.loads(validation_json) if isinstance(validation_json, str) else validation_json
-                    score = val_data.get('quality_scores', {}).get('total', score)
-                    print(f"✅ External validation complete: Score {score}/25")
-                except Exception as score_err:
-                    print(f"⚠️ Could not extract score from validation: {score_err}")
-                    pass
+            # Add validation issues
+            if validation_issues:
+                lines.append(f"\n⚠️ ISSUES FOUND ({len(validation_issues)} total):\n")
+                for i, issue in enumerate(validation_issues, 1):
+                    severity = issue.get('severity', 'medium').upper()
+                    pattern = issue.get('pattern', 'unknown')
+                    original = issue.get('original', '')
+                    fix = issue.get('fix', '')
+                    impact = issue.get('impact', '')
 
-            # Format for human-readable Airtable display
-            validation_formatted = format_validation_for_airtable(validation_json)
-            print(f"✅ Validation formatted for Airtable: {len(validation_formatted)} chars")
+                    lines.append(f"{i}. [{severity}] {pattern}")
+                    lines.append(f"   Problem: {original}")
+                    lines.append(f"   Fix: {fix}")
+                    if impact:
+                        lines.append(f"   Impact: {impact}")
+                    lines.append("")
 
-        except Exception as e:
-            import traceback
-            print(f"⚠️ EXTERNAL VALIDATION FAILED (non-fatal):")
-            print(f"   Error type: {type(e).__name__}")
-            print(f"   Error message: {e}")
-            print(f"   Traceback:")
-            print(traceback.format_exc())
+            validation_formatted = "\n".join(lines)
+        else:
+            # No issues found
+            validation_formatted = f"✅ No validation issues found\nQuality Score: {validation_score}/25"
 
-            # Provide fallback suggested edits (ensures Airtable field is populated)
-            validation_formatted = f"""⚠️ **Automated Quality Check Failed**
-
-Error: {str(e)[:250]}
-
-**Manual Review Required:**
-
-Scan for these AI patterns:
-• Contrast framing: "This isn't about X—it's about Y"
-• Masked contrast: "but rather", "instead of"
-• Cringe questions: "The truth?", "Sound familiar?"
-• Formulaic headers: "THE PROCESS:", "HERE'S HOW:"
-• Corporate jargon: "Moreover", "Furthermore", "Additionally"
-• Buzzwords: "game-changer", "unlock", "revolutionary"
-• Em-dash overuse — like this — everywhere
-
-Verify facts:
-• Check all names/companies/titles mentioned
-• Confirm all metrics are from provided context
-• Ensure no fabricated details
-
-Post length: {len(clean_output)} chars
-Status: Saved successfully but needs human QA"""
-
-            validation_json = None
+        print(f"✅ Validation extracted from SDK: Score {validation_score}/25, {len(validation_issues)} issues")
+        if gptzero_ai_pct is not None:
+            print(f"   GPTZero: {gptzero_ai_pct}% AI, {len(gptzero_flagged_sentences)} flagged sentences")
 
         # Save to Airtable
         print("\n" + "="*60)
@@ -1206,13 +1281,17 @@ Status: Saved successfully but needs human QA"""
             print(f"   Base ID: {airtable.base_id}")
             print(f"   Table: {airtable.table_name}")
 
+            # Determine Airtable status based on validation score
+            airtable_status = "Needs Review" if validation_score < 18 else "Draft"
+
             print(f"\n📝 Saving content (hook: '{hook_preview[:50]}...')")
+            print(f"   Status: {airtable_status} (score: {validation_score}/25)")
             result = airtable.create_content_record(
                 content=clean_output,  # Save the CLEAN extracted post, not raw output
                 platform='linkedin',
                 post_hook=hook_preview,
-                status='Draft',
-                suggested_edits=validation_formatted  # Human-readable validation report
+                status=airtable_status,  # "Needs Review" if <18, else "Draft"
+                suggested_edits=validation_formatted  # Human-readable validation report with GPTZero sentences
             )
             print(f"📊 Airtable API result: {result}")
 

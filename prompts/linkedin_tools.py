@@ -863,7 +863,11 @@ Issues from quality_check:
 {issues_json}
 
 Current Score: {current_score}/25
+GPTZero AI Detection: {gptzero_ai_pct}% AI (Target: <100%)
 Fix Strategy: {fix_strategy}
+
+GPTZero Flagged Sentences (rewrite these like a human):
+{gptzero_flagged_sentences}
 
 ═══════════════════════════════════════════════════════════
 CRINGE QUESTIONS - BANNED COMPLETELY (DELETE ON SIGHT):
@@ -914,21 +918,22 @@ CRITICAL RULES:
 
 {write_like_human_rules}
 
-1. **FIX STRATEGY (BASED ON SCORE):**
+1. **FIX STRATEGY:**
 
-   IF Current Score ≥18:
-   - **SURGICAL MODE**: Fix ONLY what's listed in issues
-   - Make 3-5 targeted fixes
-   - Preserve 80-90% of exact wording
-   - Don't rewrite sentences that aren't broken
-
-   IF Current Score <18:
-   - **COMPREHENSIVE MODE**: Fix ALL issues listed
-   - No limit on number of fixes - address every problem
+   **COMPREHENSIVE MODE - Fix ALL issues:**
+   - No limit on number of fixes - address EVERY problem in issues list
    - Rewrite entire sections if needed to eliminate AI patterns
+   - Rewrite GPTZero flagged sentences to sound more human
    - Still preserve: specific numbers, names, dates, strategic narrative
-   - But eliminate: ALL cringe questions, ALL contrast framing, ALL buzzwords
-   - Goal: Raise score from <18 to 20-24
+   - But eliminate: ALL cringe questions, ALL contrast framing, ALL buzzwords, ALL formulaic headers
+   - Goal: Fix every single flagged issue
+
+   **If GPTZero shows high AI %:**
+   - Add more human signals to flagged sentences:
+     * Sentence fragments for emphasis
+     * Contractions (I'm, that's, here's)
+     * Varied sentence length (5-25 words, not uniform 12-15)
+     * Natural transitions (And, So, But at sentence starts)
 
 2. **PRESERVE STRENGTHS**:
    - ✅ KEEP specific numbers from original: "6 hours", "10 minutes", "50 nodes"
@@ -986,12 +991,10 @@ Output JSON:
     }}
   ],
   "estimated_new_score": 21,
-  "notes": "Applied fixes based on score threshold. Preserved all original specifics and emotional punch."
+  "notes": "Fixed ALL flagged issues. Preserved specifics and emotional punch. Rewrote GPTZero flagged sentences."
 }}
 
-Number of fixes depends on current score:
-- Score ≥18: Make 3-5 targeted fixes
-- Score <18: Fix ALL issues to reach 20-24
+Fix ALL issues - no limit. Every flagged pattern and GPTZero sentence must be addressed.
 
 IMPORTANT: Output plain text only. NO markdown formatting (**bold**, *italic*, ##headers).
 """)

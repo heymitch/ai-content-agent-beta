@@ -63,10 +63,19 @@ async def extract_structured_content(
 AGENT OUTPUT:
 {raw_output}
 
-The agent output contains MULTIPLE versions from the iteration process:
-1. Initial drafts (condensed, incomplete)
-2. Revised versions (intermediate improvements)
-3. FINAL version (most refined, usually marked or appears last)
+The agent output may be in TWO formats:
+
+FORMAT 1: JSON with validation metadata (NEW v4.2.0)
+{{
+  "post_text": "...",
+  "original_score": 16,
+  "validation_issues": [...],
+  "gptzero_ai_pct": 45,
+  "gptzero_flagged_sentences": [...]
+}}
+
+FORMAT 2: Plain text post (legacy)
+Multiple versions from iteration process - you need to find the FINAL version.
 
 CRITICAL: The agent iterates and improves the post multiple times. You MUST find the FINAL version, not early drafts!
 
@@ -80,14 +89,24 @@ Return ONLY valid JSON with this exact structure:
     "word_count": 0,
     "has_numbers": false,
     "has_cta": false
-  }}
+  }},
+  "original_score": 0,
+  "validation_issues": [],
+  "gptzero_ai_pct": null,
+  "gptzero_flagged_sentences": []
 }}
 
 EXTRACTION RULES:
 
 1. body: Extract the FINAL, COMPLETE, VERBATIM post content
 
-   PRIORITY 1 - Look for EXPLICIT FINAL MARKERS (case-insensitive, flexible):
+   PRIORITY 1 - Check if output is JSON with validation metadata:
+   - If agent returned {{"post_text": "...", "original_score": ..., ...}}
+   - Extract body from "post_text" field
+   - Extract validation metadata (original_score, validation_issues, gptzero_ai_pct, gptzero_flagged_sentences)
+   - Include ALL metadata fields in your response
+
+   PRIORITY 2 - Look for EXPLICIT FINAL MARKERS (case-insensitive, flexible):
    - Contains "FINAL POST" (with or without emoji, asterisks, platform name)
    - Contains "FINAL LINKEDIN" or "FINAL VERSION"
    - Examples that should match:
@@ -99,7 +118,7 @@ EXTRACTION RULES:
    - If you find ANY variation of these markers, extract ALL content after them
    - Stop extracting when you hit dividers like "---" or "What it delivers:"
 
-   PRIORITY 2 - If no markers, find the LAST complete post:
+   PRIORITY 3 - If no JSON and no markers, find the LAST complete post:
    - Scan the ENTIRE output from beginning to end
    - Identify ALL complete posts (>500 chars with proper structure)
    - Take the LAST/MOST RECENT complete post (not the first!)
