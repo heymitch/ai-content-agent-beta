@@ -1118,7 +1118,7 @@ Return format MUST include all validation metadata for Airtable."""
             print(f"   📝 Final output: {len(final_output)} chars")
 
             # Parse the output to extract structured data
-            return await self._parse_output(final_output)
+            return await self._parse_output(final_output, operation_start_time, log_context)
 
         except Exception as e:
             # Log error with full context
@@ -1179,7 +1179,7 @@ Return format MUST include all validation metadata for Airtable."""
                 "post": None
             }
 
-    async def _parse_output(self, output: str) -> Dict[str, Any]:
+    async def _parse_output(self, output: str, operation_start_time: float, log_context: dict) -> Dict[str, Any]:
         """Parse agent output into structured response using Haiku extraction"""
         print(f"\n🔍 _parse_output called with {len(output)} chars")
         print(f"   First 200 chars: {output[:200]}...")
