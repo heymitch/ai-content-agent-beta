@@ -67,7 +67,8 @@ The agent output may be in TWO formats:
 
 FORMAT 1: JSON with validation metadata (NEW v4.2.0)
 {{
-  "post_text": "...",
+  "post_text": "..." OR "script_text": "..." (YouTube uses script_text),
+  "timing_markers": {{...}} (YouTube only),
   "original_score": 16,
   "validation_issues": [...],
   "gptzero_ai_pct": 45,
@@ -81,7 +82,7 @@ CRITICAL: The agent iterates and improves the post multiple times. You MUST find
 
 Return ONLY valid JSON with this exact structure:
 {{
-  "body": "the complete final post - every word, all formatting",
+  "body": "the complete final post/script - every word, all formatting",
   "hook": "the opening line",
   "platform": "{platform}",
   "publish_date": null,
@@ -90,6 +91,7 @@ Return ONLY valid JSON with this exact structure:
     "has_numbers": false,
     "has_cta": false
   }},
+  "timing_markers": {{}},
   "original_score": 0,
   "validation_issues": [],
   "gptzero_ai_pct": null,
@@ -102,8 +104,10 @@ EXTRACTION RULES:
 
    PRIORITY 1 - Check if output is JSON with validation metadata:
    - If agent returned {{"post_text": "...", "original_score": ..., ...}}
-   - Extract body from "post_text" field
+   - OR {{"script_text": "...", "timing_markers": ..., ...}} for YouTube
+   - Extract body from "post_text" OR "script_text" field
    - Extract validation metadata (original_score, validation_issues, gptzero_ai_pct, gptzero_flagged_sentences)
+   - For YouTube: Also extract timing_markers if present
    - Include ALL metadata fields in your response
 
    PRIORITY 2 - Look for EXPLICIT FINAL MARKERS (case-insensitive, flexible):
@@ -159,7 +163,12 @@ EXTRACTION RULES:
    - has_numbers: true if body contains specific metrics/numbers
    - has_cta: true if body has clear call-to-action
 
-5. Return ONLY the JSON object, no markdown, no explanation
+5. timing_markers (YouTube only):
+   - If platform is youtube AND agent provided timing_markers in JSON
+   - Extract timing_markers object: {{"0:00-0:03": "hook", "0:03-0:15": "setup", ...}}
+   - Otherwise: empty object {{}}
+
+6. Return ONLY the JSON object, no markdown, no explanation
 
 JSON:"""
 
@@ -264,5 +273,10 @@ def _fallback_extraction(raw_output: str, platform: str) -> Dict[str, Any]:
             "extraction_method": "fallback",
             "has_numbers": any(char.isdigit() for char in body),
             "has_cta": False
-        }
+        },
+        "timing_markers": {},
+        "original_score": 20,  # Default neutral score
+        "validation_issues": [],
+        "gptzero_ai_pct": None,
+        "gptzero_flagged_sentences": []
     }

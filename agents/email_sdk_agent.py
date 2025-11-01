@@ -552,29 +552,40 @@ AVAILABLE TOOLS:
    - Generic audience: severity="high" (good to fix)
    - Weak CTA: severity="medium" (nice to fix)
 
-5. mcp__email_tools__apply_fixes
-   Input: {"post": str, "issues_json": str}
+5. mcp__email_tools__external_validation
+   Input: {"post": str}
+   Returns: JSON with {total_score, quality_scores, issues, gptzero_ai_pct, gptzero_flagged_sentences, decision}
+   What it does:
+   - Runs Editor-in-Chief rules + GPTZero AI detection in parallel
+   - Returns structured validation results
+   - GPTZero extracts AI % and specific sentences that sound robotic
+   - Issues normalized to dict format for consistency
+   When to use: After inject_proof_points to get comprehensive validation
+
+6. mcp__email_tools__apply_fixes
+   Input: {"post": str, "issues_json": str, "current_score": int, "gptzero_ai_pct": float, "gptzero_flagged_sentences": list}
    Returns: JSON with {revised_email, changes_made: [{issue_addressed, original, revised, impact}], estimated_new_score: int}
-   What it does: 
-   - Applies 3-5 SURGICAL fixes (doesn't rewrite whole email)
+   What it does:
+   - Fixes ALL issues (no 3-5 limit - comprehensive mode)
+   - Rewrites GPTZero flagged sentences to add human signals
    - PRESERVES all specifics: numbers, names, dates, emotional language, contractions
    - Targets exact problems from issues array
    - Uses WRITE_LIKE_HUMAN_RULES to ensure fixes sound natural
-   When to use: When quality_check returns issues that need fixing
+   When to use: After external_validation returns issues that need fixing
 
 QUALITY THRESHOLD: 18/25 minimum (5-axis rubric)
 
 INTELLIGENT WORKFLOW (Goal: Human-sounding emails, NO AI tells, PGA writing style):
 
-Your job: Create emails that pass quality_check with zero AI tells. Be smart about when to rewrite.
+Your job: Create emails that pass external_validation with zero AI tells. Be smart about when to rewrite.
 
 STANDARD PATH (most emails):
 1. Call generate_5_hooks → Select best subject line
 2. Call create_human_draft → Get email with self_assessment
 3. Call inject_proof_points → Add metrics from context
-4. Call quality_check → Evaluate for AI tells and quality
+4. Call external_validation → Evaluate for AI tells and quality (Editor-in-Chief + GPTZero)
 
-5. INTELLIGENT DECISION POINT - Review quality_check results:
+5. INTELLIGENT DECISION POINT - Review external_validation results:
 
    SCENARIO A: decision="accept" AND ai_deductions=0
    → Email is HIGH QUALITY on first try
@@ -585,17 +596,17 @@ STANDARD PATH (most emails):
    SCENARIO B: decision="accept" BUT ai_deductions >0 (AI tells found)
    → Score is good BUT AI tells detected (contrast framing, rule of three, jargon, formal greetings)
    → MUST FIX AI tells before returning
-   → Call apply_fixes with issues_json
-   → Re-run quality_check on revised_email to verify AI tells removed
+   → Call apply_fixes with issues_json, current_score, gptzero_ai_pct, gptzero_flagged_sentences
+   → Re-run external_validation on revised_email to verify AI tells removed
    → If ai_deductions=0 → Return
    → If ai_deductions >0 → Call apply_fixes again with remaining issues
    
    SCENARIO C: decision="revise" (score 18-19)
    → Check issues array for AI tells (severity="critical" or "high")
-   → AI tells present? 
+   → AI tells present?
      → Call apply_fixes to fix them
-     → Re-run quality_check to verify
-   → No AI tells? 
+     → Re-run external_validation to verify
+   → No AI tells?
      → Review other issues (generic audience, weak CTA)
      → If fixes are high-severity → Call apply_fixes
      → If fixes are medium/low-severity → User can decide, return email
@@ -611,7 +622,7 @@ STANDARD PATH (most emails):
    
    D2: Multiple AI tells (3+ critical issues)
    → Call apply_fixes with all critical/high issues
-   → Re-run quality_check
+   → Re-run external_validation
    → If ai_deductions=0 → Return (score may still be low, that's OK)
    → If ai_deductions >0 → Call apply_fixes again
    
@@ -623,11 +634,11 @@ STANDARD PATH (most emails):
    → User can provide better context and retry
 
 CRITICAL RULES FOR INTELLIGENT ROUTING:
-- If quality_check returns decision="accept" AND ai_deductions=0 → DONE, return immediately
+- If external_validation returns decision="accept" AND ai_deductions=0 → DONE, return immediately
 - If ai_deductions >0 → MUST iterate until ai_deductions=0 (this is non-negotiable)
 - If issues contain fabrications (severity="critical", axis="proof") → Flag for user, don't try to fix
-- apply_fixes is SURGICAL, not a magic wand - don't over-rely on it for content problems
-- MAX 2 iterations of apply_fixes → quality_check loop (prevents infinite loops)
+- apply_fixes is COMPREHENSIVE (fixes ALL issues), but not a magic wand - don't over-rely on it for content problems
+- MAX 2 iterations of apply_fixes → external_validation loop (prevents infinite loops)
 - After 2 iterations, return best attempt even if issues remain
 
 CRITICAL RULES (What You MUST Do vs What's Advisory):
@@ -638,13 +649,13 @@ CRITICAL RULES (What You MUST Do vs What's Advisory):
    - Rule of three: "Same X. Same Y. Over Z%." (three parallel fragments)
    - Formal greetings: "I hope this email finds you well" / "Thank you for reaching out"
    - Jargon: leveraging, seamless, robust, game-changer, unlock, dive deep
-   - If quality_check flags these → MUST call apply_fixes and re-check
+   - If external_validation flags these → MUST call apply_fixes and re-check
    - If on third iteration, and the AI tells are still present, then you can return the email with the AI tells flagged
 
 2. Parse JSON from all tool responses:
    - create_human_draft returns JSON with email_body + subject + preview_text + self_assessment
-   - quality_check returns JSON with scores + decision + issues
-   - apply_fixes returns JSON with revised_email + changes_made
+   - external_validation returns JSON with total_score + quality_scores + issues + gptzero_ai_pct + gptzero_flagged_sentences + decision
+   - apply_fixes returns JSON with revised_email + changes_made + estimated_new_score
    - Extract the fields you need before proceeding
 
 📊 ADVISORY (Flag for user, don't block):
@@ -654,7 +665,7 @@ CRITICAL RULES (What You MUST Do vs What's Advisory):
    - User can decide if quality is acceptable
 
 2. Fabrications detected:
-   - quality_check web_search couldn't verify names/companies/titles
+   - external_validation web_search couldn't verify names/companies/titles
    - Issues array will show: {axis: "proof", severity: "critical", original: "Marcus Thompson, VP at SalesForce"}
    - DO NOT try to fix these (you'll just make up different fake names)
    - Flag in output: "WARNING: Unverified claims detected. User must provide real examples or remove."
@@ -670,10 +681,10 @@ Priority 2: Score ≥18/25 - Nice to have, but not blocking if AI tells are clea
 Priority 3: No fabrications - Flag for user, they must provide real data
 
 EFFICIENCY GUIDELINES:
-- Don't over-iterate: If quality_check says decision="accept", trust it and return
+- Don't over-iterate: If external_validation says decision="accept", trust it and return
 - Don't call apply_fixes for decision="accept" with ai_deductions=0 (wastes 2-3 seconds)
 - Don't try to fix fabrications (you'll just hallucinate different fake names)
-- Do focus on surgical fixes for AI tells (this is what you're best at)
+- Do focus on comprehensive fixes for ALL AI tells (apply_fixes now handles all issues at once)
 
 RESPONSE FORMAT:
 When returning final email, include:
@@ -991,32 +1002,101 @@ The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style that MUST be appl
         from integrations.content_extractor import extract_structured_content
 
         print("📝 Extracting content with Haiku...")
-        extracted = await extract_structured_content(
-            raw_output=output,
-            platform='email'
-        )
-
-        clean_output = extracted['body']
-        subject_preview = extracted['hook']  # For email, hook is subject line
-
-        print(f"✅ Extracted: {len(clean_output)} chars body")
-        print(f"✅ Subject: {subject_preview[:80]}...")
-
-        # Extract score if mentioned in output
-        score = 90  # Default, would parse from actual output
-
-        # Run validators (quality check + optional GPTZero)
-        validation_json = None
-        validation_formatted = None
+        is_clarification = False
         try:
-            from integrations.validation_utils import run_all_validators, format_validation_for_airtable
-            validation_json = await run_all_validators(clean_output, 'email')
-            # Format for human-readable Airtable display
-            validation_formatted = format_validation_for_airtable(validation_json)
+            extracted = await extract_structured_content(
+                raw_output=output,
+                platform='email'
+            )
+
+            clean_output = extracted['body']
+            subject_preview = extracted['hook']  # For email, hook is subject line
+
+            print(f"✅ Extracted: {len(clean_output)} chars body")
+            print(f"✅ Subject: {subject_preview[:80]}...")
+
+        except ValueError as e:
+            # Agent requested clarification instead of completing email
+            print(f"⚠️ Extraction detected agent clarification: {e}")
+            is_clarification = True
+            clean_output = ""  # Empty body - no email was created
+            subject_preview = "Agent requested clarification (see Suggested Edits)"
+
         except Exception as e:
-            print(f"⚠️ Validation error (non-fatal): {e}")
-            validation_json = None
-            validation_formatted = None
+            # Other extraction errors - treat as clarification
+            print(f"❌ Extraction error: {e}")
+            is_clarification = True
+            clean_output = ""
+            subject_preview = "Extraction failed (see Suggested Edits)"
+
+        # Extract validation metadata from SDK response (agent already ran external_validation)
+        validation_score = extracted.get('original_score', 20)  # Default 20 if not provided
+        validation_issues = extracted.get('validation_issues', [])
+        gptzero_ai_pct = extracted.get('gptzero_ai_pct', None)
+        gptzero_flagged_sentences = extracted.get('gptzero_flagged_sentences', [])
+
+        score = validation_score  # Use score from validation
+
+        # Format issues as bullet points for Airtable "Suggested Edits"
+        validation_formatted = None
+        if validation_issues or gptzero_flagged_sentences:
+            lines = ["🔍 VALIDATION RESULTS:\n"]
+
+            # Add quality score
+            lines.append(f"Quality Score: {validation_score}/25")
+            if validation_score < 18:
+                lines.append("⚠️ Status: NEEDS REVIEW (score below 18 threshold)\n")
+            else:
+                lines.append("✅ Status: Draft (score meets threshold)\n")
+
+            # Add GPTZero results if available
+            if gptzero_ai_pct is not None:
+                lines.append(f"\n🤖 GPTZero AI Detection: {gptzero_ai_pct}% AI")
+                if gptzero_ai_pct < 100:
+                    lines.append("✅ Pass (not 100% AI)\n")
+                else:
+                    lines.append("⚠️ Flagged as 100% AI\n")
+
+                # Add flagged sentences
+                if gptzero_flagged_sentences:
+                    lines.append(f"\n📝 GPTZero Flagged Sentences ({len(gptzero_flagged_sentences)} total):")
+                    for i, sentence in enumerate(gptzero_flagged_sentences[:5], 1):  # Show max 5
+                        lines.append(f"   {i}. {sentence[:150]}...")
+                    if len(gptzero_flagged_sentences) > 5:
+                        lines.append(f"   ... and {len(gptzero_flagged_sentences) - 5} more\n")
+
+            # Add validation issues
+            if validation_issues:
+                lines.append(f"\n⚠️ ISSUES FOUND ({len(validation_issues)} total):\n")
+                for i, issue in enumerate(validation_issues, 1):
+                    # Handle both dict format (new) and string format (old)
+                    if isinstance(issue, dict):
+                        # NEW FORMAT: Issue object with severity/pattern/fix
+                        severity = issue.get('severity', 'medium').upper()
+                        pattern = issue.get('pattern', 'unknown')
+                        original = issue.get('original', '')
+                        fix = issue.get('fix', '')
+                        impact = issue.get('impact', '')
+
+                        lines.append(f"{i}. [{severity}] {pattern}")
+                        lines.append(f"   Problem: {original}")
+                        lines.append(f"   Fix: {fix}")
+                        if impact:
+                            lines.append(f"   Impact: {impact}")
+                        lines.append("")
+                    else:
+                        # OLD FORMAT: String description (fallback for legacy quality_check)
+                        lines.append(f"{i}. {issue}")
+                        lines.append("")
+
+            validation_formatted = "\n".join(lines)
+        else:
+            # No issues found
+            validation_formatted = f"✅ No validation issues found\nQuality Score: {validation_score}/25"
+
+        print(f"✅ Validation extracted from SDK: Score {validation_score}/25, {len(validation_issues)} issues")
+        if gptzero_ai_pct is not None:
+            print(f"   GPTZero: {gptzero_ai_pct}% AI, {len(gptzero_flagged_sentences)} flagged sentences")
 
         # Save to Airtable
         print("\n" + "="*60)
@@ -1033,13 +1113,17 @@ The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style that MUST be appl
             print(f"   Base ID: {airtable.base_id}")
             print(f"   Table: {airtable.table_name}")
 
+            # Determine Airtable status based on validation score
+            airtable_status = "Needs Review" if validation_score < 18 else "Draft"
+
             print(f"\n📝 Saving content (subject: '{subject_preview[:50]}...')")
+            print(f"   Status: {airtable_status} (score: {validation_score}/25)")
             result = airtable.create_content_record(
                 content=clean_output,  # Save the CLEAN extracted email, not raw output
                 platform='email',
                 post_hook=subject_preview,
-                status='Draft',
-                suggested_edits=validation_formatted  # Human-readable validation report
+                status=airtable_status,  # "Needs Review" if <18, else "Draft"
+                suggested_edits=validation_formatted  # Human-readable validation report with GPTZero sentences
             )
             print(f"📊 Airtable API result: {result}")
 

@@ -74,12 +74,24 @@ Don't bold every instance of key terms or phrases throughout text.
 
 **DO INSTEAD:** Use bold sparingly, only for true emphasis or when introducing technical terms for the first time.
 
-### AVOID Formulaic Lists:
-Don't structure everything as numbered or bulleted lists, especially with explicit numbers (1., 2., 3.) or bullet characters (•, -, –).
+### Lists ARE ALLOWED for Readability:
+Bulleted and numbered lists are ENCOURAGED when they make content more skimmable and readable.
 
-**DO INSTEAD:** Write in flowing paragraphs that naturally incorporate multiple points
-- AVOID: "The benefits include: 1. Cost savings 2. Efficiency gains 3. Better outcomes"
-- USE: "The program reduces costs by 15%, improves processing speed, and enhances patient satisfaction scores"
+**FORMATTING RULES:**
+- Use "1/" format for numbered lists instead of "1." (Airtable formatting issue: "1." shows as all "1."s)
+- Example: "1/ First step  2/ Second step  3/ Third step"
+- Bullets are perfectly fine for quick lists
+- Lists help readers scan content quickly
+
+**WHAT TO AVOID:** Over-structuring narrative content as lists when flowing paragraphs work better
+- AVOID: Turning every concept into a list just for formatting
+- USE: Lists when they genuinely aid comprehension (steps, options, comparisons)
+
+**Example of good list usage:**
+"Here are the 3 key steps:
+1/ Define your target audience
+2/ Test your messaging with 10-20 prospects
+3/ Refine based on feedback"
 
 ### AVOID Em-dash Overuse:
 Don't use em-dashes (—) excessively, especially in formulaic "punching up" patterns.
@@ -184,10 +196,18 @@ Don't structure content like a five-paragraph essay with thesis statements and c
 
 **DO INSTEAD:** Use inverted pyramid structure (most important information first) or chronological/logical flow appropriate to the content type.
 
-### AVOID Rule-of-Three Overuse:
-Don't constantly group things in threes ("good, bad, and ugly" patterns).
-- AVOID: "The platform is fast, reliable, and secure"
-- USE: "The platform processes requests in under 200ms with 99.9% uptime and bank-level encryption"
+### AVOID Rule-of-Three in SENTENCE STRUCTURE (NOT Lists):
+The "rule of three" AI tell applies to SENTENCE FRAGMENTS written as separate sentences, NOT to formatted lists.
+
+**WHAT TO AVOID:** Three parallel sentence fragments in a row
+- AVOID: "Fast. Reliable. Secure." (three adjective fragments as separate sentences)
+- AVOID: "Same team. Same process. Better results." (three parallel fragments)
+- USE: "Fast and reliable. The platform processes requests in under 200ms with 99.9% uptime."
+
+**WHAT'S ALLOWED:** Lists with 3+ items are FINE
+- ✅ "The platform is fast, reliable, and secure" (this is a list within a sentence - perfectly fine)
+- ✅ "Here are 3 benefits: 1/ Speed  2/ Reliability  3/ Security" (formatted list - perfectly fine)
+- ✗ "Benefit one. Speed. Benefit two. Reliability. Benefit three. Security." (AI tell - separate sentence fragments)
 
 ### AVOID Knowledge Disclaimers:
 Never include phrases like "as of [date]," "based on available information," "while specific details are limited."

@@ -115,34 +115,42 @@ These are the #1 indicator of AI writing. NEVER use contrast framing:
 ✓ RIGHT: "The AI optimized everything."
 
 **RULE OF THREE - ANOTHER MASSIVE AI TELL:**
-AI loves parallel structure with exactly three items. Humans vary their rhythm.
+AI loves parallel structure with exactly three items IN SENTENCE STRUCTURE. Humans vary their rhythm.
 
-✗ "Same complexity. Same output. Over 95% less time." (three parallel fragments)
+**IMPORTANT: This rule applies to SENTENCE STRUCTURE within paragraphs, NOT to formatted lists (bullets or numbers).**
+
+✗ "Same complexity. Same output. Over 95% less time." (three parallel sentence fragments)
 ✓ "Same complexity and output, but 95% less time."
 
-✗ "Dragged nodes. Connected logic. Tested connections." (three parallel verbs)
+✗ "Dragged nodes. Connected logic. Tested connections." (three parallel verb fragments)
 ✓ "I dragged nodes and connected the logic, then tested each connection."
 
-✗ "Faster. Cheaper. Better." (three adjectives)
+✗ "Faster. Cheaper. Better." (three adjective fragments)
 ✓ "Faster and cheaper."
 
-**If you find yourself writing three parallel things in a row → STOP. Combine two or vary the structure.**
+**If you find yourself writing three parallel sentence fragments in a row → STOP. Combine two or vary the structure.**
+
+**HOWEVER: Formatted lists with bullets or numbers are FINE and do not trigger this rule.**
+✓ Bulleted or numbered lists of 3+ items are perfectly acceptable for readability
+✓ "Here are 3 steps: 1/ Do X  2/ Do Y  3/ Do Z" is NOT an AI tell - this is a list
+✗ "Step one. Step two. Step three." written as separate sentences IS an AI tell
 
 **SPECIFIC RULE OF THREE PATTERNS TO AVOID:**
-✗ "Same sales team. Same market conditions. Same product offering." (three parallel "Same X" fragments)
+✗ "Same sales team. Same market conditions. Same product offering." (three parallel "Same X" sentence fragments)
 ✓ "It was the same sales team under the same market conditions, and they offered the same product."
 
-✗ "Bold. Daring. Transformative." (three adjectives in a row)
+✗ "Bold. Daring. Transformative." (three adjective fragments in a row)
 ✓ "Bold and daring. Even transformative."
 
-✗ "No fluff. No wasted time. Just real results." (three parallel negatives/statements)
+✗ "No fluff. No wasted time. Just real results." (three parallel negative/statement fragments)
 ✓ "I hate wasting time."
 
-✗ "Cut the bottom 20%. Bring in new blood. Hope it works." (three imperative commands)
+✗ "Cut the bottom 20%. Bring in new blood. Hope it works." (three imperative command fragments)
 ✓ "Cut the bottom 20% and bring in new blood."
 
-**The pattern**: Three parallel grammatical structures in a row (noun phrases, fragments, imperatives)
+**The pattern**: Three parallel grammatical structures in a row as SENTENCE FRAGMENTS (noun phrases, fragments, imperatives)
 **The fix**: Combine two with "and" or rewrite as complete sentence
+**Note**: This does NOT apply to properly formatted bullet or numbered lists
 
 **STACCATO FRAGMENTS - ANOTHER AI TELL:**
 AI loves short dramatic fragments at the start. Humans write complete sentences.
@@ -198,8 +206,11 @@ These patterns increase "burstiness" and "perplexity" - the 2 metrics GPTZero us
 GPTZero measures burstiness + perplexity. This section maximizes both.
 
 G. Formatting
+• Bullets and numbered lists ARE ALLOWED and encouraged for readability - lists make emails skimmable
+• For numbered lists, use "1/" format instead of "1." (e.g., "1/ First step  2/ Second step  3/ Third step")
+  - Reason: "1." format displays incorrectly in some rich text viewers (shows as all "1."s)
 • Do not begin list items with transition words like 'Firstly', 'Moreover', etc.
-• Avoid numbered headings unless the user asks for an outline.
+• Avoid numbered outline-style headings like "1. Introduction  2. Body  3. Conclusion" unless the user asks for an outline.
 • Do not use ALL‑CAPS for emphasis.
 H. Tone and style
 • Never mention or reference your own limitations (e.g., 'As an AI …').
@@ -370,8 +381,10 @@ MINIMUM ACCEPTABLE SCORE: 18/25
 
 CRITICAL AI TELLS TO AVOID:
 ❌ Contrast framing: "It's not X, it's Y" / "This isn't about X"
-❌ Rule of Three: "Same X. Same Y. Over Z%." (three parallel fragments)
+❌ Rule of Three: "Same X. Same Y. Over Z%." (three parallel sentence fragments - NOT formatted lists)
 ❌ Formal greetings: "I hope this email finds you well" / "Thank you for your time"
+
+✅ ALLOWED: Bulleted or numbered lists are FINE and encouraged for readability
 
 TOPIC: {topic}
 SUBJECT LINE (use exactly): {subject_line}
@@ -481,15 +494,35 @@ WORKFLOW:
 
 STEP 1: SCAN FOR VIOLATIONS
 Go through the email sentence-by-sentence and find:
-- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y")
+- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y", "Rather than X")
 - Masked contrast patterns ("Instead of X", "but rather")
+- Formulaic headers (ANY case):
+  * "The X:" pattern → "The promise:", "The reality:", "The result:", "The truth:", "The catch:"
+  * "HERE'S HOW:", "HERE'S WHAT:", Title Case In Headings
+  * These are AI tells - convert to natural language or delete
+- Short questions (<8 words ending in "?"):
+  * "For me?" → Delete or expand to statement: "For me, the ability to..."
+  * "The truth?" → Delete entirely
+  * "What happened?" → Expand: "What did the data show after 30 days?"
+  * Count words - if <8 words AND ends with "?", it's a violation
+- Subject line AI tells:
+  * "You won't believe..." (clickbait)
+  * "The secret to..." (puffery)
+  * Title case in subject lines
+- Preview text issues:
+  * Repeats subject line (should extend/add context)
+  * Generic ("Read more", "Click here", "View in browser")
+- Formal greetings/closings:
+  * "I hope this email finds you well"
+  * "Thank you for reaching out"
+  * "Looking forward to hearing from you"
+  * "Best regards," at end (use "Thanks," or just name)
 - Section summaries ("In summary", "In conclusion")
-- Promotional puffery ("stands as", "testament")
+- Promotional puffery ("stands as", "testament", "rich heritage")
 - Overused conjunctions ("moreover", "furthermore")
 - Vague attributions without sources
-- Em-dash overuse
+- Em-dash overuse (multiple — in formulaic patterns)
 - Words needing substitution ("leverages", "encompasses", "facilitates")
-- Formal greetings/closings ("I hope this email finds you well")
 
 STEP 2: CREATE SURGICAL ISSUES
 For EACH violation found, create ONE issue:
@@ -563,7 +596,11 @@ Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as writt
 
 # ==================== APPLY FIXES ====================
 
-APPLY_FIXES_PROMPT = dedent("""You are fixing an email based on quality feedback. Your job: apply 3-5 surgical fixes without rewriting the whole email.
+APPLY_FIXES_PROMPT = dedent("""You are fixing an email newsletter based on quality feedback.
+
+**CRITICAL PHILOSOPHY: PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
+
+This email contains the author's strategic thinking and intentional language choices.
 
 Original Email:
 {post}
@@ -571,30 +608,56 @@ Original Email:
 Issues from quality_check:
 {issues_json}
 
-CRITICAL RULES:
+Current Score: {current_score}/25
+GPTZero AI Detection: {gptzero_ai_pct}% AI (Target: <100%)
+Fix Strategy: {fix_strategy}
 
-0. **WRITE LIKE A HUMAN** - You must follow these rules when applying fixes:
+GPTZero Flagged Sentences (rewrite these like a human):
+{gptzero_flagged_sentences}
+
+1. **FIX STRATEGY:**
+
+   **COMPREHENSIVE MODE - Fix ALL issues:**
+   - No limit on number of fixes - address EVERY problem in issues list
+   - Rewrite entire sections if needed to eliminate AI patterns
+   - Rewrite GPTZero flagged sentences to sound more human
+   - Still preserve: specific numbers, names, dates, strategic narrative
+   - But eliminate: ALL cringe questions, ALL contrast framing, ALL buzzwords, ALL formulaic headers
+   - Goal: Fix every single flagged issue
+
+   **If GPTZero shows high AI %:**
+   - Add more human signals to flagged sentences:
+     * Sentence fragments for emphasis
+     * Contractions (I'm, that's, here's)
+     * Varied sentence length (5-25 words, not uniform 12-15)
+     * Natural transitions (And, So, But at sentence starts)
+
+2. **WHAT TO PRESERVE:**
+   - Specific numbers, metrics, dates (8.6%, 30 days, Q2 2024)
+   - Personal anecdotes and stories ("I spent 3 months...", "The CEO told me...")
+   - Strategic narrative arc (problem → insight → action)
+   - Author's unique voice and perspective
+   - Conversational tone and contractions
+
+3. **WHAT TO FIX:**
+   - ALL issues in issues_json list above
+   - ALL GPTZero flagged sentences (rewrite to add human signals)
+   - Contrast framing ("It's not X, it's Y" → "Y matters")
+   - Formulaic headers ("The truth:" → "Here's what I found:")
+   - Cringe questions ("For me?" → DELETE or expand to full sentence)
+   - Subject line AI tells ("You won't believe" → specific value)
+   - Formal greetings ("I hope this finds you well" → DELETE)
+   - Preview text that repeats subject (should extend with new context)
+   - Buzzwords and AI clichés
 
 {write_like_human_rules}
 
-1. **BE SURGICAL** - Fix ONLY what's listed in issues
-   - Don't rewrite sentences that aren't broken
-   - Don't change the voice or structure
-   - Make minimal edits to raise the score
-
-2. **PRESERVE STRENGTHS**:
-   - ✅ KEEP specific names/numbers from original
-   - ✅ KEEP conversational tone
-   - ✅ KEEP contractions: "I'm", "I've", "that's"
-   - ✅ KEEP informal language: "pretty well", "definitely", "a bunch of"
-   - ❌ DO NOT water down to vague language
-   - ❌ DO NOT make it more formal
-
-3. **DETECT & DESTROY RULE OF THREE**:
-   - Look for ANY three parallel structures:
-     - "Same X. Same Y. Same Z."
-     - "Adjective. Adjective. Adjective."
-     - "No X. No Y. Just Z."
+3. **DETECT & DESTROY RULE OF THREE (sentence fragments only, NOT lists)**:
+   - Look for three parallel SENTENCE FRAGMENTS (not formatted lists):
+     - "Same X. Same Y. Same Z." (as separate sentences)
+     - "Adjective. Adjective. Adjective." (as separate sentences)
+     - "No X. No Y. Just Z." (as separate sentences)
+   - DO NOT flag properly formatted bullet or numbered lists
    - Fix by combining two or rewriting:
      ✗ "Same sales team. Same headcount. 34% revenue jump."
      ✓ "Same sales team and headcount, but 34% revenue jump."
@@ -616,12 +679,7 @@ CRITICAL RULES:
       Six months later? Product velocity tanked because the AI couldn't handle edge cases. (13w)"
      (10w, 3w, 13w = HIGH burstiness)
 
-5. **APPLY FIXES BY SEVERITY**:
-   - Severity "high" → Must fix (raises score significantly)
-   - Severity "medium" → Fix if it doesn't hurt specificity
-   - Severity "low" → Skip unless obviously wrong
-
-6. **EXAMPLES OF SURGICAL FIXES**:
+4. **EXAMPLES OF EMAIL-SPECIFIC FIXES**:
    - Issue: Subject too long (68 chars)
      Fix: Shorten while keeping specificity: "Sujoy made $5k - here's the exact email he sent" → "Sujoy made $5k - the exact email"
 
@@ -648,4 +706,8 @@ Output JSON:
   "estimated_new_score": 21,
   "confidence": "high"  // "high" | "medium" | "low"
 }}
+
+**OUTPUT:**
+Return ONLY the revised email - no explanations, no meta-commentary.
+Fix ALL issues - no limit. Every flagged pattern and GPTZero sentence must be addressed.
 """)

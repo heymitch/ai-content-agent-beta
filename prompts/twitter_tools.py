@@ -113,18 +113,25 @@ These are the #1 indicator of AI writing. NEVER use contrast framing:
 ✓ RIGHT: "The AI optimized everything."
 
 **RULE OF THREE - ANOTHER MASSIVE AI TELL:**
-AI loves parallel structure with exactly three items. Humans vary their rhythm.
+AI loves parallel structure with exactly three items IN SENTENCE STRUCTURE. Humans vary their rhythm.
 
-✗ "Same complexity. Same output. Over 95% less time." (three parallel fragments)
+**IMPORTANT: This rule applies to SENTENCE STRUCTURE within paragraphs, NOT to formatted lists (bullets or numbers).**
+
+✗ "Same complexity. Same output. Over 95% less time." (three parallel sentence fragments)
 ✓ "Same complexity and output, but 95% less time."
 
-✗ "Dragged nodes. Connected logic. Tested connections." (three parallel verbs)
+✗ "Dragged nodes. Connected logic. Tested connections." (three parallel verb fragments)
 ✓ "I dragged nodes and connected the logic, then tested each connection."
 
-✗ "Faster. Cheaper. Better." (three adjectives)
+✗ "Faster. Cheaper. Better." (three adjective fragments)
 ✓ "Faster and cheaper."
 
-**If you find yourself writing three parallel things in a row → STOP. Combine two or vary the structure.**
+**If you find yourself writing three parallel sentence fragments in a row → STOP. Combine two or vary the structure.**
+
+**HOWEVER: Formatted lists with bullets or numbers are FINE and do not trigger this rule.**
+✓ Bulleted or numbered lists of 3+ items are perfectly acceptable for readability
+✓ "Here are 3 steps: 1/ Do X  2/ Do Y  3/ Do Z" is NOT an AI tell - this is a list
+✗ "Step one. Step two. Step three." written as separate sentences IS an AI tell
 
 **STACCATO FRAGMENTS - ANOTHER AI TELL:**
 AI loves short dramatic fragments at the start. Humans write complete sentences.
@@ -138,8 +145,11 @@ AI loves short dramatic fragments at the start. Humans write complete sentences.
 **Start with complete sentences. Save fragments for emphasis later, not at the top.**
 
 G. Formatting
+• Bullets and numbered lists ARE ALLOWED and encouraged for readability - lists make content skimmable
+• For numbered lists, use "1/" format instead of "1." (e.g., "1/ First step  2/ Second step  3/ Third step")
+  - Reason: "1." format displays incorrectly in some rich text viewers (shows as all "1."s)
 • Do not begin list items with transition words like 'Firstly', 'Moreover', etc.
-• Avoid numbered headings unless the user asks for an outline.
+• Avoid numbered outline-style headings like "1. Introduction  2. Body  3. Conclusion" unless the user asks for an outline.
 • Do not use ALL‑CAPS for emphasis.
 H. Tone and style
 • Never mention or reference your own limitations (e.g., 'As an AI …').
@@ -289,8 +299,10 @@ MINIMUM ACCEPTABLE SCORE: 18/25
 
 CRITICAL AI TELLS TO AVOID:
 ❌ Contrast framing: "It's not X, it's Y" / "This isn't about X" / "not just X, but Y" / "rather than"
-❌ Rule of Three: "Same X. Same Y. Over Z%." (three parallel fragments)
+❌ Rule of Three: "Same X. Same Y. Over Z%." (three parallel sentence fragments - NOT formatted lists)
 ❌ Cringe questions: "The truth?" / "The result?" / "Sound familiar?" (2-4 word transition questions)
+
+✅ ALLOWED: Bulleted or numbered lists are FINE and encouraged for readability
 
 TOPIC: {topic}
 HOOK (use exactly): {hook}
