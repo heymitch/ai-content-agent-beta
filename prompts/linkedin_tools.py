@@ -871,20 +871,21 @@ CRINGE QUESTIONS - BANNED COMPLETELY (DELETE ON SIGHT):
 
 ❌ **TWO-TO-FOUR WORD TRANSITION QUESTIONS (THE #1 AI TELL):**
 
-These are IMMEDIATELY IDENTIFIABLE as AI writing. Delete or expand:
+These are IMMEDIATELY IDENTIFIABLE as AI writing. Delete completely or expand into a more direct or conversational statement to improve the rate of revelation and clarity for the reader.
 
-- "The truth?" → DELETE or "What's the reality?"
-- "The result?" → DELETE or "What happened next?"
+- "The truth?" → DELETE and just say the truth: "What I've seen is..." 
+- "The result?" → DELETE or "We ended up..." or "We saw..." 
 - "Sound familiar?" → DELETE
-- "When?" → DELETE or "What was the timeline?"
-- "How much better?" → DELETE or "What were the actual numbers?"
-- "And those other models?" → DELETE or "What about DeepSeek and Ollama?"
+- "When?" or "What happened?" → DELETE or "After X amount of days/weeks/months, we saw..."
+- "How much better?" → DELETE or "I'll share the numbers for you..." 
+- "And those other models?" → DELETE or "The other models tend to..."
 - "Want to know the secret?" → DELETE
 - "The catch?" → DELETE or "What's the trade-off?"
 - "Ready?" → DELETE
-- "Why?" → DELETE or make specific: "Why does this matter for B2B founders?"
-- "What happened?" → Expand: "What did the data show after 30 days?"
-- "The best part?" → DELETE or "Here's what surprised me:"
+- "Why?" → DELETE
+- "The best part?" → DELETE or "So this ended up being the best part..."
+
+NOTE: these are not comprehensive, but whenever you see a question mark in the body of a post, think about whether or not we need it. 
 
 **REPLACEMENT STRATEGY:**
 1. DELETE entirely (preferred - these add no value)
