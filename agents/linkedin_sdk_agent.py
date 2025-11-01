@@ -808,6 +808,7 @@ Return ONLY the final post after apply_fixes."""
                 context_provider=lambda: log_context
             )
             async def connect_with_retry():
+                nonlocal client
                 await client.connect()
 
             await connect_with_retry()
@@ -823,6 +824,7 @@ Return ONLY the final post after apply_fixes."""
                 context_provider=lambda: log_context
             )
             async def query_with_retry():
+                nonlocal client
                 await asyncio.wait_for(
                     client.query(creation_prompt),
                     timeout=60.0  # 60 second timeout for sending query
@@ -842,7 +844,7 @@ Return ONLY the final post after apply_fixes."""
             max_stream_retries = 2  # reconnect attempts
 
             async def collect_response_with_timeout():
-                nonlocal final_output, message_count
+                nonlocal final_output, message_count, client
 
                 attempt = 0
                 start_time = asyncio.get_event_loop().time()
