@@ -889,11 +889,12 @@ PHASE 2: VALIDATION & REWRITE (MANDATORY - SINGLE PASS)
 
 STOP. DO NOT RETURN THE POST YET.
 
-WORKFLOW (ONE REWRITE ATTEMPT):
+WORKFLOW (DRAFT → VALIDATE → FIX → RE-VALIDATE):
 
 1. Call external_validation(post=your_draft)
-   - This runs Editor-in-Chief rules + GPTZero AI detection
+   - This runs Editor-in-Chief rules + GPTZero AI detection on DRAFT
    - Returns: total_score, issues, gptzero_ai_pct, gptzero_flagged_sentences
+   - STORE these for reference (original_score, original_issues)
 
 2. Call apply_fixes with ALL parameters:
    apply_fixes(
@@ -907,22 +908,24 @@ WORKFLOW (ONE REWRITE ATTEMPT):
    - apply_fixes will fix EVERY issue (no 3-5 limit)
    - Rewrites ALL GPTZero flagged sentences to sound more human
    - Returns revised_post
+   - STORE revised_post
 
-3. **CRITICAL:** Return the REVISED post from apply_fixes (NOT the original draft):
+3. **RE-VALIDATE the REVISED post** to see what still needs fixing:
+   final_validation = external_validation(post=revised_post)
 
-   Store the result from apply_fixes:
-   ```
-   fixed_result = apply_fixes(...)
-   revised_post = fixed_result.revised_post
-   ```
+   - This checks if apply_fixes actually fixed the issues
+   - Returns FINAL validation results for Airtable "Suggested Edits"
+   - User sees what STILL needs manual fixing in the final post
 
-   Return JSON with REVISED content:
+4. **CRITICAL:** Return the REVISED post with FINAL validation metadata:
+
+   Return JSON with REVISED content + FINAL validation:
    {{
-     "post_text": "[INSERT revised_post HERE - the FIXED version from apply_fixes tool response]",
-     "original_score": [score from external_validation],
-     "validation_issues": [issues from external_validation],
-     "gptzero_ai_pct": [AI % from external_validation],
-     "gptzero_flagged_sentences": [flagged sentences from external_validation]
+     "post_text": "[INSERT revised_post HERE - the FIXED version from apply_fixes]",
+     "original_score": [score from FINAL validation in step 3],
+     "validation_issues": [issues from FINAL validation in step 3],
+     "gptzero_ai_pct": [AI % from FINAL validation in step 3],
+     "gptzero_flagged_sentences": [flagged sentences from FINAL validation in step 3]
    }}
 
    ❌ **ANTI-PATTERNS (DO NOT DO THIS):**
@@ -933,20 +936,22 @@ WORKFLOW (ONE REWRITE ATTEMPT):
 
    ✅ **CORRECT FLOW:**
    1. draft = create_human_draft(...)
-   2. validation = external_validation(post=draft)
-   3. fixed = apply_fixes(post=draft, issues=validation.issues, ...)
-   4. Return {{post_text: fixed.revised_post}} ← MUST use revised version!
+   2. draft_validation = external_validation(post=draft)
+   3. fixed = apply_fixes(post=draft, issues=draft_validation.issues, ...)
+   4. final_validation = external_validation(post=fixed.revised_post)  ← RE-VALIDATE!
+   5. Return {{post_text: fixed.revised_post, validation from step 4}} ← Final validation goes to Airtable!
 
 CRITICAL:
-- Only ONE rewrite pass (don't re-validate after apply_fixes)
-- Return revised_post even if score was low
-- Include validation metadata so wrapper can set Airtable status
-- DO NOT run external_validation twice
-- Validation metadata is used to set "Needs Review" status if score <18
+- TWO validation passes: Draft validation (for apply_fixes input) + Final validation (for Airtable)
+- Return revised_post with FINAL validation metadata
+- User sees what STILL needs fixing after apply_fixes ran
+- If FINAL validation shows 0 issues → post is clean!
+- If FINAL validation shows issues → user knows what to manually edit
 - The post_text field MUST contain the REVISED version from apply_fixes
+- The validation metadata MUST be from FINAL validation (step 4), not draft validation
 
 WORKFLOW:
-Draft → external_validation → apply_fixes (ALL issues + GPTZero sentences) → **Return REVISED post with metadata**
+Draft → Validation #1 → apply_fixes → **Validation #2 on REVISED post** → Return REVISED post + Validation #2 results
 
 Return format MUST include REVISED post_text + validation metadata for Airtable."""
 
