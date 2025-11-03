@@ -908,14 +908,34 @@ WORKFLOW (ONE REWRITE ATTEMPT):
    - Rewrites ALL GPTZero flagged sentences to sound more human
    - Returns revised_post
 
-3. Return the revised_post with validation metadata:
+3. **CRITICAL:** Return the REVISED post from apply_fixes (NOT the original draft):
+
+   Store the result from apply_fixes:
+   ```
+   fixed_result = apply_fixes(...)
+   revised_post = fixed_result.revised_post
+   ```
+
+   Return JSON with REVISED content:
    {{
-     "post_text": "[revised_post from apply_fixes]",
+     "post_text": "[INSERT revised_post HERE - the FIXED version from apply_fixes tool response]",
      "original_score": [score from external_validation],
      "validation_issues": [issues from external_validation],
      "gptzero_ai_pct": [AI % from external_validation],
      "gptzero_flagged_sentences": [flagged sentences from external_validation]
    }}
+
+   ❌ **ANTI-PATTERNS (DO NOT DO THIS):**
+   - Do NOT return the original draft in post_text
+   - Do NOT skip apply_fixes and return draft directly
+   - Do NOT forget to extract revised_post from apply_fixes response
+   - Do NOT show the user the draft - only show the REVISED version
+
+   ✅ **CORRECT FLOW:**
+   1. draft = create_human_draft(...)
+   2. validation = external_validation(post=draft)
+   3. fixed = apply_fixes(post=draft, issues=validation.issues, ...)
+   4. Return {{post_text: fixed.revised_post}} ← MUST use revised version!
 
 CRITICAL:
 - Only ONE rewrite pass (don't re-validate after apply_fixes)
@@ -923,11 +943,12 @@ CRITICAL:
 - Include validation metadata so wrapper can set Airtable status
 - DO NOT run external_validation twice
 - Validation metadata is used to set "Needs Review" status if score <18
+- The post_text field MUST contain the REVISED version from apply_fixes
 
 WORKFLOW:
-Draft → external_validation → apply_fixes (ALL issues + GPTZero sentences) → Return with metadata
+Draft → external_validation → apply_fixes (ALL issues + GPTZero sentences) → **Return REVISED post with metadata**
 
-Return format MUST include all validation metadata for Airtable."""
+Return format MUST include REVISED post_text + validation metadata for Airtable."""
 
         try:
             # Connect with retry logic and exponential backoff
