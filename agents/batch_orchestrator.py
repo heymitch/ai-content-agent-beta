@@ -579,6 +579,13 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
             timeout=300  # 5 minutes max per post (normal: 2-4 min, complex: 4-5 min)
         )
 
+        # CRITICAL: Wait for SDK cleanup to complete before starting next post
+        # The SDK workflow has a finally block that disconnects connections.
+        # Give it time to complete to prevent race conditions on Replit.
+        import asyncio
+        await asyncio.sleep(2)  # 2 second grace period for cleanup
+        print(f"   ✅ Post {post_index + 1} cleanup complete, ready for next post", flush=True)
+
         # Extract metadata
         score = extract_score_from_result(result)
         airtable_url = extract_airtable_url_from_result(result)
