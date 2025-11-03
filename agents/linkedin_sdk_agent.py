@@ -1648,6 +1648,19 @@ _{result.get('hook', result['post'][:200])}..._
             except Exception as e:
                 print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
 
+                # AGGRESSIVE CLEANUP: If disconnect() fails, try to force close underlying connections
+                print(f"   🔧 Attempting aggressive cleanup for {session_id}...", flush=True)
+                try:
+                    # Try to access and close the internal httpx client if it exists
+                    if hasattr(client, '_client') and client._client:
+                        await client._client.aclose()
+                        print(f"   ✅ Force-closed internal httpx client", flush=True)
+                    elif hasattr(client, 'client') and client.client:
+                        await client.client.aclose()
+                        print(f"   ✅ Force-closed httpx client", flush=True)
+                except Exception as cleanup_error:
+                    print(f"   ⚠️ Aggressive cleanup failed: {cleanup_error}", flush=True)
+
         agent.sessions.clear()
         print(f"🔌 CLEANUP COMPLETE - All connections closed", flush=True)
         print("="*60 + "\n", flush=True)
