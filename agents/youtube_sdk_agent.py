@@ -724,10 +724,13 @@ Return format MUST include all validation metadata for Airtable."""
             })
 
         # ==================== STRUCTURED LOGGING START ====================
+        # Track operation timing for structured logging
+        import asyncio
+        operation_start_time = asyncio.get_event_loop().time()
+
         # Create log context for this operation
         log_context = create_context(
             agent="youtube_agent",
-            operation="create_script",
             user_id=self.user_id,
             topic=topic[:100],  # Truncate long topics
             script_type=script_type,
@@ -735,8 +738,9 @@ Return format MUST include all validation metadata for Airtable."""
             circuit_state=circuit_state.name
         )
 
-        # Record operation start time and log
-        operation_start_time = log_operation_start(
+        # Log operation start
+        log_operation_start(
+            logger,
             operation="create_script",
             context=log_context
         )
@@ -851,19 +855,24 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Cole's script style examples."""
 
             # ==================== CIRCUIT BREAKER SUCCESS ====================
             # Record success and potentially close circuit if in HALF_OPEN
-            self.circuit_breaker.record_success()
-            if circuit_state == CircuitState.HALF_OPEN:
-                logger.info("circuit_breaker_recovered", extra={
-                    **log_context,
-                    "state": "CLOSED",
-                    "message": "Circuit successfully recovered after test request"
-                })
+            with self.circuit_breaker._lock:
+                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                    logger.info("circuit_breaker_recovered", extra={
+                        **log_context,
+                        "state": "CLOSED",
+                        "message": "Circuit successfully recovered after test request"
+                    })
+                self.circuit_breaker.failure_count = 0
+                self.circuit_breaker.state = CircuitState.CLOSED
 
             # Log operation success
+            operation_duration = asyncio.get_event_loop().time() - operation_start_time
             log_operation_end(
+                logger,
                 operation="create_script",
-                start_time=operation_start_time,
-                context={**log_context, "success": True}
+                duration=operation_duration,
+                success=True,
+                context=log_context
             )
 
             return result
@@ -871,20 +880,33 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Cole's script style examples."""
         except Exception as e:
             # ==================== CIRCUIT BREAKER FAILURE ====================
             # Record failure and potentially open circuit
-            self.circuit_breaker.record_failure()
+            import time
+            with self.circuit_breaker._lock:
+                self.circuit_breaker.failure_count += 1
+                self.circuit_breaker.last_failure_time = time.time()
 
-            # Check if circuit should open
-            if self.circuit_breaker.state == CircuitState.OPEN:
-                logger.error("circuit_breaker_opened", extra={
-                    **log_context,
-                    "state": "OPEN",
-                    "failure_count": self.circuit_breaker.failure_count,
-                    "message": "Circuit opened due to repeated failures"
-                })
+                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                    logger.error("circuit_breaker_test_failed", extra={
+                        **log_context,
+                        "state": "OPEN",
+                        "failure_count": self.circuit_breaker.failure_count,
+                        "message": "Circuit test failed - RE-OPENING"
+                    })
+                    self.circuit_breaker.state = CircuitState.OPEN
+                elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
+                    logger.error("circuit_breaker_opened", extra={
+                        **log_context,
+                        "state": "OPEN",
+                        "failure_count": self.circuit_breaker.failure_count,
+                        "threshold": self.circuit_breaker.failure_threshold,
+                        "message": "Circuit OPENING - threshold reached"
+                    })
+                    self.circuit_breaker.state = CircuitState.OPEN
 
             # Log error with context
             log_error(
-                operation="create_script",
+                logger,
+                message="create_script_failed",
                 error=e,
                 context={**log_context, "error_type": type(e).__name__}
             )

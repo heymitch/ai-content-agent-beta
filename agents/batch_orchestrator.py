@@ -479,8 +479,8 @@ def create_batch_plan(
     # Store plan in global registry
     _batch_plans[plan_id] = plan
 
-    # Create context manager for this plan
-    _context_managers[plan_id] = ContextManager(plan_id)
+    # Create context manager for this plan (pass plan so it can extract detailed_outlines)
+    _context_managers[plan_id] = ContextManager(plan_id, plan)
 
     print(f"📋 Created batch plan: {plan_id} with {len(posts)} posts (context: {context_quality})")
 

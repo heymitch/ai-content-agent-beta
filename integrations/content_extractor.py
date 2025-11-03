@@ -67,8 +67,10 @@ The agent output may be in TWO formats:
 
 FORMAT 1: JSON with validation metadata (NEW v4.2.0)
 {{
-  "post_text": "..." OR "script_text": "..." (YouTube uses script_text),
+  "post_text": "..." OR "script_text": "..." (YouTube uses script_text, Instagram uses post_text),
   "timing_markers": {{...}} (YouTube only),
+  "character_count": 1847 (Instagram only, max 2200),
+  "preview_length": 124 (Instagram only, max 125 for preview),
   "original_score": 16,
   "validation_issues": [...],
   "gptzero_ai_pct": 45,
@@ -108,13 +110,15 @@ EXTRACTION RULES:
    - Extract body from "post_text" OR "script_text" field
    - Extract validation metadata (original_score, validation_issues, gptzero_ai_pct, gptzero_flagged_sentences)
    - For YouTube: Also extract timing_markers if present
+   - For Instagram: Also extract character_count and preview_length if present
    - Include ALL metadata fields in your response
 
    PRIORITY 2 - Look for EXPLICIT FINAL MARKERS (case-insensitive, flexible):
    - Contains "FINAL POST" (with or without emoji, asterisks, platform name)
-   - Contains "FINAL LINKEDIN" or "FINAL VERSION"
+   - Contains "FINAL LINKEDIN", "FINAL INSTAGRAM", or "FINAL VERSION"
    - Examples that should match:
      * "## ✅ **FINAL LINKEDIN POST**"
+     * "## ✅ **FINAL INSTAGRAM CAPTION**"
      * "## ✅ FINAL POST (Score: 22/30 - High Quality)"
      * "FINAL VERSION:"
      * "Final post:"
@@ -150,7 +154,8 @@ EXTRACTION RULES:
    - Twitter: First tweet only (remove "Tweet 1:" prefix)
    - Email: Subject line if present, else first sentence
    - YouTube: Video title or first line
-   - Maximum 200 characters
+   - Instagram: First 125 characters (preview window before "...more")
+   - Maximum 200 characters (125 for Instagram)
    - Remove numbering and prefixes
 
 3. publish_date:

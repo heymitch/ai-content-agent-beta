@@ -335,11 +335,11 @@ async def test_sequential_timing():
 
     print(f"\n✅ Sequential verification: diff={sequential_diff:.1f}s (< 10s threshold)")
 
-    # Verify reasonable timing (60-150 sec per post)
+    # Verify reasonable timing (60-180 sec per post - allows for GPTZero API + complex validation)
     for i, pt in enumerate(post_times):
-        assert 60 <= pt <= 150, f"Post {i+1} time out of range: {pt:.1f}s (expected 60-150s)"
+        assert 60 <= pt <= 180, f"Post {i+1} time out of range: {pt:.1f}s (expected 60-180s)"
 
-    print(f"✅ All post times in range (60-150s)")
+    print(f"✅ All post times in range (60-180s)")
 
     print(f"\n✅ PASS: Sequential execution verified")
     return True

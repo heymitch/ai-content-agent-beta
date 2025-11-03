@@ -22,9 +22,13 @@ from textwrap import dedent
 # Load environment variables for API keys
 load_dotenv()
 
-# Setup logging
-logger = logging.getLogger(__name__)
-logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
+# ================== PRODUCTION HARDENING IMPORTS ==================
+from utils.structured_logger import get_logger, log_operation_start, log_operation_end, log_error, create_context
+from utils.retry_decorator import async_retry_with_backoff, RETRIABLE_EXCEPTIONS
+from utils.circuit_breaker import CircuitBreaker, CircuitState
+
+# Initialize structured logger (replaces basic logger)
+logger = get_logger(__name__)
 
 
 # ================== TIER 3 TOOL DEFINITIONS (LAZY LOADED) ==================
@@ -293,12 +297,109 @@ Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web search
 
 
 @tool(
+    "external_validation",
+    "Run comprehensive validation: Editor-in-Chief rules + GPTZero AI detection",
+    {"post": str}
+)
+async def external_validation(args):
+    """
+    Run external validators (quality_check + GPTZero) and return structured results
+
+    Returns:
+        JSON with total_score, quality_scores, issues, gptzero_ai_pct, decision
+    """
+    import json
+
+    post = args.get('post', '')
+
+    try:
+        from integrations.validation_utils import run_all_validators
+
+        # Run all validators (quality_check + GPTZero in parallel)
+        validation_json = await run_all_validators(post, 'instagram')
+        val_data = json.loads(validation_json) if isinstance(validation_json, str) else validation_json
+
+        # Extract key metrics
+        quality_scores = val_data.get('quality_scores', {})
+        total_score = quality_scores.get('total', 0)
+        raw_issues = val_data.get('ai_patterns_found', [])
+        gptzero = val_data.get('gptzero', {})
+
+        # Normalize issues to dict format for consistency
+        # quality_check can return strings (old format) or dicts (new format)
+        issues = []
+        for issue in raw_issues:
+            if isinstance(issue, dict):
+                # Already in correct format
+                issues.append(issue)
+            elif isinstance(issue, str):
+                # Convert old string format to dict format
+                issues.append({
+                    "severity": "medium",
+                    "pattern": "unknown",
+                    "original": issue,
+                    "fix": "Review manually",
+                    "impact": "Potential AI tell detected"
+                })
+
+        # GPTZero: As long as it's not 100% AI, it's a win
+        # Extract AI probability and flagged sentences if GPTZero ran successfully
+        gptzero_ai_pct = None
+        gptzero_passes = None
+        gptzero_flagged_sentences = []
+
+        if gptzero and gptzero.get('status') in ['PASS', 'FLAGGED']:
+            gptzero_ai_pct = gptzero.get('ai_probability', None)
+            if gptzero_ai_pct is not None:
+                gptzero_passes = gptzero_ai_pct < 100  # Pass if not 100% AI
+
+            # Extract flagged sentences for apply_fixes to rewrite
+            gptzero_flagged_sentences = gptzero.get('flagged_sentences', [])
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "total_score": total_score,
+                    "quality_scores": quality_scores,
+                    "issues": issues,
+                    "gptzero_ai_pct": gptzero_ai_pct,
+                    "gptzero_passes": gptzero_passes,
+                    "gptzero_flagged_sentences": gptzero_flagged_sentences,
+                    "decision": val_data.get('decision', 'unknown'),
+                    "surgical_summary": val_data.get('surgical_summary', '')
+                }, indent=2, ensure_ascii=False)
+            }]
+        }
+
+    except Exception as e:
+        logger.error(f"❌ external_validation error: {e}")
+        # Return fallback result - don't block caption creation
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "total_score": 18,  # Neutral score - assume decent quality
+                    "quality_scores": {"total": 18},
+                    "issues": [],
+                    "gptzero_ai_pct": None,
+                    "gptzero_passes": None,
+                    "gptzero_flagged_sentences": [],
+                    "decision": "error",
+                    "error": str(e),
+                    "surgical_summary": f"Validation error: {str(e)}"
+                }, indent=2)
+            }]
+        }
+
+
+@tool(
     "apply_fixes",
-    "Apply 3-5 surgical fixes based on quality_check feedback",
-    {"post": str, "issues_json": str}
+    "Apply fixes to ALL flagged issues (no limit on number of fixes)",
+    {"post": str, "issues_json": str, "current_score": int, "gptzero_ai_pct": float, "gptzero_flagged_sentences": list}
 )
 async def apply_fixes(args):
-    """Apply surgical fixes without rewriting the whole caption"""
+    """Apply fixes - rewrites EVERYTHING flagged (no surgical limit)"""
     import json
     from anthropic import Anthropic
     from prompts.instagram_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
@@ -306,12 +407,27 @@ async def apply_fixes(args):
 
     post = args.get('post', '')
     issues_json = args.get('issues_json', '[]')
+    current_score = args.get('current_score', 0)
+    gptzero_ai_pct = args.get('gptzero_ai_pct', None)
+    gptzero_flagged_sentences = args.get('gptzero_flagged_sentences', [])
 
-    # Use APPLY_FIXES_PROMPT
+    # ALWAYS comprehensive mode - no surgical limit
+    fix_strategy = "COMPREHENSIVE - Fix ALL issues, no limit on number of changes"
+
+    # Format GPTZero flagged sentences for prompt
+    flagged_sentences_text = "Not available"
+    if gptzero_flagged_sentences:
+        flagged_sentences_text = "\n".join([f"- {sent}" for sent in gptzero_flagged_sentences])
+
+    # Use APPLY_FIXES_PROMPT with GPTZero context
     prompt = APPLY_FIXES_PROMPT.format(
-        write_like_human_rules=WRITE_LIKE_HUMAN_RULES,
         post=post,
-        issues_json=issues_json
+        issues_json=issues_json,
+        current_score=current_score,
+        gptzero_ai_pct=gptzero_ai_pct if gptzero_ai_pct is not None else "Not available",
+        gptzero_flagged_sentences=flagged_sentences_text,
+        fix_strategy=fix_strategy,
+        write_like_human_rules=WRITE_LIKE_HUMAN_RULES
     )
 
     response = client.messages.create(
@@ -373,6 +489,17 @@ class InstagramSDKAgent:
         self.channel_id = channel_id  # Slack channel for Supabase/Airtable
         self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
 
+        # ==================== PRODUCTION HARDENING ====================
+        # Circuit breaker: Prevents cascading failures when API is down
+        # - Tracks failures and opens circuit after 3 consecutive failures
+        # - Rejects requests for 60s recovery period
+        # - Gradually recovers via HALF_OPEN state
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=3,
+            recovery_timeout=60.0,
+            name="instagram_agent"
+        )
+
         # Instagram-specific base prompt with quality thresholds
         base_prompt = """You are an Instagram caption creation agent. Your goal: captions that score 20+ out of 25 and stop the scroll.
 
@@ -428,34 +555,85 @@ CRITICAL CONSTRAINTS:
 - Visual pairing (assumes accompanying image/Reel)
 - Mobile formatting (line breaks every 2-3 sentences)
 
+═══════════════════════════════════════════════════════════
+PHASE 1: RESEARCH & DRAFTING
+═══════════════════════════════════════════════════════════
+
 WORKFLOW:
-1. generate_5_hooks
-2. Select best hook
-3. create_caption_draft
-4. If >2,200 chars → condense_to_limit
-5. quality_check
-6. If issues → apply_fixes
-7. Return final caption"""
+1. Call mcp__instagram_tools__generate_5_hooks → Select best hook
+2. Call mcp__instagram_tools__create_caption_draft → Get caption
+3. If >2,200 chars → Call mcp__instagram_tools__condense_to_limit
+4. You now have a complete draft
+
+   → THEN proceed to Phase 2 below
+
+═══════════════════════════════════════════════════════════
+PHASE 2: VALIDATION & REWRITE (MANDATORY - SINGLE PASS)
+═══════════════════════════════════════════════════════════
+
+STOP. DO NOT RETURN THE CAPTION YET.
+
+WORKFLOW (ONE REWRITE ATTEMPT):
+
+1. Call external_validation(post=your_draft)
+   - This runs Editor-in-Chief rules + GPTZero AI detection
+   - Returns: total_score, issues, gptzero_ai_pct, gptzero_flagged_sentences
+
+2. Call apply_fixes with ALL parameters:
+   apply_fixes(
+     post=your_draft,
+     issues_json=json.dumps(validation.issues),
+     current_score=validation.total_score,
+     gptzero_ai_pct=validation.gptzero_ai_pct,
+     gptzero_flagged_sentences=validation.gptzero_flagged_sentences
+   )
+
+   - apply_fixes will fix EVERY issue (no 3-5 limit)
+   - Rewrites ALL GPTZero flagged sentences to sound more human
+   - Returns revised_post
+   - **INSTAGRAM-CRITICAL:** Preserves 125-char preview, stays under 2,200 chars
+
+3. Return the revised_post with validation metadata:
+   {{
+     "caption_text": "[revised_post from apply_fixes]",
+     "original_score": [score from external_validation],
+     "validation_issues": [issues from external_validation],
+     "gptzero_ai_pct": [AI % from external_validation],
+     "gptzero_flagged_sentences": [flagged sentences from external_validation]
+   }}
+
+CRITICAL:
+- Only ONE rewrite pass (don't re-validate after apply_fixes)
+- Return revised_post even if score was low
+- Include validation metadata so wrapper can set Airtable status
+- DO NOT run external_validation twice
+- Validation metadata is used to set "Needs Review" status if score <18
+
+WORKFLOW:
+Draft → external_validation → apply_fixes (ALL issues + GPTZero sentences) → Return with metadata
+
+Return format MUST include all validation metadata for Airtable."""
 
         # Compose base prompt + client context (if exists)
         from integrations.prompt_loader import load_system_prompt
         self.system_prompt = load_system_prompt(base_prompt)
 
-        # Create MCP server with Instagram-specific tools (LEAN 5-TOOL WORKFLOW)
+        # Create MCP server with Instagram-specific tools (ENHANCED 7-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
             name="instagram_tools",
-            version="4.1.0",
+            version="4.2.0",
             tools=[
-                search_company_documents,  # NEW v4.1.0
+                search_company_documents,  # NEW v4.1.0: Access user-uploaded docs for proof points
                 generate_5_hooks,
                 create_caption_draft,
                 condense_to_limit,
-                quality_check,
-                apply_fixes
+                quality_check,  # Combined: AI patterns + fact-check
+                external_validation,  # NEW v4.2.0: Editor-in-Chief + GPTZero validation
+                apply_fixes     # Enhanced v4.2.0: Fixes ALL issues + GPTZero flagged sentences
             ]
         )
 
-        print("📸 Instagram SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
+        print("📸 Instagram SDK Agent initialized with 7 tools (6 lean tools + company docs RAG + external_validation)")
 
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
         """Get or create a persistent session for content creation"""
@@ -503,9 +681,61 @@ WORKFLOW:
             Dict with final caption, score, hooks tested, iterations
         """
 
+        # ==================== CIRCUIT BREAKER CHECK ====================
+        # Check circuit state before processing
+        circuit_state = self.circuit_breaker.state
+
+        if circuit_state == CircuitState.OPEN:
+            error_msg = (
+                f"Circuit breaker is OPEN (too many recent failures). "
+                f"Rejecting request to prevent cascading failures. "
+                f"Will retry after recovery timeout."
+            )
+            logger.error("circuit_breaker_open", extra={
+                "agent": "instagram_agent",
+                "state": "OPEN",
+                "failure_count": self.circuit_breaker.failure_count
+            })
+            return {
+                "success": False,
+                "error": error_msg,
+                "caption": None,
+                "circuit_state": "OPEN"
+            }
+
+        # If HALF_OPEN, log that we're testing recovery
+        if circuit_state == CircuitState.HALF_OPEN:
+            logger.info("circuit_breaker_testing", extra={
+                "agent": "instagram_agent",
+                "state": "HALF_OPEN",
+                "message": "Testing recovery with single request"
+            })
+
+        # ==================== STRUCTURED LOGGING START ====================
+        # Track operation timing for structured logging
+        import asyncio
+        operation_start_time = asyncio.get_event_loop().time()
+
+        # Create log context for this operation
+        log_context = create_context(
+            agent="instagram_agent",
+            user_id=self.user_id,
+            topic=topic[:100],  # Truncate long topics
+            target_score=target_score,
+            circuit_state=circuit_state.name
+        )
+
+        # Log operation start
+        log_operation_start(
+            logger,
+            operation="create_caption",
+            context=log_context
+        )
+
         # Use session ID or create new one
         if not session_id:
             session_id = f"instagram_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            logger.info("session_created", extra={**log_context, "session_id": session_id})
 
         client = self.get_or_create_session(session_id)
 
@@ -573,23 +803,98 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Instagram formatting guidelines."""
                             final_output = text_content
                             print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
 
-            print(f"\n   ✅ Stream complete after {message_count} messages")
-            print(f"   📝 Final output: {len(final_output)} chars")
+            logger.info("stream_complete", extra={
+                **log_context,
+                "message_count": message_count,
+                "output_length": len(final_output)
+            })
 
             # Parse the output to extract structured data
-            return await self._parse_output(final_output)
+            result = await self._parse_output(final_output, operation_start_time, log_context)
+
+            # ==================== CIRCUIT BREAKER SUCCESS ====================
+            # Record success and potentially close circuit if in HALF_OPEN
+            with self.circuit_breaker._lock:
+                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                    logger.info("circuit_breaker_recovered", extra={
+                        **log_context,
+                        "state": "CLOSED",
+                        "message": "Circuit successfully recovered after test request"
+                    })
+                self.circuit_breaker.failure_count = 0
+                self.circuit_breaker.state = CircuitState.CLOSED
+
+            # Log operation success
+            operation_duration = asyncio.get_event_loop().time() - operation_start_time
+            log_operation_end(
+                logger,
+                operation="create_caption",
+                duration=operation_duration,
+                success=True,
+                context=log_context
+            )
+
+            return result
 
         except Exception as e:
-            print(f"❌ Instagram SDK Agent error: {e}")
+            # ==================== CIRCUIT BREAKER FAILURE ====================
+            # Record failure and potentially open circuit
+            import time
+            with self.circuit_breaker._lock:
+                self.circuit_breaker.failure_count += 1
+                self.circuit_breaker.last_failure_time = time.time()
+
+                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                    logger.error("circuit_breaker_test_failed", extra={
+                        **log_context,
+                        "state": "OPEN",
+                        "failure_count": self.circuit_breaker.failure_count,
+                        "message": "Circuit test failed - RE-OPENING"
+                    })
+                    self.circuit_breaker.state = CircuitState.OPEN
+                elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
+                    logger.error("circuit_breaker_opened", extra={
+                        **log_context,
+                        "state": "OPEN",
+                        "failure_count": self.circuit_breaker.failure_count,
+                        "threshold": self.circuit_breaker.failure_threshold,
+                        "message": "Circuit OPENING - threshold reached"
+                    })
+                    self.circuit_breaker.state = CircuitState.OPEN
+
+            # Log error with context
+            log_error(
+                logger,
+                message="create_caption_failed",
+                error=e,
+                context={**log_context, "error_type": type(e).__name__}
+            )
+
             return {
                 "success": False,
                 "error": str(e),
-                "caption": None
+                "caption": None,
+                "circuit_state": self.circuit_breaker.state.name
             }
 
-    async def _parse_output(self, output: str) -> Dict[str, Any]:
-        """Parse agent output into structured response using Haiku extraction"""
-        print(f"\n🔍 _parse_output called with {len(output)} chars")
+    async def _parse_output(
+        self,
+        output: str,
+        operation_start_time: float,
+        log_context: dict
+    ) -> Dict[str, Any]:
+        """
+        Parse agent output into structured response using Haiku extraction
+
+        Args:
+            output: Raw output from agent
+            operation_start_time: Start time of operation (for duration logging)
+            log_context: Logging context dict
+        """
+        logger.info("parse_output_start", extra={
+            **log_context,
+            "output_length": len(output)
+        })
         print(f"   First 200 chars: {output[:200]}...")
 
         if not output or len(output) < 10:
@@ -617,12 +922,33 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Instagram formatting guidelines."""
             print(f"✅ Extracted: {len(clean_output)} chars caption")
             print(f"✅ Hook: {hook_preview[:80]}...")
 
+            # ==================== EXTRACT VALIDATION METADATA ====================
+            # Extract validation metadata from SDK response (if present)
+            validation_score = extracted.get('original_score', 20)
+            validation_issues = extracted.get('validation_issues', [])
+            gptzero_ai_pct = extracted.get('gptzero_ai_pct', None)
+            gptzero_flagged_sentences = extracted.get('gptzero_flagged_sentences', [])
+
+            score = validation_score  # Use score from validation
+
+            print(f"📊 Validation metadata:")
+            print(f"   Score: {validation_score}/25")
+            if gptzero_ai_pct is not None:
+                print(f"   GPTZero AI%: {gptzero_ai_pct}%")
+            print(f"   Issues found: {len(validation_issues)}")
+
         except ValueError as e:
             # Agent requested clarification instead of completing caption
             print(f"⚠️ Extraction detected agent clarification: {e}")
             is_clarification = True
             clean_output = ""  # Empty body - no caption was created
             hook_preview = "Agent requested clarification (see Suggested Edits)"
+            # Set default validation metadata for clarification
+            validation_score = 0
+            validation_issues = []
+            gptzero_ai_pct = None
+            gptzero_flagged_sentences = []
+            score = 0
 
         except Exception as e:
             # Other extraction errors - treat as clarification
@@ -630,22 +956,70 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Instagram formatting guidelines."""
             is_clarification = True
             clean_output = ""
             hook_preview = "Extraction failed (see Suggested Edits)"
+            # Set default validation metadata for error
+            validation_score = 0
+            validation_issues = []
+            gptzero_ai_pct = None
+            gptzero_flagged_sentences = []
+            score = 0
 
-        # Extract score if mentioned in output
-        score = 90  # Default, would parse from actual output
-
-        # Run validators (quality check + optional GPTZero)
-        validation_json = None
+        # ==================== FORMAT VALIDATION FOR AIRTABLE ====================
+        # Format extracted validation metadata for human-readable Airtable display
         validation_formatted = None
-        try:
-            from integrations.validation_utils import run_all_validators, format_validation_for_airtable
-            validation_json = await run_all_validators(clean_output, 'instagram')
-            # Format for human-readable Airtable display
-            validation_formatted = format_validation_for_airtable(validation_json)
-        except Exception as e:
-            print(f"⚠️ Validation error (non-fatal): {e}")
-            validation_json = None
-            validation_formatted = None
+        if validation_issues:
+            # Build human-readable validation report
+            sections = []
+
+            # Header with score
+            sections.append(f"VALIDATION SCORE: {validation_score}/25")
+            if gptzero_ai_pct is not None:
+                sections.append(f"GPTZero AI Detection: {gptzero_ai_pct}%")
+            sections.append("")
+
+            # Group issues by severity
+            high_issues = [i for i in validation_issues if i.get('severity') == 'high']
+            medium_issues = [i for i in validation_issues if i.get('severity') == 'medium']
+            low_issues = [i for i in validation_issues if i.get('severity') == 'low']
+
+            if high_issues:
+                sections.append("🔴 HIGH PRIORITY ISSUES:")
+                for issue in high_issues:
+                    sections.append(f"• {issue.get('pattern', 'Unknown')}: {issue.get('original', '')}")
+                    sections.append(f"  → Fix: {issue.get('fix', '')}")
+                    sections.append("")
+
+            if medium_issues:
+                sections.append("🟡 MEDIUM PRIORITY ISSUES:")
+                for issue in medium_issues:
+                    sections.append(f"• {issue.get('pattern', 'Unknown')}: {issue.get('original', '')}")
+                    sections.append(f"  → Fix: {issue.get('fix', '')}")
+                    sections.append("")
+
+            if low_issues:
+                sections.append("🟢 LOW PRIORITY ISSUES:")
+                for issue in low_issues:
+                    sections.append(f"• {issue.get('pattern', 'Unknown')}: {issue.get('original', '')}")
+                    sections.append(f"  → Fix: {issue.get('fix', '')}")
+                    sections.append("")
+
+            # GPTZero flagged sentences
+            if gptzero_flagged_sentences:
+                sections.append("🤖 AI-DETECTED SENTENCES (REWRITE):")
+                for sentence in gptzero_flagged_sentences[:5]:  # Limit to first 5
+                    sections.append(f"• {sentence}")
+                sections.append("")
+
+            validation_formatted = "\n".join(sections)
+        else:
+            # No issues found or validation not run
+            validation_formatted = f"VALIDATION SCORE: {validation_score}/25\n\nNo issues detected."
+
+        # ==================== AIRTABLE STATUS AUTOMATION ====================
+        # Auto-set status based on validation score
+        # < 18: Needs human review before publishing
+        # >= 18: High-quality draft, ready for light review
+        airtable_status = "Needs Review" if validation_score < 18 else "Draft"
+        print(f"📊 Airtable status: {airtable_status} (score: {validation_score}/25)")
 
         # Save to Airtable
         print("\n" + "="*60)
@@ -667,7 +1041,7 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Instagram formatting guidelines."""
                 content=clean_output,  # Save the CLEAN extracted post, not raw output
                 platform='instagram',
                 post_hook=hook_preview,
-                status='Draft',
+                status=airtable_status,  # Conditional: "Needs Review" if score < 18, else "Draft"
                 suggested_edits=validation_formatted  # Human-readable validation report
             )
             print(f"📊 Airtable API result: {result}")

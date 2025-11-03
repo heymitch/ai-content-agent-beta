@@ -321,9 +321,11 @@ Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as writt
 
 # ==================== APPLY FIXES ====================
 
-APPLY_FIXES_PROMPT = dedent("""You are fixing an Instagram caption based on quality feedback. Your job: apply 3-5 surgical fixes without rewriting the whole caption.
+APPLY_FIXES_PROMPT = dedent("""You are fixing an Instagram caption based on quality feedback.
 
-{write_like_human_rules}
+**CRITICAL PHILOSOPHY: PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
+
+This caption contains strategic thinking and intentional language choices.
 
 ORIGINAL CAPTION:
 {post}
@@ -331,21 +333,59 @@ ORIGINAL CAPTION:
 QUALITY ISSUES (from quality_check):
 {issues_json}
 
+Current Score: {current_score}/25
+GPTZero AI Detection: {gptzero_ai_pct}% AI (Target: <100%)
+Fix Strategy: {fix_strategy}
+
+GPTZero Flagged Sentences (rewrite these like a human):
+{gptzero_flagged_sentences}
+
+{write_like_human_rules}
+
 FIXING STRATEGY:
 
-1. PRIORITIZE CRITICAL FIXES FIRST:
-   - Fabrications (flag for user, don't invent)
-   - Character limit violations (condense)
-   - Hook over 125 chars (trim preview)
-   - AI tells (contrast framing, rule of three)
+1. **FIX STRATEGY:**
 
-2. SURGICAL EDITS (don't rewrite whole caption):
-   - Replace specific phrases only
-   - Preserve voice and emotional language
-   - Keep all numbers/names/specifics
-   - Maintain line break formatting
+   **COMPREHENSIVE MODE - Fix ALL issues:**
+   - No limit on number of fixes - address EVERY problem in issues list
+   - Rewrite entire sections if needed to eliminate AI patterns
+   - Rewrite GPTZero flagged sentences to sound more human
+   - Still preserve: specific numbers, names, dates, strategic narrative, hashtags
+   - But eliminate: ALL cringe questions, ALL contrast framing, ALL buzzwords, ALL formulaic headers
+   - Goal: Fix every single flagged issue
 
-3. INSTAGRAM-SPECIFIC FIXES:
+   **If GPTZero shows high AI %:**
+   - Add more human signals to flagged sentences:
+     * Sentence fragments for emphasis
+     * Contractions (I'm, that's, here's)
+     * Varied sentence length (5-25 words, not uniform 12-15)
+     * Natural transitions (And, So, But at sentence starts)
+
+2. **INSTAGRAM-SPECIFIC CRITICAL PRESERVATIONS:**
+   - **125-CHAR PREVIEW (CRITICAL):** First 125 chars MUST work standalone before "...more"
+   - **2,200 CHAR HARD LIMIT:** Caption must stay under 2,200 chars total (including hashtags)
+   - **Hashtags at END:** 3-5 hashtags always at the very end
+   - **Line breaks:** Every 2-3 sentences for mobile readability
+   - **Visual pairing:** Add "swipe"/"above"/"tap" references if missing
+
+3. **WHAT TO PRESERVE:**
+   - Specific numbers, metrics, dates (8.6%, 30 days, Q2 2024)
+   - Personal anecdotes and stories
+   - Strategic narrative arc
+   - Author's unique voice
+   - Hashtags (just ensure they're at end)
+   - Strategic emoji placement (1-2 max)
+
+4. **WHAT TO FIX:**
+   - ALL issues in issues_json list above
+   - ALL GPTZero flagged sentences (rewrite to add human signals)
+   - Contrast framing ("It's not X, it's Y" → "Y matters")
+   - Rule of three sentence fragments
+   - Cringe questions ("For me?" → DELETE)
+   - Buzzwords and AI clichés
+   - Hook over 125 chars (CRITICAL - Instagram cuts this off)
+
+5. **INSTAGRAM-SPECIFIC FIXES:
    - Ensure first 125 chars work standalone
    - Add "swipe"/"above" if missing visual reference
    - Line breaks every 2-3 sentences
