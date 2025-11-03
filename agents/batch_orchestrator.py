@@ -55,13 +55,13 @@ async def execute_sequential_batch(
             'quality_trend': str
         }
     """
-    context_mgr = ContextManager(plan['id'])
+    context_mgr = ContextManager(plan['id'], plan)
     start_time = time.time()
 
     completed = 0
     failed = 0
 
-    print(f"\n🚀 Starting batch execution: {len(plan['posts'])} posts")
+    print(f"\n🚀 Starting batch execution: {len(plan['posts'])} posts (sequential)")
     print(f"📋 Plan ID: {plan['id']}")
 
     for i, post_spec in enumerate(plan['posts']):
@@ -76,26 +76,22 @@ async def execute_sequential_batch(
                  f"Topic: {post_spec['topic'][:100]}"
         )
 
-        # Get compacted learnings from previous posts
-        learnings = context_mgr.get_compacted_learnings()
-
-        # Calculate target score (improve on average)
-        target_score = context_mgr.get_target_score()
+        # Get context from strategic outline (NO learning accumulation)
+        strategic_context = context_mgr.get_context_for_post(i)
 
         print(f"\n📝 Post {post_num}/{len(plan['posts'])}")
         print(f"   Platform: {post_spec['platform']}")
-        print(f"   Target score: {target_score}+")
-        print(f"   Learnings: {len(learnings)} chars")
+        print(f"   Strategic context: {len(strategic_context)} chars")
 
-        # Call EXISTING SDK agent workflow (NO CHANGES to SDK agents)
+        # Call EXISTING SDK agent workflow (NO learning injection)
         try:
             result = await _execute_single_post(
                 platform=post_spec['platform'],
                 topic=post_spec['topic'],
-                context=post_spec.get('context', ''),
+                context=strategic_context,  # Strategic outline + optional strategy memory
                 style=post_spec.get('style', ''),
-                learnings=learnings,
-                target_score=target_score
+                learnings='',  # NO LEARNINGS - deprecated parameter
+                target_score=18  # Fixed threshold (no "improving on average")
             )
 
             # Extract metadata from SDK agent result
@@ -152,8 +148,6 @@ async def execute_sequential_batch(
                 f"- Quality trend: **{stats['quality_trend']}**\n"
                 f"- Score range: {stats['lowest_score']}-{stats['highest_score']}\n"
                 f"- Recent scores: {stats['recent_scores']}\n\n"
-                f"📝 Key learnings (last 10 posts):\n"
-                f"{stats['learnings'][:500]}...\n\n"
                 f"⏳ **{len(plan['posts']) - post_num} posts remaining.** Continuing..."
             )
 
@@ -233,22 +227,15 @@ async def _execute_single_post(
     Returns:
         Result string from SDK agent (contains post, score, Airtable URL)
     """
-    # Build enhanced context with learnings and target
-    enhanced_context = f"""{context}
-
-**Learnings from previous posts in this batch:**
-{learnings}
-
-**Target quality score:** {target_score}+ out of 25
-
-Apply the learnings above to improve this post. Focus on what worked well in previous posts."""
+    # Context already contains strategic outline + optional strategy memory
+    # NO learning injection - deprecated parameter ignored
 
     # Call appropriate SDK agent workflow with Slack metadata
     if platform == "linkedin":
         from agents.linkedin_sdk_agent import create_linkedin_post_workflow
         result = await create_linkedin_post_workflow(
             topic=topic,
-            context=enhanced_context,
+            context=context,  # Strategic outline + optional strategy memory
             style=style or 'thought_leadership',
             channel_id=channel_id,
             thread_ts=thread_ts,
@@ -259,7 +246,7 @@ Apply the learnings above to improve this post. Focus on what worked well in pre
         from agents.twitter_sdk_agent import create_twitter_thread_workflow
         result = await create_twitter_thread_workflow(
             topic=topic,
-            context=enhanced_context,
+            context=context,  # Strategic outline + optional strategy memory
             style=style or 'tactical',
             channel_id=channel_id,
             thread_ts=thread_ts,
@@ -270,7 +257,7 @@ Apply the learnings above to improve this post. Focus on what worked well in pre
         from agents.email_sdk_agent import create_email_workflow
         result = await create_email_workflow(
             topic=topic,
-            context=enhanced_context,
+            context=context,  # Strategic outline + optional strategy memory
             email_type=style or 'Email_Value',
             channel_id=channel_id,
             thread_ts=thread_ts,
@@ -281,7 +268,7 @@ Apply the learnings above to improve this post. Focus on what worked well in pre
         from agents.youtube_sdk_agent import create_youtube_workflow
         result = await create_youtube_workflow(
             topic=topic,
-            context=enhanced_context,
+            context=context,  # Strategic outline + optional strategy memory
             script_type=style or 'educational',
             channel_id=channel_id,
             thread_ts=thread_ts,
@@ -515,7 +502,6 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
             'platform': str,
             'hook': str,
             'airtable_url': str,
-            'learnings_summary': str,
             'error': str (if failed)
         }
     """
@@ -528,8 +514,7 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
             'platform': 'unknown',
             'score': 0,
             'hook': '',
-            'airtable_url': None,
-            'learnings_summary': ''
+            'airtable_url': None
         }
 
     # Get context manager
@@ -541,8 +526,7 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
             'platform': 'unknown',
             'score': 0,
             'hook': '',
-            'airtable_url': None,
-            'learnings_summary': ''
+            'airtable_url': None
         }
 
     # Validate post index
@@ -553,8 +537,7 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
             'platform': 'unknown',
             'score': 0,
             'hook': '',
-            'airtable_url': None,
-            'learnings_summary': ''
+            'airtable_url': None
         }
 
     post_spec = plan['posts'][post_index]
@@ -568,62 +551,23 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     thread_ts = slack_metadata.get('thread_ts')
     user_id = slack_metadata.get('user_id')
 
-    # Get learnings from previous posts
-    learnings = context_mgr.get_compacted_learnings()
-    target_score = context_mgr.get_target_score()
-
-    # NEW: Adjust target score based on context quality
-    if context_quality == "sparse":
-        target_score = min(20, target_score)  # Lower expectations for thought leadership
-        content_type_hint = "Thought Leadership (idea-driven, 800-1000 chars, opinion-based)"
-    else:
-        content_type_hint = "Proof Post (specific examples, 1200-1500 chars, data-driven)"
+    # Get strategic context for this post (NO learning accumulation)
+    strategic_context = context_mgr.get_context_for_post(post_index)
 
     print(f"\n📝 Executing post {post_index + 1}/{len(plan['posts'])}", flush=True)
     print(f"   Platform: {post_spec['platform']}", flush=True)
-    print(f"   Context quality: {context_quality}", flush=True)
-    print(f"   Target score: {target_score}+", flush=True)
+    print(f"   Strategic context: {len(strategic_context)} chars", flush=True)
     print(f"   Slack context: channel={channel_id}, thread={thread_ts}, user={user_id}", flush=True)
 
-    # Build RICH context with strategic outline as primary
-
-    # 1. Get the FULL strategic outline (priority)
-    strategic_outline = post_spec.get('detailed_outline', '')
-    base_context = post_spec.get('context', '')
-
-    # 2. Combine strategic elements
-    if strategic_outline:
-        primary_context = f"""**STRATEGIC OUTLINE (Follow this closely):**
-{strategic_outline}
-
-**Additional Context:**
-{base_context}"""
-    else:
-        primary_context = base_context
-
-    # 3. Add learnings and quality targets
-    enhanced_context = f"""{primary_context}
-
-**Content Type:** {content_type_hint}
-
-**Learnings from previous posts:**
-{learnings}
-
-**Target quality score:** {target_score}+/25
-
-**INSTRUCTION:** If a strategic outline is provided above, it contains the user's thinking and language.
-Preserve their narrative structure and specific phrases. Only fix AI patterns (contrast framing,
-rule of three, cringe questions) and formatting issues. Don't regenerate what's already great."""
-
     try:
-        # Execute post using SDK agent with enhanced context AND Slack metadata
+        # Execute post using SDK agent with strategic context AND Slack metadata
         result = await _execute_single_post(
             platform=post_spec['platform'],
             topic=post_spec['topic'],
-            context=enhanced_context,  # Enhanced with quality hints + learnings
+            context=strategic_context,  # Strategic outline + optional strategy memory
             style=post_spec.get('style', ''),
-            learnings=learnings,
-            target_score=target_score,
+            learnings='',  # NO LEARNINGS - deprecated parameter
+            target_score=18,  # Fixed threshold
             # Pass Slack metadata for Airtable/Supabase saves
             channel_id=channel_id,
             thread_ts=thread_ts,
@@ -657,13 +601,8 @@ rule of three, cringe questions) and formatting issues. Don't regenerate what's 
             'score': score,
             'hook': hook,
             'platform': post_spec['platform'],
-            'airtable_url': airtable_url,
-            'what_worked': f"Score: {score}/25"
+            'airtable_url': airtable_url
         })
-
-        # Get learnings summary
-        stats = context_mgr.get_stats()
-        learnings_summary = f"Average score: {stats['avg_score']:.1f}/25. Recent scores: {stats['recent_scores']}"
 
         print(f"   ✅ Success: Score {score}/25")
 
@@ -673,7 +612,6 @@ rule of three, cringe questions) and formatting issues. Don't regenerate what's 
             'platform': post_spec['platform'],
             'hook': hook,
             'airtable_url': airtable_url,
-            'learnings_summary': learnings_summary,
             'full_result': result  # Include full SDK agent result for single-post display
         }
 
@@ -692,7 +630,6 @@ rule of three, cringe questions) and formatting issues. Don't regenerate what's 
             'platform': post_spec['platform'],
             'hook': f"Post {post_index + 1} failed - {error_msg[:50]}...",
             'airtable_url': None,
-            'learnings_summary': f"❌ Error (post {post_index + 1}): {error_msg}",
             'error': error_msg
         }
 
