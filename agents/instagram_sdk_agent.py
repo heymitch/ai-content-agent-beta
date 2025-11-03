@@ -593,26 +593,38 @@ WORKFLOW (ONE REWRITE ATTEMPT):
    - Returns revised_post
    - **INSTAGRAM-CRITICAL:** Preserves 125-char preview, stays under 2,200 chars
 
-3. Return the revised_post with validation metadata:
+3. **RE-VALIDATE the REVISED caption** to see what still needs fixing:
+   final_validation = external_validation(post=revised_post)
+
+   - This checks if apply_fixes actually fixed the issues
+   - Returns FINAL validation results for Airtable "Suggested Edits"
+   - User sees what STILL needs manual fixing in the final caption
+
+4. **CRITICAL:** Return the REVISED caption with FINAL validation metadata:
+
+   Return JSON with REVISED content + FINAL validation:
    {{
      "caption_text": "[revised_post from apply_fixes]",
-     "original_score": [score from external_validation],
-     "validation_issues": [issues from external_validation],
-     "gptzero_ai_pct": [AI % from external_validation],
-     "gptzero_flagged_sentences": [flagged sentences from external_validation]
+     "original_score": [score from FINAL validation in step 3],
+     "validation_issues": [issues from FINAL validation in step 3],
+     "gptzero_ai_pct": [AI % from FINAL validation in step 3],
+     "gptzero_flagged_sentences": [flagged sentences from FINAL validation in step 3]
    }}
 
 CRITICAL:
-- Only ONE rewrite pass (don't re-validate after apply_fixes)
-- Return revised_post even if score was low
-- Include validation metadata so wrapper can set Airtable status
-- DO NOT run external_validation twice
-- Validation metadata is used to set "Needs Review" status if score <18
+- TWO validation passes: Draft validation (for apply_fixes input) + Final validation (for Airtable)
+- Return revised_post with FINAL validation metadata
+- User sees what STILL needs fixing after apply_fixes ran
+- If FINAL validation shows 0 issues → caption is clean!
+- If FINAL validation shows issues → user knows what to manually edit
+- The caption_text field MUST contain the REVISED version from apply_fixes
+- The validation metadata MUST be from FINAL validation (step 3), not draft validation
+- **INSTAGRAM-CRITICAL:** Ensure revised caption preserves 125-char preview, stays under 2,200 chars
 
 WORKFLOW:
-Draft → external_validation → apply_fixes (ALL issues + GPTZero sentences) → Return with metadata
+Draft → Validation #1 → apply_fixes → **Validation #2 on REVISED caption** → Return REVISED caption + Validation #2 results
 
-Return format MUST include all validation metadata for Airtable."""
+Return format MUST include REVISED caption_text + FINAL validation metadata for Airtable."""
 
         # Compose base prompt + client context (if exists)
         from integrations.prompt_loader import load_system_prompt

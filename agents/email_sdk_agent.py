@@ -687,33 +687,38 @@ EFFICIENCY GUIDELINES:
 - Do focus on comprehensive fixes for ALL AI tells (apply_fixes now handles all issues at once)
 
 RESPONSE FORMAT:
-When returning final email, include:
 
-✅ FINAL EMAIL (Score: X/25)
+**CRITICAL FINAL STEP - ALWAYS RE-VALIDATE BEFORE RETURNING:**
 
-Subject: [subject line]
+Before returning your final email, you MUST:
+1. Run external_validation ONE FINAL TIME on whatever email you're about to return
+   - If you called apply_fixes: Run external_validation on the REVISED email
+   - If you didn't call apply_fixes: Run external_validation on the draft
+2. Return the email with the FINAL validation metadata (this goes to Airtable "Suggested Edits")
+3. User will see what STILL needs fixing in the FINAL version they receive
 
-Preview: [preview text]
+This ensures users get ACCURATE feedback on what to manually edit, not outdated feedback from earlier drafts.
 
-[Full email body]
-
-Final Score: X/25 (Above 18/25 threshold ✓)
-
-DO NOT add any commentary after "Final Score:" line.
-
-Also include:
-- Any warnings (fabrications, low score)
-- Which tools you called and why
+Return JSON format:
+{{
+  "email_body": "[final email text - revised if apply_fixes was called]",
+  "subject": "[subject line]",
+  "preview_text": "[preview text]",
+  "original_score": [FINAL validation score],
+  "validation_issues": [FINAL validation issues],
+  "gptzero_ai_pct": [FINAL GPTZero percentage],
+  "gptzero_flagged_sentences": [FINAL GPTZero flagged sentences]
+}}
 
 DO NOT:
 - Return emails with ai_deductions >0 (must fix AI tells first)
 - Call apply_fixes when decision="accept" and ai_deductions=0 (unnecessary)
-- Iterate more than 2 times on apply_fixes → quality_check loop
+- Iterate more than 2 times on apply_fixes → external_validation loop
 - Try to fix fabrications by making up different fake names
-- Stop to ask questions or request clarification (always return an email)
-- Add commentary after "Final Score:" line (no "Ready to send" or questions)
+- Skip the FINAL validation before returning
+- Return validation metadata from the DRAFT instead of the FINAL email
 
-DO NOT explain. DO NOT iterate beyond one revise. Return final email when threshold met."""
+DO NOT explain. DO NOT iterate beyond one revise. Return final email with FINAL validation metadata."""
 
         # Compose base prompt + client context (if exists)
         from integrations.prompt_loader import load_system_prompt
