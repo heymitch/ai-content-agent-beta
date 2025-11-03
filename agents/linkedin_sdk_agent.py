@@ -591,7 +591,7 @@ class LinkedInSDKAgent:
             batch_mode: If True, disable session reuse for batch safety
         """
         self.user_id = user_id
-        self.sessions = {}  # Track multiple content sessions
+        # self.sessions = {}  # REMOVED: No longer storing clients - using context managers
         self.isolated_mode = isolated_mode  # Test mode flag
         self.batch_mode = batch_mode  # Batch execution mode
         # Store Slack metadata for saving to Airtable/Supabase
@@ -726,8 +726,10 @@ AVAILABLE TOOLS:
 
         print("🎯 LinkedIn SDK Agent initialized with 7 tools (6 lean tools + company docs RAG + external_validation)")
 
+    # REMOVED: No longer needed with context managers
+    """
     def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
-        """Get or create a persistent session for content creation"""
+        # Get or create a persistent session for content creation
         # In batch mode, always create fresh sessions (don't reuse)
         if self.batch_mode and session_id in self.sessions:
             print(f"🔄 Batch mode: Creating fresh session (replacing {session_id})")
@@ -769,6 +771,7 @@ AVAILABLE TOOLS:
             print(f"📝 Created LinkedIn session: {session_id}{mode_str}")
 
         return self.sessions[session_id]
+    """
 
     async def create_post(
         self,
@@ -850,10 +853,22 @@ AVAILABLE TOOLS:
                         **log_context
                     )
 
-        client = self.get_or_create_session(session_id)
+        # Create SDK client options
+        should_continue = not (self.isolated_mode or self.batch_mode)
+        options = ClaudeAgentOptions(
+            mcp_servers={"linkedin_tools": self.mcp_server},
+            allowed_tools=["mcp__linkedin_tools__*"],
+            system_prompt=self.system_prompt,
+            model="claude-sonnet-4-5-20250929",
+            permission_mode="bypassPermissions",
+            continue_conversation=should_continue  # False in test/batch mode
+        )
 
-        # Build the creation prompt
-        creation_prompt = f"""Create a LinkedIn {post_type} post using the MCP tools.
+        # Use context manager for automatic cleanup
+        async with ClaudeSDKClient(options=options) as client:
+            try:
+                # Build the creation prompt
+                creation_prompt = f"""Create a LinkedIn {post_type} post using the MCP tools.
 
 Topic: {topic}
 
@@ -955,271 +970,229 @@ Draft → Validation #1 → apply_fixes → **Validation #2 on REVISED post** �
 
 Return format MUST include REVISED post_text + validation metadata for Airtable."""
 
-        try:
-            # Connect with retry logic and exponential backoff
-            print(f"🔗 Connecting LinkedIn SDK client...", flush=True)
+                # Context manager handles connection automatically
+                print(f"✅ LinkedIn SDK connected via context manager (session: {session_id})", flush=True)
 
-            # Track connection attempts for cleanup logic
-            connection_attempt = {'count': 0}
+                # Send the creation request with timeout and retry
+                print(f"📤 Sending LinkedIn creation prompt...", flush=True)
 
-            @async_retry_with_backoff(
-                max_retries=3,
-                exceptions=(asyncio.TimeoutError, *RETRIABLE_EXCEPTIONS),
-                context_provider=lambda: log_context
-            )
-            async def connect_with_retry():
-                nonlocal client
-                connection_attempt['count'] += 1
-
-                # CRITICAL: On retry attempts (not first), disconnect stale connection
-                # This prevents Replit connection exhaustion when retries happen
-                if connection_attempt['count'] > 1:
-                    try:
-                        await client.disconnect()
-                        print(f"   🔌 Disconnected stale connection before retry {connection_attempt['count']}", flush=True)
-                    except Exception as e:
-                        # Disconnect might fail if connection never established - that's OK
-                        print(f"   ℹ️ Disconnect before retry: {e}", flush=True)
-
-                # Now attempt fresh connection
-                await asyncio.wait_for(
-                    client.connect(),
-                    timeout=30.0  # 30 second timeout for connection
+                @async_retry_with_backoff(
+                    max_retries=3,
+                    initial_delay=1.0,
+                    exceptions=(asyncio.TimeoutError, *RETRIABLE_EXCEPTIONS),
+                    context_provider=lambda: log_context
                 )
+                async def query_with_retry():
+                    nonlocal client
+                    await asyncio.wait_for(
+                        client.query(creation_prompt),
+                        timeout=60.0  # 60 second timeout for sending query
+                    )
 
-            await connect_with_retry()
-            print(f"✅ LinkedIn SDK connected successfully", flush=True)
+                await query_with_retry()
 
-            # Send the creation request with timeout and retry
-            print(f"📤 Sending LinkedIn creation prompt...", flush=True)
+                print(f"⏳ LinkedIn agent processing...", flush=True)
 
-            @async_retry_with_backoff(
-                max_retries=3,
-                initial_delay=1.0,
-                exceptions=(asyncio.TimeoutError, *RETRIABLE_EXCEPTIONS),
-                context_provider=lambda: log_context
-            )
-            async def query_with_retry():
-                nonlocal client
-                await asyncio.wait_for(
-                    client.query(creation_prompt),
-                    timeout=60.0  # 60 second timeout for sending query
-                )
+                # Collect the response WITH timeouts to prevent silent hangs
+                final_output = ""
+                message_count = 0
 
-            await query_with_retry()
+                # Timeout configuration (Phase 0: Async/Reliability Fixes)
+                idle_timeout = 60  # seconds - no message triggers recovery
+                overall_deadline = 240  # seconds - max total time
+                max_stream_retries = 2  # reconnect attempts
 
-            print(f"⏳ LinkedIn agent processing...", flush=True)
+                async def collect_response_with_timeout():
+                    nonlocal final_output, message_count, client
 
-            # Collect the response WITH timeouts to prevent silent hangs
-            final_output = ""
-            message_count = 0
+                    attempt = 0
+                    start_time = asyncio.get_event_loop().time()
 
-            # Timeout configuration (Phase 0: Async/Reliability Fixes)
-            idle_timeout = 60  # seconds - no message triggers recovery
-            overall_deadline = 240  # seconds - max total time
-            max_stream_retries = 2  # reconnect attempts
+                    while attempt <= max_stream_retries:
+                        try:
+                            # Get async iterator from receive_response()
+                            aiter = client.receive_response().__aiter__()
 
-            async def collect_response_with_timeout():
-                nonlocal final_output, message_count, client
+                            while True:
+                                # Check overall deadline
+                                elapsed = asyncio.get_event_loop().time() - start_time
+                                if elapsed > overall_deadline:
+                                    raise TimeoutError(f"Stream deadline exceeded ({overall_deadline}s)")
 
-                attempt = 0
-                start_time = asyncio.get_event_loop().time()
+                                try:
+                                    # Wait for next message with idle timeout
+                                    msg = await asyncio.wait_for(aiter.__anext__(), timeout=idle_timeout)
+                                    message_count += 1
+                                    msg_type = type(msg).__name__
+                                    print(f"   📬 Received message {message_count}: type={msg_type}", flush=True)
 
-                while attempt <= max_stream_retries:
-                    try:
-                        # Get async iterator from receive_response()
-                        aiter = client.receive_response().__aiter__()
-
-                        while True:
-                            # Check overall deadline
-                            elapsed = asyncio.get_event_loop().time() - start_time
-                            if elapsed > overall_deadline:
-                                raise TimeoutError(f"Stream deadline exceeded ({overall_deadline}s)")
-
-                            try:
-                                # Wait for next message with idle timeout
-                                msg = await asyncio.wait_for(aiter.__anext__(), timeout=idle_timeout)
-                                message_count += 1
-                                msg_type = type(msg).__name__
-                                print(f"   📬 Received message {message_count}: type={msg_type}", flush=True)
-
-                                # Track all AssistantMessages with text content
-                                if msg_type == 'AssistantMessage':
-                                    if hasattr(msg, 'content'):
-                                        if isinstance(msg.content, list):
-                                            for block in msg.content:
-                                                if isinstance(block, dict):
-                                                    block_type = block.get('type', 'unknown')
-                                                    if block_type == 'text':
-                                                        text_content = block.get('text', '')
+                                    # Track all AssistantMessages with text content
+                                    if msg_type == 'AssistantMessage':
+                                        if hasattr(msg, 'content'):
+                                            if isinstance(msg.content, list):
+                                                for block in msg.content:
+                                                    if isinstance(block, dict):
+                                                        block_type = block.get('type', 'unknown')
+                                                        if block_type == 'text':
+                                                            text_content = block.get('text', '')
+                                                            if text_content:
+                                                                final_output = text_content
+                                                                preview = text_content[:300].replace('\n', ' ')
+                                                                print(f"      ✅ Got text output ({len(text_content)} chars)")
+                                                                print(f"         PREVIEW: {preview}...")
+                                                        elif block_type == 'tool_use':
+                                                            tool_name = block.get('name', 'unknown')
+                                                            tool_input = str(block.get('input', {}))[:150]
+                                                            print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                                            print(f"         Input preview: {tool_input}...")
+                                                    elif hasattr(block, 'text'):
+                                                        text_content = block.text
                                                         if text_content:
                                                             final_output = text_content
                                                             preview = text_content[:300].replace('\n', ' ')
-                                                            print(f"      ✅ Got text output ({len(text_content)} chars)")
+                                                            print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
                                                             print(f"         PREVIEW: {preview}...")
-                                                    elif block_type == 'tool_use':
-                                                        tool_name = block.get('name', 'unknown')
-                                                        tool_input = str(block.get('input', {}))[:150]
+                                                    elif hasattr(block, 'type') and block.type == 'tool_use':
+                                                        tool_name = getattr(block, 'name', 'unknown')
+                                                        tool_input = str(getattr(block, 'input', {}))[:150]
                                                         print(f"      🔧 SDK Agent calling tool: {tool_name}")
                                                         print(f"         Input preview: {tool_input}...")
-                                                elif hasattr(block, 'text'):
-                                                    text_content = block.text
-                                                    if text_content:
-                                                        final_output = text_content
-                                                        preview = text_content[:300].replace('\n', ' ')
-                                                        print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
-                                                        print(f"         PREVIEW: {preview}...")
-                                                elif hasattr(block, 'type') and block.type == 'tool_use':
-                                                    tool_name = getattr(block, 'name', 'unknown')
-                                                    tool_input = str(getattr(block, 'input', {}))[:150]
-                                                    print(f"      🔧 SDK Agent calling tool: {tool_name}")
-                                                    print(f"         Input preview: {tool_input}...")
-                                        elif hasattr(msg.content, 'text'):
-                                            text_content = msg.content.text
+                                            elif hasattr(msg.content, 'text'):
+                                                text_content = msg.content.text
+                                                if text_content:
+                                                    final_output = text_content
+                                                    preview = text_content[:300].replace('\n', ' ')
+                                                    print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
+                                                    print(f"         PREVIEW: {preview}...")
+
+                                                # Check for tool_use in content blocks (object style)
+                                                if hasattr(msg.content, '__iter__'):
+                                                    for item in msg.content:
+                                                        if hasattr(item, 'type') and item.type == 'tool_use':
+                                                            tool_name = getattr(item, 'name', 'unknown')
+                                                            print(f"      🔧 SDK Agent calling tool: {tool_name}")
+                                        elif hasattr(msg, 'text'):
+                                            text_content = msg.text
                                             if text_content:
                                                 final_output = text_content
                                                 preview = text_content[:300].replace('\n', ' ')
-                                                print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
+                                                print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
                                                 print(f"         PREVIEW: {preview}...")
 
-                                            # Check for tool_use in content blocks (object style)
-                                            if hasattr(msg.content, '__iter__'):
-                                                for item in msg.content:
-                                                    if hasattr(item, 'type') and item.type == 'tool_use':
-                                                        tool_name = getattr(item, 'name', 'unknown')
-                                                        print(f"      🔧 SDK Agent calling tool: {tool_name}")
-                                    elif hasattr(msg, 'text'):
-                                        text_content = msg.text
-                                        if text_content:
-                                            final_output = text_content
-                                            preview = text_content[:300].replace('\n', ' ')
-                                            print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
-                                            print(f"         PREVIEW: {preview}...")
-
-                            except asyncio.TimeoutError:
-                                # Idle timeout - no message received in {idle_timeout} seconds
-                                attempt += 1
-                                logger.warning(
-                                    f"⚠️  Stream idle timeout (attempt {attempt}/{max_stream_retries + 1}). "
-                                    f"No message received in {idle_timeout}s. Reconnecting...",
-                                    operation="create_linkedin_post",
-                                    attempt=attempt,
-                                    max_retries=max_stream_retries + 1,
-                                    timeout=f"{idle_timeout}s",
-                                    **log_context
-                                )
-
-                                if attempt > max_stream_retries:
-                                    raise TimeoutError(
-                                        f"Max stream retries exceeded ({max_stream_retries}). "
-                                        f"Last message count: {message_count}"
+                                except asyncio.TimeoutError:
+                                    # Idle timeout - no message received in {idle_timeout} seconds
+                                    attempt += 1
+                                    logger.warning(
+                                        f"⚠️  Stream idle timeout (attempt {attempt}/{max_stream_retries + 1}). "
+                                        f"No message received in {idle_timeout}s. Reconnecting...",
+                                        operation="create_linkedin_post",
+                                        attempt=attempt,
+                                        max_retries=max_stream_retries + 1,
+                                        timeout=f"{idle_timeout}s",
+                                        **log_context
                                     )
 
-                                # Recreate session and reconnect
-                                print(f"   🔄 Recreating session and reconnecting (attempt {attempt})...")
+                                    if attempt > max_stream_retries:
+                                        raise TimeoutError(
+                                            f"Max stream retries exceeded ({max_stream_retries}). "
+                                            f"Last message count: {message_count}"
+                                        )
 
-                                # Delete old session to force recreation
-                                if session_id in self.sessions:
-                                    del self.sessions[session_id]
+                                    # With context manager, we can't reconnect - just fail and retry at higher level
+                                    print(f"   ⚠️ Stream timeout - will need to retry entire operation")
+                                    raise TimeoutError(
+                                        f"Stream idle timeout after {message_count} messages. "
+                                        f"Context manager pattern requires full retry."
+                                    )
 
-                                client = self.get_or_create_session(session_id)
-                                await client.connect()
+                                except StopAsyncIteration:
+                                    # Normal completion
+                                    print(f"   ✅ Stream completed normally")
+                                    return
 
-                                # Resume with note to avoid duplicating work
-                                resume_prompt = creation_prompt + "\n\n[RESUME: Previous stream timed out. Continue where you left off.]"
-                                await client.query(resume_prompt)
+                        except TimeoutError:
+                            # Overall deadline exceeded or max retries hit
+                            raise
 
-                                # Start new iterator
-                                break  # Exit inner while loop to restart with new iterator
+                        except Exception as e:
+                            # Other errors
+                            logger.error(
+                                f"❌ Error in stream collection: {type(e).__name__}: {e}",
+                                operation="create_linkedin_post",
+                                error_type=type(e).__name__,
+                                error_message=str(e),
+                                **log_context,
+                                exc_info=True
+                            )
+                            raise
 
-                            except StopAsyncIteration:
-                                # Normal completion
-                                print(f"   ✅ Stream completed normally")
-                                return
+                # Call the collection function with timeout protection
+                await collect_response_with_timeout()
 
-                    except TimeoutError:
-                        # Overall deadline exceeded or max retries hit
-                        raise
+                print(f"\n   ✅ Stream complete after {message_count} messages")
+                print(f"   📝 Final output: {len(final_output)} chars")
 
-                    except Exception as e:
-                        # Other errors
+                # Parse the output to extract structured data
+                return await self._parse_output(final_output, operation_start_time, log_context)
+
+            except Exception as e:
+                # Log error with full context
+                # Calculate duration if operation_start_time was set
+                try:
+                    operation_duration = asyncio.get_event_loop().time() - operation_start_time
+                except NameError:
+                    # operation_start_time wasn't set (error happened very early)
+                    operation_duration = 0.0
+
+                log_error(
+                    logger,
+                    "LinkedIn SDK Agent error",
+                    error=e,
+                    context=log_context
+                )
+                log_operation_end(
+                    logger,
+                    "create_linkedin_post",
+                    duration=operation_duration,
+                    success=False,
+                    context=log_context,
+                    error_type=type(e).__name__
+                )
+
+                # Circuit breaker: Mark operation as failed
+                with self.circuit_breaker._lock:
+                    self.circuit_breaker.failure_count += 1
+                    self.circuit_breaker.last_failure_time = time_module.time()
+
+                    if self.circuit_breaker.state == CircuitState.HALF_OPEN:
                         logger.error(
-                            f"❌ Error in stream collection: {type(e).__name__}: {e}",
-                            operation="create_linkedin_post",
-                            error_type=type(e).__name__,
-                            error_message=str(e),
-                            **log_context,
-                            exc_info=True
+                            "❌ Circuit breaker test failed - RE-OPENING",
+                            circuit_breaker="linkedin_agent",
+                            failure_count=self.circuit_breaker.failure_count,
+                            **log_context
                         )
-                        raise
+                        self.circuit_breaker.state = CircuitState.OPEN
+                    elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
+                        logger.error(
+                            "🔥 Circuit breaker OPENING - threshold reached",
+                            circuit_breaker="linkedin_agent",
+                            failure_count=self.circuit_breaker.failure_count,
+                            threshold=self.circuit_breaker.failure_threshold,
+                            **log_context
+                        )
+                        self.circuit_breaker.state = CircuitState.OPEN
+                    else:
+                        logger.warning(
+                            f"⚠️ Circuit breaker failure {self.circuit_breaker.failure_count}/{self.circuit_breaker.failure_threshold}",
+                            circuit_breaker="linkedin_agent",
+                            **log_context
+                        )
 
-            # Call the collection function with timeout protection
-            await collect_response_with_timeout()
-
-            print(f"\n   ✅ Stream complete after {message_count} messages")
-            print(f"   📝 Final output: {len(final_output)} chars")
-
-            # Parse the output to extract structured data
-            return await self._parse_output(final_output, operation_start_time, log_context)
-
-        except Exception as e:
-            # Log error with full context
-            # Calculate duration if operation_start_time was set
-            try:
-                operation_duration = asyncio.get_event_loop().time() - operation_start_time
-            except NameError:
-                # operation_start_time wasn't set (error happened very early)
-                operation_duration = 0.0
-
-            log_error(
-                logger,
-                "LinkedIn SDK Agent error",
-                error=e,
-                context=log_context
-            )
-            log_operation_end(
-                logger,
-                "create_linkedin_post",
-                duration=operation_duration,
-                success=False,
-                context=log_context,
-                error_type=type(e).__name__
-            )
-
-            # Circuit breaker: Mark operation as failed
-            with self.circuit_breaker._lock:
-                self.circuit_breaker.failure_count += 1
-                self.circuit_breaker.last_failure_time = time_module.time()
-
-                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
-                    logger.error(
-                        "❌ Circuit breaker test failed - RE-OPENING",
-                        circuit_breaker="linkedin_agent",
-                        failure_count=self.circuit_breaker.failure_count,
-                        **log_context
-                    )
-                    self.circuit_breaker.state = CircuitState.OPEN
-                elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
-                    logger.error(
-                        "🔥 Circuit breaker OPENING - threshold reached",
-                        circuit_breaker="linkedin_agent",
-                        failure_count=self.circuit_breaker.failure_count,
-                        threshold=self.circuit_breaker.failure_threshold,
-                        **log_context
-                    )
-                    self.circuit_breaker.state = CircuitState.OPEN
-                else:
-                    logger.warning(
-                        f"⚠️ Circuit breaker failure {self.circuit_breaker.failure_count}/{self.circuit_breaker.failure_threshold}",
-                        circuit_breaker="linkedin_agent",
-                        **log_context
-                    )
-
-            return {
-                "success": False,
-                "error": str(e),
-                "post": None
-            }
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "post": None
+                }
 
     async def _parse_output(self, output: str, operation_start_time: float, log_context: dict) -> Dict[str, Any]:
         """Parse agent output into structured response using Haiku extraction"""
@@ -1506,9 +1479,20 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
         if not session_id:
             session_id = "review_session"
 
-        client = self.get_or_create_session(session_id)
+        # Create SDK client options
+        should_continue = not (self.isolated_mode or self.batch_mode)
+        options = ClaudeAgentOptions(
+            mcp_servers={"linkedin_tools": self.mcp_server},
+            allowed_tools=["mcp__linkedin_tools__*"],
+            system_prompt=self.system_prompt,
+            model="claude-sonnet-4-5-20250929",
+            permission_mode="bypassPermissions",
+            continue_conversation=should_continue  # False in test/batch mode
+        )
 
-        review_prompt = f"""Review this LinkedIn post against ALL checklist rules:
+        # Use context manager for automatic cleanup
+        async with ClaudeSDKClient(options=options) as client:
+            review_prompt = f"""Review this LinkedIn post against ALL checklist rules:
 
 {post}
 
@@ -1519,25 +1503,24 @@ Use these tools:
 
 Be harsh but constructive. We need 85+ quality."""
 
-        try:
-            await client.connect()
-            await client.query(review_prompt)
+            try:
+                await client.query(review_prompt)
 
-            review_output = ""
-            async for msg in client.receive_response():
-                if hasattr(msg, 'text'):
-                    review_output = msg.text
+                review_output = ""
+                async for msg in client.receive_response():
+                    if hasattr(msg, 'text'):
+                        review_output = msg.text
 
-            return {
-                "success": True,
-                "review": review_output
-            }
+                return {
+                    "success": True,
+                    "review": review_output
+                }
 
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
 
     async def batch_create(
         self,
@@ -1632,39 +1615,8 @@ _{result.get('hook', result['post'][:200])}..._
             return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
 
     finally:
-        # CRITICAL: Close all SDK connections to prevent Replit connection exhaustion
-        # This fixes the "Post 2+ hangs forever waiting for connection" bug
-        import sys
-        sys.stdout.flush()  # Force flush before we start
-        print("\n" + "="*60, flush=True)
-        print(f"🔌 CLEANUP STARTING: {len(agent.sessions)} active sessions", flush=True)
-        print("="*60, flush=True)
-
-        for session_id, client in list(agent.sessions.items()):
-            print(f"🔌 Attempting to disconnect: {session_id}", flush=True)
-            try:
-                await client.disconnect()
-                print(f"   ✅ Successfully disconnected: {session_id}", flush=True)
-            except Exception as e:
-                print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
-
-                # AGGRESSIVE CLEANUP: If disconnect() fails, try to force close underlying connections
-                print(f"   🔧 Attempting aggressive cleanup for {session_id}...", flush=True)
-                try:
-                    # Try to access and close the internal httpx client if it exists
-                    if hasattr(client, '_client') and client._client:
-                        await client._client.aclose()
-                        print(f"   ✅ Force-closed internal httpx client", flush=True)
-                    elif hasattr(client, 'client') and client.client:
-                        await client.client.aclose()
-                        print(f"   ✅ Force-closed httpx client", flush=True)
-                except Exception as cleanup_error:
-                    print(f"   ⚠️ Aggressive cleanup failed: {cleanup_error}", flush=True)
-
-        agent.sessions.clear()
-        print(f"🔌 CLEANUP COMPLETE - All connections closed", flush=True)
-        print("="*60 + "\n", flush=True)
-        sys.stdout.flush()  # Force flush after we're done
+        # Context manager handles cleanup automatically
+        print(f"✅ LinkedIn SDK cleanup handled by context manager", flush=True)
 
 
 if __name__ == "__main__":
