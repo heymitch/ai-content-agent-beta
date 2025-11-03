@@ -1592,15 +1592,24 @@ _{result.get('hook', result['post'][:200])}..._
     finally:
         # CRITICAL: Close all SDK connections to prevent Replit connection exhaustion
         # This fixes the "Post 2+ hangs forever waiting for connection" bug
-        print(f"🔌 Cleaning up LinkedIn SDK connections ({len(agent.sessions)} active)...", flush=True)
+        import sys
+        sys.stdout.flush()  # Force flush before we start
+        print("\n" + "="*60, flush=True)
+        print(f"🔌 CLEANUP STARTING: {len(agent.sessions)} active sessions", flush=True)
+        print("="*60, flush=True)
+
         for session_id, client in list(agent.sessions.items()):
+            print(f"🔌 Attempting to disconnect: {session_id}", flush=True)
             try:
                 await client.disconnect()
-                print(f"   ✅ Disconnected: {session_id}", flush=True)
+                print(f"   ✅ Successfully disconnected: {session_id}", flush=True)
             except Exception as e:
                 print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
+
         agent.sessions.clear()
-        print(f"🔌 All LinkedIn SDK connections closed", flush=True)
+        print(f"🔌 CLEANUP COMPLETE - All connections closed", flush=True)
+        print("="*60 + "\n", flush=True)
+        sys.stdout.flush()  # Force flush after we're done
 
 
 if __name__ == "__main__":
