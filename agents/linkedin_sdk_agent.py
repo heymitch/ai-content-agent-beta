@@ -954,6 +954,9 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
             # Connect with retry logic and exponential backoff
             print(f"🔗 Connecting LinkedIn SDK client...", flush=True)
 
+            # Track connection attempts for cleanup logic
+            connection_attempt = {'count': 0}
+
             @async_retry_with_backoff(
                 max_retries=3,
                 exceptions=(asyncio.TimeoutError, *RETRIABLE_EXCEPTIONS),
@@ -961,6 +964,19 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
             )
             async def connect_with_retry():
                 nonlocal client
+                connection_attempt['count'] += 1
+
+                # CRITICAL: On retry attempts (not first), disconnect stale connection
+                # This prevents Replit connection exhaustion when retries happen
+                if connection_attempt['count'] > 1:
+                    try:
+                        await client.disconnect()
+                        print(f"   🔌 Disconnected stale connection before retry {connection_attempt['count']}", flush=True)
+                    except Exception as e:
+                        # Disconnect might fail if connection never established - that's OK
+                        print(f"   ℹ️ Disconnect before retry: {e}", flush=True)
+
+                # Now attempt fresh connection
                 await asyncio.wait_for(
                     client.connect(),
                     timeout=30.0  # 30 second timeout for connection
