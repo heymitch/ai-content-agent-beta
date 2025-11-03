@@ -1286,16 +1286,17 @@ async def create_email_workflow(
         thread_ts=thread_ts
     )
 
-    result = await agent.create_email(
-        topic=topic,
-        context=f"{context} | Email Type: {email_type}",
-        email_type=email_type,
-        target_score=85
-    )
+    try:
+        result = await agent.create_email(
+            topic=topic,
+            context=f"{context} | Email Type: {email_type}",
+            email_type=email_type,
+            target_score=85
+        )
 
-    if result['success']:
-        # Return structured response for Slack
-        return f"""✅ **Email Newsletter Created**
+        if result['success']:
+            # Return structured response for Slack
+            return f"""✅ **Email Newsletter Created**
 
 **Subject Preview:**
 _{result.get('subject', result['email'][:60])}..._
@@ -1310,8 +1311,20 @@ _{result.get('subject', result['email'][:60])}..._
 📄 **Google Doc:** {result.get('google_doc_url', '[Coming Soon]')}
 
 *AI Patterns Removed | Facts Verified | Ready to Send*"""
-    else:
-        return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
+        else:
+            return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
+
+    finally:
+        # CRITICAL: Close all SDK connections to prevent Replit connection exhaustion
+        print(f"🔌 Cleaning up Email SDK connections ({len(agent.sessions)} active)...", flush=True)
+        for session_id, client in list(agent.sessions.items()):
+            try:
+                await client.disconnect()
+                print(f"   ✅ Disconnected: {session_id}", flush=True)
+            except Exception as e:
+                print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
+        agent.sessions.clear()
+        print(f"🔌 All Email SDK connections closed", flush=True)
 
 
 if __name__ == "__main__":

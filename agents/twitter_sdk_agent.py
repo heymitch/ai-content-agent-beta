@@ -1114,16 +1114,17 @@ async def create_twitter_thread_workflow(
         thread_ts=thread_ts
     )
 
-    result = await agent.create_thread(
-        topic=topic,
-        context=f"{context} | Style: {style}",
-        thread_type="standard",
-        target_score=85
-    )
+    try:
+        result = await agent.create_thread(
+            topic=topic,
+            context=f"{context} | Style: {style}",
+            thread_type="standard",
+            target_score=85
+        )
 
-    if result['success']:
-        # Return structured response for Slack
-        return f"""✅ **Twitter Thread Created**
+        if result['success']:
+            # Return structured response for Slack
+            return f"""✅ **Twitter Thread Created**
 
 **Hook Preview:**
 _{result.get('hook', result['thread'][:280])}..._
@@ -1138,8 +1139,20 @@ _{result.get('hook', result['thread'][:280])}..._
 📄 **Google Doc:** {result.get('google_doc_url', '[Coming Soon]')}
 
 *AI Patterns Removed | Facts Verified | Ready to Post*"""
-    else:
-        return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
+        else:
+            return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
+
+    finally:
+        # CRITICAL: Close all SDK connections to prevent Replit connection exhaustion
+        print(f"🔌 Cleaning up Twitter SDK connections ({len(agent.sessions)} active)...", flush=True)
+        for session_id, client in list(agent.sessions.items()):
+            try:
+                await client.disconnect()
+                print(f"   ✅ Disconnected: {session_id}", flush=True)
+            except Exception as e:
+                print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
+        agent.sessions.clear()
+        print(f"🔌 All Twitter SDK connections closed", flush=True)
 
 
 if __name__ == "__main__":

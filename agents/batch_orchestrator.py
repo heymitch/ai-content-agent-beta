@@ -561,17 +561,21 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
 
     try:
         # Execute post using SDK agent with strategic context AND Slack metadata
-        result = await _execute_single_post(
-            platform=post_spec['platform'],
-            topic=post_spec['topic'],
-            context=strategic_context,  # Strategic outline + optional strategy memory
-            style=post_spec.get('style', ''),
-            learnings='',  # NO LEARNINGS - deprecated parameter
-            target_score=18,  # Fixed threshold
-            # Pass Slack metadata for Airtable/Supabase saves
-            channel_id=channel_id,
-            thread_ts=thread_ts,
-            user_id=user_id
+        # Hard timeout wrapper: Prevent infinite hangs (belt + suspenders with SDK disconnect())
+        result = await asyncio.wait_for(
+            _execute_single_post(
+                platform=post_spec['platform'],
+                topic=post_spec['topic'],
+                context=strategic_context,  # Strategic outline + optional strategy memory
+                style=post_spec.get('style', ''),
+                learnings='',  # NO LEARNINGS - deprecated parameter
+                target_score=18,  # Fixed threshold
+                # Pass Slack metadata for Airtable/Supabase saves
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                user_id=user_id
+            ),
+            timeout=300  # 5 minutes max per post (normal: 2-4 min, complex: 4-5 min)
         )
 
         # Extract metadata
@@ -613,6 +617,20 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
             'hook': hook,
             'airtable_url': airtable_url,
             'full_result': result  # Include full SDK agent result for single-post display
+        }
+
+    except asyncio.TimeoutError:
+        # Hard timeout hit - post took >5 minutes (likely connection hang)
+        print(f"   ⏱️ TIMEOUT: Post {post_index + 1} exceeded 5-minute limit")
+        print(f"   This usually means SDK connection hung - check Replit connection limits")
+
+        return {
+            'success': False,
+            'score': 0,
+            'platform': post_spec['platform'],
+            'hook': f"Post {post_index + 1} timed out after 5 minutes",
+            'airtable_url': None,
+            'error': f"Timeout after 300s - likely connection hang. Check SDK disconnect() calls."
         }
 
     except Exception as e:

@@ -1558,19 +1558,20 @@ async def create_linkedin_post_workflow(
         batch_mode=True  # Always use batch mode for workflow calls (99% of usage)
     )
 
-    # Map style to post type
-    post_type = "carousel" if "visual" in style.lower() else "standard"
+    try:
+        # Map style to post type
+        post_type = "carousel" if "visual" in style.lower() else "standard"
 
-    result = await agent.create_post(
-        topic=topic,
-        context=f"{context} | Style: {style}",
-        post_type=post_type,
-        target_score=85
-    )
+        result = await agent.create_post(
+            topic=topic,
+            context=f"{context} | Style: {style}",
+            post_type=post_type,
+            target_score=85
+        )
 
-    if result['success']:
-        # Return structured response for Slack
-        return f"""✅ **LinkedIn Post Created**
+        if result['success']:
+            # Return structured response for Slack
+            return f"""✅ **LinkedIn Post Created**
 
 **Hook Preview:**
 _{result.get('hook', result['post'][:200])}..._
@@ -1585,8 +1586,21 @@ _{result.get('hook', result['post'][:200])}..._
 📄 **Google Doc:** {result.get('google_doc_url', '[Coming Soon]')}
 
 *AI Patterns Removed | Facts Verified | Ready to Post*"""
-    else:
-        return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
+        else:
+            return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
+
+    finally:
+        # CRITICAL: Close all SDK connections to prevent Replit connection exhaustion
+        # This fixes the "Post 2+ hangs forever waiting for connection" bug
+        print(f"🔌 Cleaning up LinkedIn SDK connections ({len(agent.sessions)} active)...", flush=True)
+        for session_id, client in list(agent.sessions.items()):
+            try:
+                await client.disconnect()
+                print(f"   ✅ Disconnected: {session_id}", flush=True)
+            except Exception as e:
+                print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
+        agent.sessions.clear()
+        print(f"🔌 All LinkedIn SDK connections closed", flush=True)
 
 
 if __name__ == "__main__":

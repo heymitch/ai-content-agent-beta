@@ -1179,18 +1179,19 @@ async def create_instagram_post_workflow(
         thread_ts=thread_ts
     )
 
-    result = await agent.create_caption(
-        topic=topic,
-        context=context,
-        target_score=85
-    )
+    try:
+        result = await agent.create_caption(
+            topic=topic,
+            context=context,
+            target_score=85
+        )
 
-    if result['success']:
-        # Return structured response for Slack
-        char_count = result.get('character_count', 0)
-        char_status = f"{char_count}/2,200 chars" if char_count <= 2200 else f"⚠️ {char_count}/2,200 OVER LIMIT"
+        if result['success']:
+            # Return structured response for Slack
+            char_count = result.get('character_count', 0)
+            char_status = f"{char_count}/2,200 chars" if char_count <= 2200 else f"⚠️ {char_count}/2,200 OVER LIMIT"
 
-        return f"""✅ **Instagram Caption Created**
+            return f"""✅ **Instagram Caption Created**
 
 **Hook Preview (first 125 chars):**
 _{result.get('hook', result['caption'][:125])}..._
@@ -1206,8 +1207,20 @@ _{result.get('hook', result['caption'][:125])}..._
 📄 **Google Doc:** {result.get('google_doc_url', '[Coming Soon]')}
 
 *AI Patterns Removed | Facts Verified | Ready to Post*"""
-    else:
-        return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
+        else:
+            return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
+
+    finally:
+        # CRITICAL: Close all SDK connections to prevent Replit connection exhaustion
+        print(f"🔌 Cleaning up Instagram SDK connections ({len(agent.sessions)} active)...", flush=True)
+        for session_id, client in list(agent.sessions.items()):
+            try:
+                await client.disconnect()
+                print(f"   ✅ Disconnected: {session_id}", flush=True)
+            except Exception as e:
+                print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
+        agent.sessions.clear()
+        print(f"🔌 All Instagram SDK connections closed", flush=True)
 
 
 if __name__ == "__main__":
