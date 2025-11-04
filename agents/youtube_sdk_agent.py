@@ -691,7 +691,8 @@ Return format MUST include REVISED script_text + FINAL validation metadata for A
         context: str = "",
         script_type: str = "short_form",  # short_form (30-150w), medium_form (150-400w), long_form (400-1000w)
         target_score: int = 85,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        publish_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a YouTube script with timing markers
@@ -736,6 +737,9 @@ Return format MUST include REVISED script_text + FINAL validation metadata for A
                 "state": "HALF_OPEN",
                 "message": "Testing recovery with single request"
             })
+
+        # Store publish_date for use in Airtable save
+        self.publish_date = publish_date
 
         # ==================== STRUCTURED LOGGING START ====================
         # Track operation timing for structured logging
@@ -1099,7 +1103,8 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Cole's script style examples."""
                 platform='youtube',
                 post_hook=hook_preview,
                 status=airtable_status,  # AUTO-SET: "Needs Review" if score <18, else "Draft"
-                suggested_edits=validation_formatted  # Human-readable validation report
+                suggested_edits=validation_formatted,  # Human-readable validation report
+                publish_date=self.publish_date  # Pass publish date from instance variable
             )
             print(f"📊 Airtable API result: {result}")
 
@@ -1232,7 +1237,8 @@ async def create_youtube_workflow(
     script_type: str = "short_form",
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    publish_date: Optional[str] = None
 ) -> str:
     """
     Main entry point for YouTube script creation
@@ -1251,7 +1257,8 @@ async def create_youtube_workflow(
             topic=topic,
             context=f"{context} | Script Type: {script_type}",
             script_type=script_type,
-            target_score=85
+            target_score=85,
+            publish_date=publish_date
         )
 
         if result['success']:

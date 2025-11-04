@@ -681,7 +681,8 @@ Return format MUST include REVISED caption_text + FINAL validation metadata for 
         topic: str,
         context: str = "",
         target_score: int = 85,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        publish_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create an Instagram caption following all Instagram rules
@@ -725,6 +726,9 @@ Return format MUST include REVISED caption_text + FINAL validation metadata for 
                 "state": "HALF_OPEN",
                 "message": "Testing recovery with single request"
             })
+
+        # Store publish_date for use in Airtable save
+        self.publish_date = publish_date
 
         # ==================== STRUCTURED LOGGING START ====================
         # Track operation timing for structured logging
@@ -1057,7 +1061,8 @@ The tools contain WRITE_LIKE_HUMAN_RULES and Instagram formatting guidelines."""
                 platform='instagram',
                 post_hook=hook_preview,
                 status=airtable_status,  # Conditional: "Needs Review" if score < 18, else "Draft"
-                suggested_edits=validation_formatted  # Human-readable validation report
+                suggested_edits=validation_formatted,  # Human-readable validation report
+                publish_date=self.publish_date  # Pass publish date from instance variable
             )
             print(f"📊 Airtable API result: {result}")
 
@@ -1180,7 +1185,8 @@ async def create_instagram_post_workflow(
     style: str = "engagement",
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    publish_date: Optional[str] = None
 ) -> str:
     """
     Main entry point for Instagram caption creation
@@ -1198,7 +1204,8 @@ async def create_instagram_post_workflow(
         result = await agent.create_caption(
             topic=topic,
             context=context,
-            target_score=85
+            target_score=85,
+            publish_date=publish_date
         )
 
         if result['success']:

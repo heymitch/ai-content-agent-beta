@@ -739,7 +739,8 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
         thread_type: str = "standard",
         content_length: str = "auto",  # "single_post" | "short_thread" | "long_thread" | "auto"
         target_score: int = 85,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        publish_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a Twitter thread following quality thresholds
@@ -756,6 +757,9 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
         Returns:
             Dict with final thread, score, hooks tested, iterations
         """
+
+        # Store publish_date for use in Airtable save
+        self.publish_date = publish_date
 
         # Use session ID or create new one
         if not session_id:
@@ -929,7 +933,8 @@ The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
                 platform='twitter',
                 post_hook=hook_preview,
                 status='Draft',
-                suggested_edits=validation_formatted  # Human-readable validation report
+                suggested_edits=validation_formatted,  # Human-readable validation report
+                publish_date=self.publish_date  # Pass publish date from instance variable
             )
             print(f"📊 Airtable API result: {result}")
 
@@ -1100,7 +1105,8 @@ async def create_twitter_thread_workflow(
     style: str = "thought_leadership",
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    publish_date: Optional[str] = None
 ) -> str:
     """
     Main entry point for Twitter content creation
@@ -1119,7 +1125,8 @@ async def create_twitter_thread_workflow(
             topic=topic,
             context=f"{context} | Style: {style}",
             thread_type="standard",
-            target_score=85
+            target_score=85,
+            publish_date=publish_date
         )
 
         if result['success']:
