@@ -14,14 +14,12 @@ from anthropic import Anthropic
 
 logger = logging.getLogger(__name__)
 
-# Initialize Anthropic client
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-
 
 async def generate_briefing(
     analytics: Dict[str, Any],
     research: Optional[Dict[str, Any]] = None,
-    user_context: Optional[Dict[str, Any]] = None
+    user_context: Optional[Dict[str, Any]] = None,
+    client: Optional[Anthropic] = None
 ) -> Dict[str, Any]:
     """
     Generate weekly content intelligence briefing.
@@ -77,11 +75,15 @@ async def generate_briefing(
     # Get current date for briefing header
     current_date = datetime.now().strftime("%B %d, %Y")
 
+    # Use provided client or create new one
+    if client is None:
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
     try:
         logger.info("Calling Claude to generate briefing")
 
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=4000,
             system=BRIEFING_GENERATOR_PROMPT,
             messages=[{

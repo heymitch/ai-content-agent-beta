@@ -119,6 +119,12 @@ Generates strategic content briefing.
 ### `/api/n8n/weekly-briefing`
 Webhook for automated briefings.
 
+**Authentication (optional):**
+If `N8N_WEBHOOK_SECRET` is set in your environment, the webhook requires Bearer token authentication:
+```
+Authorization: Bearer your-secret-token-here
+```
+
 **Request (all fields optional):**
 ```json
 {
@@ -155,6 +161,11 @@ All settings are optional. Copy `.env.analytics.example` to see all options.
 | `ANALYTICS_HIGH_ENGAGEMENT` | `8.0` | High engagement threshold (%) |
 | `ANALYTICS_LOW_ENGAGEMENT` | `3.0` | Low engagement threshold (%) |
 
+### Security Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `N8N_WEBHOOK_SECRET` | (empty) | Optional Bearer token for webhook auth |
+
 ## Integration Guide
 
 ### With Airtable
@@ -182,15 +193,29 @@ For real engagement metrics:
 
 ### With n8n
 
-Example n8n workflow:
+**Setting up webhook authentication (optional):**
+
+1. Generate a secret token (any random string)
+2. Add to your `.env` file:
+   ```env
+   N8N_WEBHOOK_SECRET=your-secret-token-here
+   ```
+3. In n8n HTTP Request node, add header:
+   - Header Name: `Authorization`
+   - Header Value: `Bearer your-secret-token-here`
+
+**Example n8n workflow:**
 
 1. **Schedule Trigger**: Every Monday 9am
 2. **HTTP Request**:
    - URL: `{{$env.API_URL}}/api/n8n/weekly-briefing`
    - Method: POST
-   - Authentication: Bearer token (if needed)
+   - Headers (if auth enabled):
+     - Authorization: `Bearer {{$env.N8N_WEBHOOK_SECRET}}`
    - Body: `{"days_back": 7}`
 3. **Slack** (optional): Forward briefing to additional channels
+
+**Note:** Authentication is completely optional. If `N8N_WEBHOOK_SECRET` is not set, the webhook works without authentication (backwards compatible).
 
 ## Troubleshooting
 
@@ -229,10 +254,11 @@ Example n8n workflow:
 
 ## Security Notes
 
-- Analytics endpoints don't require authentication by default
-- Add authentication middleware if exposing publicly
-- Ayrshare API key should be kept secret
-- Consider rate limiting for public endpoints
+- **Webhook Authentication**: Optional Bearer token auth via `N8N_WEBHOOK_SECRET`
+- **Backwards Compatible**: Works without auth if secret not configured
+- **Other Endpoints**: Analytics endpoints don't require auth by default
+- **Ayrshare API**: Keep API key secret in environment variables
+- **Production**: Consider rate limiting for publicly exposed endpoints
 
 ## Support
 

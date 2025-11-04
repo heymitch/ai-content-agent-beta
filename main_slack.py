@@ -350,8 +350,8 @@ async def analyze_performance_endpoint(request: Request):
                 "error": "date_range must include 'start' and 'end' fields"
             }
 
-        # Call analytics handler
-        analysis = await analyze_performance(posts, date_range)
+        # Call analytics handler with shared client
+        analysis = await analyze_performance(posts, date_range, anthropic_client)
 
         return analysis
 
@@ -426,11 +426,12 @@ async def generate_briefing_endpoint(request: Request):
                 "priority_actions": []
             }
 
-        # Call briefing handler
+        # Call briefing handler with shared client
         briefing = await generate_briefing(
             analytics=analytics,
             research=research,
-            user_context=user_context
+            user_context=user_context,
+            client=anthropic_client
         )
 
         return briefing
@@ -1019,6 +1020,29 @@ async def n8n_weekly_briefing(request: Request):
     }
     """
     try:
+        # Check for optional webhook authentication
+        webhook_secret = os.getenv('N8N_WEBHOOK_SECRET', '')
+        if webhook_secret:
+            # Authentication is configured, so enforce it
+            auth_header = request.headers.get('Authorization', '')
+
+            if not auth_header.startswith('Bearer '):
+                logger.warning("n8n webhook: Missing or invalid Authorization header format")
+                return {
+                    "success": False,
+                    "error": "Unauthorized: Bearer token required"
+                }, 401
+
+            token = auth_header.replace('Bearer ', '').strip()
+            if token != webhook_secret:
+                logger.warning("n8n webhook: Invalid authentication token")
+                return {
+                    "success": False,
+                    "error": "Unauthorized: Invalid token"
+                }, 401
+
+            logger.info("n8n webhook: Authentication successful")
+
         # Parse request data
         data = await request.json() if request.headers.get('content-type') == 'application/json' else {}
         days_back = data.get('days_back', 7)
@@ -1097,7 +1121,7 @@ async def n8n_weekly_briefing(request: Request):
 
         # Analyze performance
         logger.info(f"📈 Analyzing {len(posts_data)} posts")
-        analytics = await analyze_performance(posts_data, date_range)
+        analytics = await analyze_performance(posts_data, date_range, anthropic_client)
 
         # Generate briefing
         logger.info("📝 Generating briefing")
@@ -1106,7 +1130,8 @@ async def n8n_weekly_briefing(request: Request):
             user_context={
                 "content_goals": "Build thought leadership in AI automation",
                 "audience": "Enterprise decision makers and tech leaders"
-            }
+            },
+            client=anthropic_client
         )
 
         # Post to Slack

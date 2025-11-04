@@ -8,16 +8,17 @@ Uses Claude Sonnet 4.5 to identify patterns, top/worst performers, and recommend
 import os
 import json
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from anthropic import Anthropic
 
 logger = logging.getLogger(__name__)
 
-# Initialize Anthropic client
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-
-async def analyze_performance(posts: List[Dict[str, Any]], date_range: Dict[str, str]) -> Dict[str, Any]:
+async def analyze_performance(
+    posts: List[Dict[str, Any]],
+    date_range: Dict[str, str],
+    client: Optional[Anthropic] = None
+) -> Dict[str, Any]:
     """
     Analyze post performance data and return strategic insights.
 
@@ -82,10 +83,14 @@ Return JSON with:
 - patterns (best_hook_style, best_platform, best_time, avg_engagement_rate)
 - recommendations (3-5 actionable items)"""
 
+    # Use provided client or create new one
+    if client is None:
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
     try:
         # Call Claude Sonnet 4.5
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=2000,
             system=ANALYTICS_ANALYSIS_PROMPT,
             messages=[{
