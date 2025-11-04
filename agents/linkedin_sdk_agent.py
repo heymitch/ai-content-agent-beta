@@ -779,7 +779,8 @@ AVAILABLE TOOLS:
         context: str = "",
         post_type: str = "standard",  # standard, carousel, video
         target_score: int = 85,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        publish_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a LinkedIn post following ALL checklist rules
@@ -794,6 +795,9 @@ AVAILABLE TOOLS:
         Returns:
             Dict with final post, score, hooks tested, iterations
         """
+
+        # Store publish_date for use in Airtable save
+        self.publish_date = publish_date
 
         # Use session ID or create new one
         # In batch mode, always create unique session IDs to prevent conflicts
@@ -1332,7 +1336,8 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
                 platform='linkedin',
                 post_hook=hook_preview,
                 status=airtable_status,  # "Needs Review" if <18, else "Draft"
-                suggested_edits=validation_formatted  # Human-readable validation report with GPTZero sentences
+                suggested_edits=validation_formatted,  # Human-readable validation report with GPTZero sentences
+                publish_date=self.publish_date  # Pass publish date from instance variable
             )
             print(f"📊 Airtable API result: {result}")
 
@@ -1560,7 +1565,8 @@ async def create_linkedin_post_workflow(
     style: str = "thought_leadership",
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    publish_date: Optional[str] = None
 ) -> str:
     """
     Main entry point for LinkedIn content creation
@@ -1591,7 +1597,8 @@ async def create_linkedin_post_workflow(
             topic=topic,
             context=f"{context} | Style: {style}",
             post_type=post_type,
-            target_score=85
+            target_score=85,
+            publish_date=publish_date
         )
 
         if result['success']:

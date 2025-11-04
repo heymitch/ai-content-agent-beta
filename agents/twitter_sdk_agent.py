@@ -18,8 +18,26 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from textwrap import dedent
 
+# Production hardening utilities
+from utils.structured_logger import (
+    get_logger,
+    log_operation_start,
+    log_operation_end,
+    log_error,
+    create_context,
+    log_retry_attempt
+)
+from utils.retry_decorator import async_retry_with_backoff, RETRIABLE_EXCEPTIONS
+from utils.circuit_breaker import CircuitBreaker, CircuitState
+
 # Load environment variables for API keys
 load_dotenv()
+
+# Setup structured logging
+logger = get_logger(__name__)
+
+# Import shared Anthropic client manager
+from utils.anthropic_client import get_anthropic_client, cleanup_anthropic_client
 
 
 # ================== TIER 3 TOOL DEFINITIONS (LAZY LOADED) ==================
@@ -60,9 +78,9 @@ async def search_company_documents(args):
 )
 async def generate_5_hooks(args):
     """Generate 5 hooks - prompt loaded JIT"""
-    from anthropic import Anthropic
     from prompts.twitter_tools import GENERATE_HOOKS_PROMPT
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] generate_5_hooks requesting client...", flush=True)
+    client = get_anthropic_client()
 
     topic = args.get('topic', '')
     context = args.get('context', '')
@@ -97,11 +115,10 @@ async def generate_5_hooks(args):
 )
 async def inject_proof_points(args):
     """Inject proof - searches company docs first, then prompt loaded JIT"""
-    from anthropic import Anthropic
     from prompts.twitter_tools import INJECT_PROOF_PROMPT, WRITE_LIKE_HUMAN_RULES
     from tools.company_documents import search_company_documents as _search_func
 
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    client = get_anthropic_client()
 
     draft = args.get('draft', '')
     topic = args.get('topic', '')
@@ -144,9 +161,9 @@ async def inject_proof_points(args):
 async def create_human_draft(args):
     """Create thread with JSON output including scores"""
     import json
-    from anthropic import Anthropic
     from prompts.twitter_tools import CREATE_HUMAN_DRAFT_PROMPT
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] create_human_draft requesting client...", flush=True)
+    client = get_anthropic_client()
 
     topic = args.get('topic', '')
     hook = args.get('hook', '')
@@ -199,9 +216,8 @@ async def create_human_draft(args):
 )
 async def validate_format(args):
     """Validate format - prompt loaded JIT"""
-    from anthropic import Anthropic
     from prompts.twitter_tools import VALIDATE_FORMAT_PROMPT
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    client = get_anthropic_client()
 
     post = args.get('post', '')
     post_type = args.get('post_type', 'standard')
@@ -280,9 +296,8 @@ async def search_viral_patterns(args):
 )
 async def score_and_iterate(args):
     """Score thread - prompt loaded JIT"""
-    from anthropic import Anthropic
     from prompts.twitter_tools import SCORE_ITERATE_PROMPT
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    client = get_anthropic_client()
 
     post = args.get('post', '')
     target = args.get('target_score', 85)
@@ -316,10 +331,9 @@ async def score_and_iterate(args):
 async def quality_check(args):
     """Evaluate thread with 5-axis rubric + surgical feedback (simplified without Tavily loop)"""
     import json
-    from anthropic import Anthropic
     from prompts.twitter_tools import QUALITY_CHECK_PROMPT
 
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    client = get_anthropic_client()
 
     post = args.get('post', '')
 
@@ -395,23 +409,38 @@ Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web search
 
 @tool(
     "apply_fixes",
-    "Apply 3-5 surgical fixes based on quality_check feedback",
-    {"post": str, "issues_json": str}
+    "Apply fixes to ALL flagged issues (no limit on number of fixes)",
+    {"post": str, "issues_json": str, "current_score": int, "gptzero_ai_pct": float, "gptzero_flagged_sentences": list}
 )
 async def apply_fixes(args):
-    """Apply surgical fixes without rewriting the whole thread"""
+    """Apply fixes - rewrites EVERYTHING flagged (no surgical limit)"""
     import json
-    from anthropic import Anthropic
     from prompts.twitter_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] apply_fixes requesting client...", flush=True)
+    client = get_anthropic_client()
 
     post = args.get('post', '')
     issues_json = args.get('issues_json', '[]')
+    current_score = args.get('current_score', 0)
+    gptzero_ai_pct = args.get('gptzero_ai_pct', None)
+    gptzero_flagged_sentences = args.get('gptzero_flagged_sentences', [])
 
-    # Use APPLY_FIXES_PROMPT with WRITE_LIKE_HUMAN_RULES
+    # ALWAYS comprehensive mode - no surgical limit
+    fix_strategy = "COMPREHENSIVE - Fix ALL issues, no limit on number of changes"
+
+    # Format GPTZero flagged sentences for prompt
+    flagged_sentences_text = "Not available"
+    if gptzero_flagged_sentences:
+        flagged_sentences_text = "\n".join([f"- {sent}" for sent in gptzero_flagged_sentences])
+
+    # Use APPLY_FIXES_PROMPT with GPTZero context
     prompt = APPLY_FIXES_PROMPT.format(
         post=post,
         issues_json=issues_json,
+        current_score=current_score,
+        gptzero_ai_pct=gptzero_ai_pct if gptzero_ai_pct is not None else "Not available",
+        gptzero_flagged_sentences=flagged_sentences_text,
+        fix_strategy=fix_strategy,
         write_like_human_rules=WRITE_LIKE_HUMAN_RULES
     )
 
@@ -445,6 +474,95 @@ async def apply_fixes(args):
     }
 
 
+@tool(
+    "external_validation",
+    "Run comprehensive validation: Editor-in-Chief rules + GPTZero AI detection",
+    {"post": str}
+)
+async def external_validation(args):
+    """
+    Run external validators (quality_check + GPTZero) and return structured results
+
+    Returns:
+        JSON with total_score, quality_scores, issues, gptzero_ai_pct, decision
+    """
+    import json
+
+    post = args.get('post', '')
+
+    try:
+        from integrations.validation_utils import run_all_validators
+
+        # Run all validators (quality_check + GPTZero in parallel)
+        validation_json = await run_all_validators(post, 'twitter')
+        val_data = json.loads(validation_json) if isinstance(validation_json, str) else validation_json
+
+        # Extract key metrics
+        quality_scores = val_data.get('quality_scores', {})
+        total_score = quality_scores.get('total', 0)
+        raw_issues = val_data.get('ai_patterns_found', [])
+        gptzero = val_data.get('gptzero', {})
+
+        # Normalize issues to dict format for consistency
+        issues = []
+        for issue in raw_issues:
+            if isinstance(issue, dict):
+                issues.append(issue)
+            elif isinstance(issue, str):
+                issues.append({
+                    "severity": "medium",
+                    "pattern": "unknown",
+                    "original": issue,
+                    "fix": "Review manually",
+                    "impact": "Potential AI tell detected"
+                })
+
+        # GPTZero: As long as it's not 100% AI, it's a win
+        gptzero_ai_pct = None
+        gptzero_passes = None
+        gptzero_flagged_sentences = []
+
+        if gptzero and gptzero.get('status') in ['PASS', 'FLAGGED']:
+            gptzero_ai_pct = gptzero.get('ai_probability', None)
+            if gptzero_ai_pct is not None:
+                gptzero_passes = gptzero_ai_pct < 100
+
+            gptzero_flagged_sentences = gptzero.get('flagged_sentences', [])
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "total_score": total_score,
+                    "quality_scores": quality_scores,
+                    "issues": issues,
+                    "gptzero_ai_pct": gptzero_ai_pct,
+                    "gptzero_passes": gptzero_passes,
+                    "gptzero_flagged_sentences": gptzero_flagged_sentences,
+                    "decision": val_data.get('decision', 'unknown'),
+                    "surgical_summary": val_data.get('surgical_summary', '')
+                }, indent=2, ensure_ascii=False)
+            }]
+        }
+
+    except Exception as e:
+        logger.error(f"❌ external_validation error: {e}")
+        # Return fallback result - don't block thread creation
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "total_score": 18,
+                    "quality_scores": {"total": 18},
+                    "issues": [],
+                    "gptzero_ai_pct": None,
+                    "gptzero_passes": None,
+                    "decision": "error",
+                    "error": str(e),
+                    "surgical_summary": f"Validation error: {str(e)}"
+                }, indent=2)
+            }]
+        }
 
 
 # ================== TWITTER SDK AGENT CLASS ==================
@@ -460,7 +578,8 @@ class TwitterSDKAgent:
         user_id: str = "default",
         isolated_mode: bool = False,
         channel_id: Optional[str] = None,
-        thread_ts: Optional[str] = None
+        thread_ts: Optional[str] = None,
+        batch_mode: bool = False
     ):
         """Initialize Twitter SDK Agent with memory and tools
 
@@ -469,12 +588,20 @@ class TwitterSDKAgent:
             isolated_mode: If True, creates isolated sessions (for testing only)
             channel_id: Slack channel ID for tracking
             thread_ts: Slack thread timestamp for tracking
+            batch_mode: If True, disable session reuse for batch safety
         """
         self.user_id = user_id
-        self.sessions = {}  # Track multiple content sessions
         self.isolated_mode = isolated_mode  # Test mode flag
+        self.batch_mode = batch_mode  # Batch execution mode
         self.channel_id = channel_id  # Slack channel for Supabase/Airtable
         self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
+
+        # Production hardening: Circuit breaker (3 failures → 120s cooldown)
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=3,
+            recovery_timeout=120.0,
+            name="twitter_agent"
+        )
 
         # Twitter-specific base prompt with quality thresholds
         base_prompt = """You are a Twitter thread creation agent. Your goal: threads that score 18+ out of 25 without needing 3 rounds of revision.
@@ -689,47 +816,22 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
         from integrations.prompt_loader import load_system_prompt
         self.system_prompt = load_system_prompt(base_prompt)
 
-        # Create MCP server with Twitter-specific tools (LEAN 5-TOOL WORKFLOW + company docs)
+        # Create MCP server with Twitter-specific tools (ENHANCED 7-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
             name="twitter_tools",
-            version="4.1.0",
+            version="4.2.0",
             tools=[
-                search_company_documents,  # NEW v4.1.0
+                search_company_documents,  # NEW v4.1.0: Access user-uploaded docs
                 generate_5_hooks,
                 create_human_draft,
                 inject_proof_points,  # Enhanced: Now searches company docs first
                 quality_check,  # Combined: AI patterns + fact-check
-                apply_fixes     # Combined: Fix everything in one pass
+                external_validation,  # NEW v4.2.0: Editor-in-Chief + GPTZero validation
+                apply_fixes     # Enhanced v4.2.0: Fixes ALL issues + GPTZero flagged sentences
             ]
         )
 
-        print("🐦 Twitter SDK Agent initialized with 6 tools (5 lean tools + company docs RAG)")
-
-    def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
-        """Get or create a persistent session for content creation"""
-        if session_id not in self.sessions:
-            # Only clear env vars in isolated test mode
-            if self.isolated_mode:
-                os.environ.pop('CLAUDECODE', None)
-                os.environ.pop('CLAUDE_CODE_ENTRYPOINT', None)
-                os.environ.pop('CLAUDE_SESSION_ID', None)
-                os.environ.pop('CLAUDE_WORKSPACE', None)
-                os.environ['CLAUDE_HOME'] = '/tmp/twitter_agent'
-
-            options = ClaudeAgentOptions(
-                mcp_servers={"twitter_tools": self.mcp_server},
-                allowed_tools=["mcp__twitter_tools__*"],
-                system_prompt=self.system_prompt,
-                model="claude-sonnet-4-5-20250929",
-                permission_mode="bypassPermissions",
-                continue_conversation=not self.isolated_mode  # False in test mode, True in prod
-            )
-
-            self.sessions[session_id] = ClaudeSDKClient(options=options)
-            mode_str = " (isolated test mode)" if self.isolated_mode else ""
-            print(f"📝 Created Twitter session: {session_id}{mode_str}")
-
-        return self.sessions[session_id]
+        print("🐦 Twitter SDK Agent initialized with 7 tools (6 lean tools + company docs RAG + external_validation)")
 
     async def create_thread(
         self,
@@ -739,7 +841,8 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
         thread_type: str = "standard",
         content_length: str = "auto",  # "single_post" | "short_thread" | "long_thread" | "auto"
         target_score: int = 85,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        publish_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a Twitter thread following quality thresholds
@@ -757,11 +860,64 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final thread when thres
             Dict with final thread, score, hooks tested, iterations
         """
 
-        # Use session ID or create new one
-        if not session_id:
-            session_id = f"twitter_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Store publish_date for use in Airtable save
+        self.publish_date = publish_date
 
-        client = self.get_or_create_session(session_id)
+        # Use session ID or create new one
+        # In batch mode, always create unique session IDs to prevent conflicts
+        if not session_id or self.batch_mode:
+            import random
+            session_id = f"twitter_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
+            print(f"📋 Using unique session ID for batch safety: {session_id}", flush=True)
+
+        # Track operation timing for structured logging
+        operation_start_time = asyncio.get_event_loop().time()
+
+        # Create context for structured logging
+        log_context = create_context(
+            user_id=self.user_id,
+            thread_ts=self.thread_ts,
+            channel_id=self.channel_id,
+            platform="twitter",
+            session_id=session_id
+        )
+
+        # Log operation start
+        log_operation_start(
+            logger,
+            "create_twitter_thread",
+            context=log_context,
+            topic=topic[:100],
+            thread_type=thread_type
+        )
+
+        # Check circuit breaker state
+        import time as time_module
+        with self.circuit_breaker._lock:
+            if self.circuit_breaker.state == CircuitState.OPEN:
+                time_remaining = self.circuit_breaker.recovery_timeout - (
+                    time_module.time() - self.circuit_breaker.last_failure_time
+                )
+                if time_module.time() - self.circuit_breaker.last_failure_time < self.circuit_breaker.recovery_timeout:
+                    logger.warning(
+                        "⛔ Circuit breaker is OPEN - rejecting request",
+                        circuit_breaker="twitter_agent",
+                        time_remaining=f"{time_remaining:.1f}s",
+                        **log_context
+                    )
+                    return {
+                        "success": False,
+                        "error": f"Circuit breaker open. Retry in {time_remaining:.1f}s",
+                        "thread": None
+                    }
+                else:
+                    # Recovery timeout elapsed - try half-open
+                    self.circuit_breaker.state = CircuitState.HALF_OPEN
+                    logger.info(
+                        "🔄 Circuit breaker entering HALF_OPEN - testing recovery",
+                        circuit_breaker="twitter_agent",
+                        **log_context
+                    )
 
         # Build length directive
         length_directive = ""
@@ -799,73 +955,171 @@ If any tool returns an error:
 
 The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
 
-        try:
-            # Connect if needed
-            print(f"🔗 Connecting Twitter SDK client...")
-            await client.connect()
+        # Create SDK client options
+        should_continue = not (self.isolated_mode or self.batch_mode)
+        options = ClaudeAgentOptions(
+            mcp_servers={"twitter_tools": self.mcp_server},
+            allowed_tools=["mcp__twitter_tools__*"],
+            system_prompt=self.system_prompt,
+            model="claude-sonnet-4-5-20250929",
+            permission_mode="bypassPermissions",
+            continue_conversation=should_continue  # False in test/batch mode
+        )
 
-            # Send the creation request
-            print(f"📤 Sending Twitter creation prompt...")
-            await client.query(creation_prompt)
-            print(f"⏳ Twitter agent processing (this takes 30-60s)...")
+        # Use context manager for automatic cleanup
+        async with ClaudeSDKClient(options=options) as client:
+            try:
+                # Context manager handles connection automatically
+                print(f"✅ Twitter SDK connected via context manager (session: {session_id})", flush=True)
 
-            # Collect the response - keep the LAST text output we see
-            final_output = ""
-            message_count = 0
-            last_text_message = None
+                # Send the creation request with timeout and retry
+                print(f"📤 Sending Twitter creation prompt...", flush=True)
 
-            async for msg in client.receive_response():
-                message_count += 1
-                msg_type = type(msg).__name__
-                print(f"   📬 Received message {message_count}: type={msg_type}")
+                @async_retry_with_backoff(
+                    max_retries=3,
+                    initial_delay=1.0,
+                    exceptions=(asyncio.TimeoutError, *RETRIABLE_EXCEPTIONS),
+                    context_provider=lambda: log_context
+                )
+                async def query_with_retry():
+                    nonlocal client
+                    await asyncio.wait_for(
+                        client.query(creation_prompt),
+                        timeout=60.0  # 60 second timeout for sending query
+                    )
 
-                # Track all AssistantMessages with text content (keep the last one)
-                if msg_type == 'AssistantMessage':
-                    if hasattr(msg, 'content'):
-                        if isinstance(msg.content, list):
-                            for block in msg.content:
-                                if isinstance(block, dict):
-                                    block_type = block.get('type', 'unknown')
-                                    print(f"      Block type: {block_type}")
-                                    if block_type == 'text':
-                                        text_content = block.get('text', '')
-                                        if text_content:
-                                            final_output = text_content
-                                            last_text_message = message_count
-                                            print(f"      ✅ Got text output ({len(final_output)} chars)")
-                                elif hasattr(block, 'text'):
-                                    text_content = block.text
-                                    if text_content:
-                                        final_output = text_content
-                                        last_text_message = message_count
-                                        print(f"      ✅ Got text from block.text ({len(final_output)} chars)")
-                        elif hasattr(msg.content, 'text'):
-                            text_content = msg.content.text
-                            if text_content:
-                                final_output = text_content
-                                last_text_message = message_count
-                                print(f"      ✅ Got text from content.text ({len(final_output)} chars)")
-                    elif hasattr(msg, 'text'):
-                        text_content = msg.text
-                        if text_content:
-                            final_output = text_content
-                            last_text_message = message_count
-                            print(f"      ✅ Got text from msg.text ({len(final_output)} chars)")
+                await query_with_retry()
 
-            print(f"\n   ✅ Stream complete after {message_count} messages (last text at message {last_text_message})")
+                print(f"⏳ Twitter agent processing...", flush=True)
 
-            # Parse the output to extract structured data
-            return await self._parse_output(final_output)
+                # Collect the response WITH timeouts to prevent silent hangs
+                final_output = ""
+                message_count = 0
 
-        except Exception as e:
-            print(f"❌ Twitter SDK Agent error: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "thread": None
-            }
+                # Timeout configuration
+                idle_timeout = 60  # seconds - no message triggers recovery
+                overall_deadline = 240  # seconds - max total time
+                max_stream_retries = 2  # reconnect attempts
 
-    async def _parse_output(self, output: str) -> Dict[str, Any]:
+                async def collect_response_with_timeout():
+                    nonlocal final_output, message_count, client
+
+                    attempt = 0
+                    start_time = asyncio.get_event_loop().time()
+
+                    while attempt <= max_stream_retries:
+                        try:
+                            # Get async iterator from receive_response()
+                            aiter = client.receive_response().__aiter__()
+
+                            while True:
+                                # Check overall deadline
+                                elapsed = asyncio.get_event_loop().time() - start_time
+                                if elapsed > overall_deadline:
+                                    raise TimeoutError(f"Stream deadline exceeded ({overall_deadline}s)")
+
+                                try:
+                                    # Wait for next message with idle timeout
+                                    msg = await asyncio.wait_for(aiter.__anext__(), timeout=idle_timeout)
+                                    message_count += 1
+                                    msg_type = type(msg).__name__
+                                    print(f"   📬 Received message {message_count}: type={msg_type}", flush=True)
+
+                                    # Track all AssistantMessages with text content
+                                    if msg_type == 'AssistantMessage':
+                                        if hasattr(msg, 'content'):
+                                            if isinstance(msg.content, list):
+                                                for block in msg.content:
+                                                    if isinstance(block, dict):
+                                                        block_type = block.get('type', 'unknown')
+                                                        if block_type == 'text':
+                                                            text_content = block.get('text', '')
+                                                            if text_content:
+                                                                final_output = text_content
+                                                                preview = text_content[:300].replace('\n', ' ')
+                                                                print(f"      ✅ Got text output ({len(text_content)} chars)")
+                                                                print(f"         PREVIEW: {preview}...")
+                                                    elif hasattr(block, 'text'):
+                                                        text_content = block.text
+                                                        if text_content:
+                                                            final_output = text_content
+                                                            preview = text_content[:300].replace('\n', ' ')
+                                                            print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
+                                                            print(f"         PREVIEW: {preview}...")
+                                            elif hasattr(msg.content, 'text'):
+                                                text_content = msg.content.text
+                                                if text_content:
+                                                    final_output = text_content
+                                                    preview = text_content[:300].replace('\n', ' ')
+                                                    print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
+                                                    print(f"         PREVIEW: {preview}...")
+                                        elif hasattr(msg, 'text'):
+                                            text_content = msg.text
+                                            if text_content:
+                                                final_output = text_content
+                                                preview = text_content[:300].replace('\n', ' ')
+                                                print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
+                                                print(f"         PREVIEW: {preview}...")
+
+                                except asyncio.TimeoutError:
+                                    attempt += 1
+                                    logger.warning(
+                                        f"⚠️  Stream idle timeout (attempt {attempt}/{max_stream_retries + 1}).",
+                                        operation="create_twitter_thread",
+                                        attempt=attempt,
+                                        **log_context
+                                    )
+                                    if attempt > max_stream_retries:
+                                        raise TimeoutError(f"Max stream retries exceeded ({max_stream_retries}).")
+                                    raise TimeoutError(f"Stream idle timeout after {message_count} messages.")
+
+                                except StopAsyncIteration:
+                                    print(f"   ✅ Stream completed normally")
+                                    return
+
+                        except TimeoutError:
+                            raise
+                        except Exception as e:
+                            logger.error(f"❌ Error in stream collection: {e}", **log_context, exc_info=True)
+                            raise
+
+                await collect_response_with_timeout()
+                print(f"\n   ✅ Stream complete after {message_count} messages")
+                print(f"   📝 Final output: {len(final_output)} chars")
+                return await self._parse_output(final_output, operation_start_time, log_context)
+
+            except Exception as e:
+                # Log error with full context
+                try:
+                    operation_duration = asyncio.get_event_loop().time() - operation_start_time
+                except NameError:
+                    operation_duration = 0.0
+
+                log_error(logger, "Twitter SDK Agent error", error=e, context=log_context)
+                log_operation_end(logger, "create_twitter_thread", duration=operation_duration,
+                                 success=False, context=log_context, error_type=type(e).__name__)
+
+                # Circuit breaker: Mark operation as failed
+                with self.circuit_breaker._lock:
+                    self.circuit_breaker.failure_count += 1
+                    self.circuit_breaker.last_failure_time = time_module.time()
+
+                    if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                        logger.error("❌ Circuit breaker test failed - RE-OPENING",
+                                   circuit_breaker="twitter_agent", **log_context)
+                        self.circuit_breaker.state = CircuitState.OPEN
+                    elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
+                        logger.error("🔥 Circuit breaker OPENING - threshold reached",
+                                   circuit_breaker="twitter_agent", **log_context)
+                        self.circuit_breaker.state = CircuitState.OPEN
+
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "thread": None
+                }
+
+    async def _parse_output(self, output: str, operation_start_time: float, log_context: dict) -> Dict[str, Any]:
         """Parse agent output into structured response using Haiku extraction"""
         print(f"\n🔍 _parse_output called with {len(output)} chars")
 
@@ -874,7 +1128,7 @@ The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
             return {
                 "success": False,
                 "error": "No content generated",
-                "post": None
+                "thread": None
             }
 
         # Extract structured content using Haiku (replaces fragile regex)
@@ -929,7 +1183,8 @@ The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
                 platform='twitter',
                 post_hook=hook_preview,
                 status='Draft',
-                suggested_edits=validation_formatted  # Human-readable validation report
+                suggested_edits=validation_formatted,  # Human-readable validation report
+                publish_date=self.publish_date  # Pass publish date from instance variable
             )
             print(f"📊 Airtable API result: {result}")
 
@@ -1004,6 +1259,27 @@ The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
 
         # TODO: Export to Google Docs and get URL
         google_doc_url = None
+
+        # Log operation end with timing and quality score
+        operation_duration = asyncio.get_event_loop().time() - operation_start_time
+        log_operation_end(
+            logger,
+            "create_twitter_thread",
+            duration=operation_duration,
+            success=True,
+            context=log_context,
+            quality_score=score,
+            supabase_id=supabase_id,
+            airtable_url=airtable_url
+        )
+
+        # Circuit breaker: Mark operation as successful
+        with self.circuit_breaker._lock:
+            if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                logger.info("✅ Circuit breaker test successful - CLOSING",
+                          circuit_breaker="twitter_agent", **log_context)
+            self.circuit_breaker.failure_count = 0
+            self.circuit_breaker.state = CircuitState.CLOSED
 
         return {
             "success": True,
@@ -1100,7 +1376,8 @@ async def create_twitter_thread_workflow(
     style: str = "thought_leadership",
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    publish_date: Optional[str] = None
 ) -> str:
     """
     Main entry point for Twitter content creation
@@ -1111,7 +1388,8 @@ async def create_twitter_thread_workflow(
     agent = TwitterSDKAgent(
         user_id=user_id,
         channel_id=channel_id,
-        thread_ts=thread_ts
+        thread_ts=thread_ts,
+        batch_mode=True  # Always use batch mode for workflow calls (99% of usage)
     )
 
     try:
@@ -1119,7 +1397,8 @@ async def create_twitter_thread_workflow(
             topic=topic,
             context=f"{context} | Style: {style}",
             thread_type="standard",
-            target_score=85
+            target_score=85,
+            publish_date=publish_date
         )
 
         if result['success']:
@@ -1143,26 +1422,9 @@ _{result.get('hook', result['thread'][:280])}..._
             return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
 
     finally:
-        # CRITICAL: Close all SDK connections to prevent Replit connection exhaustion
-        # This fixes the "Post 2+ hangs forever waiting for connection" bug
-        import sys
-        sys.stdout.flush()  # Force flush before we start
-        print("\n" + "="*60, flush=True)
-        print(f"🔌 CLEANUP STARTING: {len(agent.sessions)} active sessions", flush=True)
-        print("="*60, flush=True)
-
-        for session_id, client in list(agent.sessions.items()):
-            print(f"🔌 Attempting to disconnect: {session_id}", flush=True)
-            try:
-                await client.disconnect()
-                print(f"   ✅ Successfully disconnected: {session_id}", flush=True)
-            except Exception as e:
-                print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
-
-        agent.sessions.clear()
-        print(f"🔌 CLEANUP COMPLETE - All connections closed", flush=True)
-        print("="*60 + "\n", flush=True)
-        sys.stdout.flush()  # Force flush after we're done
+        # Context manager handles SDK cleanup, but we also need to clean up the shared Anthropic client
+        cleanup_anthropic_client()
+        print(f"✅ Twitter SDK and shared Anthropic client cleaned up", flush=True)
 
 
 if __name__ == "__main__":

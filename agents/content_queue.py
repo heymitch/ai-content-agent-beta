@@ -40,6 +40,7 @@ class ContentJob:
     attempts: int = 0
     created_at: datetime = None
     completed_at: datetime = None
+    publish_date: Optional[str] = None  # Optional publish date for scheduling
 
     def __post_init__(self):
         if not self.created_at:
@@ -277,28 +278,32 @@ class ContentQueueManager:
             result = await create_linkedin_post_workflow(
                 topic=job.topic,
                 context=job.context,
-                style=job.style
+                style=job.style,
+                publish_date=job.publish_date
             )
         elif job.platform == "twitter":
             from agents.twitter_sdk_agent import create_twitter_thread_workflow
             result = await create_twitter_thread_workflow(
                 topic=job.topic,
                 context=job.context,
-                style=job.style
+                style=job.style,
+                publish_date=job.publish_date
             )
         elif job.platform == "email":
             from agents.email_sdk_agent import create_email_workflow
             result = await create_email_workflow(
                 topic=job.topic,
                 context=job.context,
-                style=job.style
+                style=job.style,
+                publish_date=job.publish_date
             )
         elif job.platform in ["youtube", "video"]:
             from agents.youtube_sdk_agent import create_youtube_workflow
             result = await create_youtube_workflow(
                 topic=job.topic,
                 context=job.context,
-                script_type=job.style
+                script_type=job.style,
+                publish_date=job.publish_date
             )
         else:
             raise ValueError(f"Unknown platform: {job.platform}")

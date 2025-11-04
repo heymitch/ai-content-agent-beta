@@ -92,7 +92,8 @@ async def execute_sequential_batch(
                 context=strategic_context,  # Strategic outline + optional strategy memory
                 style=post_spec.get('style', ''),
                 learnings='',  # NO LEARNINGS - deprecated parameter
-                target_score=18  # Fixed threshold (no "improving on average")
+                target_score=18,  # Fixed threshold (no "improving on average")
+                publish_date=post_spec.get('publish_date')  # Pass publish date from post spec
             )
 
             # Extract metadata from SDK agent result
@@ -208,7 +209,8 @@ async def _execute_single_post(
     target_score: int,
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    publish_date: Optional[str] = None
 ) -> str:
     """
     Execute one post using EXISTING SDK agent workflows
@@ -240,7 +242,8 @@ async def _execute_single_post(
             style=style or 'thought_leadership',
             channel_id=channel_id,
             thread_ts=thread_ts,
-            user_id=user_id
+            user_id=user_id,
+            publish_date=publish_date
         )
 
     elif platform == "twitter":
@@ -251,7 +254,8 @@ async def _execute_single_post(
             style=style or 'tactical',
             channel_id=channel_id,
             thread_ts=thread_ts,
-            user_id=user_id
+            user_id=user_id,
+            publish_date=publish_date
         )
 
     elif platform == "email":
@@ -262,7 +266,8 @@ async def _execute_single_post(
             email_type=style or 'Email_Value',
             channel_id=channel_id,
             thread_ts=thread_ts,
-            user_id=user_id
+            user_id=user_id,
+            publish_date=publish_date
         )
 
     elif platform == "youtube":
@@ -273,7 +278,8 @@ async def _execute_single_post(
             script_type=style or 'educational',
             channel_id=channel_id,
             thread_ts=thread_ts,
-            user_id=user_id
+            user_id=user_id,
+            publish_date=publish_date
         )
 
     elif platform == "instagram":
@@ -284,7 +290,8 @@ async def _execute_single_post(
             style=style or 'inspirational',
             channel_id=channel_id,
             thread_ts=thread_ts,
-            user_id=user_id
+            user_id=user_id,
+            publish_date=publish_date
         )
 
     else:

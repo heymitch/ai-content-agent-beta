@@ -777,7 +777,8 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final email with FINAL 
         context: str = "",
         email_type: str = "Email_Value",  # Email_Value, Email_Tuesday, Email_Direct, Email_Indirect
         target_score: int = 85,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        publish_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create an email newsletter following PGA writing style
@@ -792,6 +793,9 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final email with FINAL 
         Returns:
             Dict with final email, score, subject lines tested, iterations
         """
+
+        # Store publish_date for use in Airtable save
+        self.publish_date = publish_date
 
         # Use session ID or create new one
         # In batch mode, always create unique session IDs to prevent conflicts
@@ -1131,7 +1135,8 @@ The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style that MUST be appl
                 platform='email',
                 post_hook=subject_preview,
                 status=airtable_status,  # "Needs Review" if <18, else "Draft"
-                suggested_edits=validation_formatted  # Human-readable validation report with GPTZero sentences
+                suggested_edits=validation_formatted,  # Human-readable validation report with GPTZero sentences
+                publish_date=self.publish_date  # Pass publish date from instance variable
             )
             print(f"📊 Airtable API result: {result}")
 
@@ -1280,7 +1285,8 @@ async def create_email_workflow(
     email_type: str = "Email_Value",
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    publish_date: Optional[str] = None
 ) -> str:
     """
     Main entry point for Email content creation
@@ -1299,7 +1305,8 @@ async def create_email_workflow(
             topic=topic,
             context=f"{context} | Email Type: {email_type}",
             email_type=email_type,
-            target_score=85
+            target_score=85,
+            publish_date=publish_date
         )
 
         if result['success']:
