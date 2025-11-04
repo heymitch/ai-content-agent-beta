@@ -826,8 +826,7 @@ async def test_agent_routing(results: TestResults):
         # Check system prompt for batch mode emphasis
         prompt_checks = [
             ("BATCH MODE IS THE DEFAULT", "Batch mode default declaration"),
-            ("99% of content creation requests should use BATCH MODE", "99% batch mode rule"),
-            ("CO-WRITE MODE (RARE - 1% of requests)", "Co-write rarity declaration")
+            ("RARE EXCEPTION - Co-write mode (1% of requests)", "Co-write mode rarity declaration")
         ]
 
         prompt_pass = True
