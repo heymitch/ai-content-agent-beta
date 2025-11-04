@@ -54,6 +54,7 @@ from utils.anthropic_client import get_anthropic_client, cleanup_anthropic_clien
 async def generate_5_hooks(args):
     """Generate 5 hooks - prompt loaded JIT"""
     from prompts.linkedin_tools import GENERATE_HOOKS_PROMPT
+    print(f"   🔧 [TOOL] generate_5_hooks requesting client...", flush=True)
     client = get_anthropic_client()
 
     topic = args.get('topic', '')
@@ -163,6 +164,7 @@ async def create_human_draft(args):
     """Create draft with JSON output including scores"""
     import json
     from prompts.linkedin_tools import CREATE_HUMAN_DRAFT_PROMPT
+    print(f"   🔧 [TOOL] create_human_draft requesting client...", flush=True)
     client = get_anthropic_client()
 
     topic = args.get('topic', '')
@@ -409,6 +411,7 @@ async def apply_fixes(args):
     """Apply fixes - rewrites EVERYTHING flagged (no surgical limit)"""
     import json
     from prompts.linkedin_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
+    print(f"   🔧 [TOOL] apply_fixes requesting client...", flush=True)
     client = get_anthropic_client()
 
     post = args.get('post', '')
