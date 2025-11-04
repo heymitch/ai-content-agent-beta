@@ -29,6 +29,9 @@ from utils.circuit_breaker import CircuitBreaker, CircuitState
 # Initialize structured logger
 logger = get_logger(__name__)
 
+# Import shared Anthropic client manager
+from utils.anthropic_client import get_anthropic_client, cleanup_anthropic_client
+
 
 # ================== TIER 3 TOOL DEFINITIONS (LAZY LOADED) ==================
 # Tool descriptions kept minimal to reduce context window usage
@@ -68,9 +71,9 @@ async def search_company_documents(args):
 )
 async def generate_5_hooks(args):
     """Generate 5 video hooks - prompt loaded JIT"""
-    from anthropic import Anthropic
     from prompts.youtube_tools import GENERATE_HOOKS_PROMPT
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] youtube/generate_5_hooks requesting client...", flush=True)
+    client = get_anthropic_client()
 
     topic = args.get('topic', '')
     context = args.get('context', '')
@@ -105,11 +108,11 @@ async def generate_5_hooks(args):
 )
 async def inject_proof_points(args):
     """Inject proof - searches company docs first, then prompt loaded JIT"""
-    from anthropic import Anthropic
     from prompts.youtube_tools import INJECT_PROOF_PROMPT, WRITE_LIKE_HUMAN_RULES
     from tools.company_documents import search_company_documents as _search_func
 
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] youtube/inject_proof_points requesting client...", flush=True)
+    client = get_anthropic_client()
 
     draft = args.get('draft', '')
     topic = args.get('topic', '')
@@ -152,13 +155,13 @@ async def inject_proof_points(args):
 async def create_human_script(args):
     """Create script with JSON output including timing markers and scores"""
     import json
-    from anthropic import Anthropic
     from prompts.youtube_tools import (
         CREATE_YOUTUBE_SCRIPT_PROMPT,
         WRITE_LIKE_HUMAN_RULES,
         YOUTUBE_EXAMPLES
     )
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] youtube/create_human_script requesting client...", flush=True)
+    client = get_anthropic_client()
 
     topic = args.get('topic', '')
     video_hook = args.get('video_hook', '')
@@ -212,10 +215,10 @@ async def create_human_script(args):
 async def quality_check(args):
     """Evaluate script with 5-axis rubric + surgical feedback (simplified without Tavily loop)"""
     import json
-    from anthropic import Anthropic
     from prompts.youtube_tools import QUALITY_CHECK_PROMPT
 
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] youtube/quality_check requesting client...", flush=True)
+    client = get_anthropic_client()
 
     post = args.get('post', '')
 
@@ -393,9 +396,9 @@ async def external_validation(args):
 async def apply_fixes(args):
     """Apply fixes - rewrites EVERYTHING flagged (no surgical limit)"""
     import json
-    from anthropic import Anthropic
     from prompts.youtube_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] youtube/apply_fixes requesting client...", flush=True)
+    client = get_anthropic_client()
 
     post = args.get('post', '')
     issues_json = args.get('issues_json', '[]')
@@ -1274,26 +1277,9 @@ _{result.get('hook', result['script'][:60])}..._
             return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
 
     finally:
-        # CRITICAL: Close all SDK connections to prevent Replit connection exhaustion
-        # This fixes the "Post 2+ hangs forever waiting for connection" bug
-        import sys
-        sys.stdout.flush()  # Force flush before we start
-        print("\n" + "="*60, flush=True)
-        print(f"🔌 CLEANUP STARTING: {len(agent.sessions)} active sessions", flush=True)
-        print("="*60, flush=True)
-
-        for session_id, client in list(agent.sessions.items()):
-            print(f"🔌 Attempting to disconnect: {session_id}", flush=True)
-            try:
-                await client.disconnect()
-                print(f"   ✅ Successfully disconnected: {session_id}", flush=True)
-            except Exception as e:
-                print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
-
-        agent.sessions.clear()
-        print(f"🔌 CLEANUP COMPLETE - All connections closed", flush=True)
-        print("="*60 + "\n", flush=True)
-        sys.stdout.flush()  # Force flush after we're done
+        # Context manager handles SDK cleanup, but we also need to clean up the shared Anthropic client
+        cleanup_anthropic_client()
+        print(f"✅ YouTube SDK and shared Anthropic client cleaned up", flush=True)
 
 
 if __name__ == "__main__":

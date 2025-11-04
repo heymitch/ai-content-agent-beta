@@ -36,6 +36,9 @@ load_dotenv()
 # Setup structured logging
 logger = get_logger(__name__)
 
+# Import shared Anthropic client manager
+from utils.anthropic_client import get_anthropic_client, cleanup_anthropic_client
+
 
 # ================== TIER 3 TOOL DEFINITIONS (LAZY LOADED) ==================
 # Tool descriptions kept minimal to reduce context window usage
@@ -75,9 +78,9 @@ async def search_company_documents(args):
 )
 async def generate_5_hooks(args):
     """Generate 5 subject lines - prompt loaded JIT"""
-    from anthropic import Anthropic
     from prompts.email_tools import GENERATE_HOOKS_PROMPT
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] email/generate_5_hooks requesting client...", flush=True)
+    client = get_anthropic_client()
 
     topic = args.get('topic', '')
     context = args.get('context', '')
@@ -112,11 +115,11 @@ async def generate_5_hooks(args):
 )
 async def inject_proof_points(args):
     """Inject proof - searches company docs first, then prompt loaded JIT"""
-    from anthropic import Anthropic
     from prompts.email_tools import INJECT_PROOF_PROMPT, WRITE_LIKE_HUMAN_RULES
     from tools.company_documents import search_company_documents as _search_func
 
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] email/inject_proof_points requesting client...", flush=True)
+    client = get_anthropic_client()
 
     draft = args.get('draft', '')
     topic = args.get('topic', '')
@@ -159,7 +162,6 @@ async def inject_proof_points(args):
 async def create_human_draft(args):
     """Create draft with JSON output including scores"""
     import json
-    from anthropic import Anthropic
     from prompts.email_tools import (
         CREATE_EMAIL_DRAFT_PROMPT,
         WRITE_LIKE_HUMAN_RULES,
@@ -167,7 +169,8 @@ async def create_human_draft(args):
         EMAIL_TUESDAY_EXAMPLES,
         EMAIL_DIRECT_EXAMPLES
     )
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] email/create_human_draft requesting client...", flush=True)
+    client = get_anthropic_client()
 
     topic = args.get('topic', '')
     subject_line = args.get('subject_line', '')
@@ -317,10 +320,10 @@ async def external_validation(args):
 async def quality_check(args):
     """Evaluate email with 5-axis rubric + surgical feedback (simplified without Tavily loop)"""
     import json
-    from anthropic import Anthropic
     from prompts.email_tools import QUALITY_CHECK_PROMPT
 
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] email/quality_check requesting client...", flush=True)
+    client = get_anthropic_client()
 
     post = args.get('post', '')
 
@@ -401,9 +404,9 @@ Mark any unverified claims as "NEEDS VERIFICATION" but do not attempt web search
 async def apply_fixes(args):
     """Apply fixes - rewrites EVERYTHING flagged (no surgical limit)"""
     import json
-    from anthropic import Anthropic
     from prompts.email_tools import APPLY_FIXES_PROMPT, WRITE_LIKE_HUMAN_RULES
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    print(f"   🔧 [TOOL] email/apply_fixes requesting client...", flush=True)
+    client = get_anthropic_client()
 
     post = args.get('post', '')
     issues_json = args.get('issues_json', '[]')
@@ -1320,26 +1323,9 @@ _{result.get('subject', result['email'][:60])}..._
             return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
 
     finally:
-        # CRITICAL: Close all SDK connections to prevent Replit connection exhaustion
-        # This fixes the "Post 2+ hangs forever waiting for connection" bug
-        import sys
-        sys.stdout.flush()  # Force flush before we start
-        print("\n" + "="*60, flush=True)
-        print(f"🔌 CLEANUP STARTING: {len(agent.sessions)} active sessions", flush=True)
-        print("="*60, flush=True)
-
-        for session_id, client in list(agent.sessions.items()):
-            print(f"🔌 Attempting to disconnect: {session_id}", flush=True)
-            try:
-                await client.disconnect()
-                print(f"   ✅ Successfully disconnected: {session_id}", flush=True)
-            except Exception as e:
-                print(f"   ⚠️ Error disconnecting {session_id}: {e}", flush=True)
-
-        agent.sessions.clear()
-        print(f"🔌 CLEANUP COMPLETE - All connections closed", flush=True)
-        print("="*60 + "\n", flush=True)
-        sys.stdout.flush()  # Force flush after we're done
+        # Context manager handles SDK cleanup, but we also need to clean up the shared Anthropic client
+        cleanup_anthropic_client()
+        print(f"✅ Email SDK and shared Anthropic client cleaned up", flush=True)
 
 
 if __name__ == "__main__":
