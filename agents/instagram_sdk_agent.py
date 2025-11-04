@@ -487,7 +487,7 @@ class InstagramSDKAgent:
             thread_ts: Slack thread timestamp for tracking
         """
         self.user_id = user_id
-        self.sessions = {}  # Track multiple content sessions
+        # No longer using sessions - context manager handles cleanup
         self.isolated_mode = isolated_mode  # Test mode flag
         self.channel_id = channel_id  # Slack channel for Supabase/Airtable
         self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
@@ -650,31 +650,24 @@ Return format MUST include REVISED caption_text + FINAL validation metadata for 
 
         print("📸 Instagram SDK Agent initialized with 7 tools (6 lean tools + company docs RAG + external_validation)")
 
-    def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
-        """Get or create a persistent session for content creation"""
-        if session_id not in self.sessions:
-            # Only clear env vars in isolated test mode
-            if self.isolated_mode:
-                os.environ.pop('CLAUDECODE', None)
-                os.environ.pop('CLAUDE_CODE_ENTRYPOINT', None)
-                os.environ.pop('CLAUDE_SESSION_ID', None)
-                os.environ.pop('CLAUDE_WORKSPACE', None)
-                os.environ['CLAUDE_HOME'] = '/tmp/instagram_agent'
+    def get_agent_options(self) -> ClaudeAgentOptions:
+        """Get ClaudeAgentOptions for creating SDK client"""
+        # Only clear env vars in isolated test mode
+        if self.isolated_mode:
+            os.environ.pop('CLAUDECODE', None)
+            os.environ.pop('CLAUDE_CODE_ENTRYPOINT', None)
+            os.environ.pop('CLAUDE_SESSION_ID', None)
+            os.environ.pop('CLAUDE_WORKSPACE', None)
+            os.environ['CLAUDE_HOME'] = '/tmp/instagram_agent'
 
-            options = ClaudeAgentOptions(
-                mcp_servers={"instagram_tools": self.mcp_server},
-                allowed_tools=["mcp__instagram_tools__*"],
-                system_prompt=self.system_prompt,
-                model="claude-sonnet-4-5-20250929",
-                permission_mode="bypassPermissions",
-                continue_conversation=not self.isolated_mode  # False in test mode, True in prod
-            )
-
-            self.sessions[session_id] = ClaudeSDKClient(options=options)
-            mode_str = " (isolated test mode)" if self.isolated_mode else ""
-            print(f"📝 Created Instagram session: {session_id}{mode_str}")
-
-        return self.sessions[session_id]
+        return ClaudeAgentOptions(
+            mcp_servers={"instagram_tools": self.mcp_server},
+            allowed_tools=["mcp__instagram_tools__*"],
+            system_prompt=self.system_prompt,
+            model="claude-sonnet-4-5-20250929",
+            permission_mode="bypassPermissions",
+            continue_conversation=not self.isolated_mode  # False in test mode, True in prod
+        )
 
     async def create_caption(
         self,
@@ -756,7 +749,8 @@ Return format MUST include REVISED caption_text + FINAL validation metadata for 
             session_id = f"instagram_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             logger.info("session_created", extra={**log_context, "session_id": session_id})
 
-        client = self.get_or_create_session(session_id)
+        # Get agent options for context manager
+        options = self.get_agent_options()
 
         # Build the creation prompt
         creation_prompt = f"""Create a high-quality Instagram caption using the available MCP tools.
@@ -774,127 +768,125 @@ WORKFLOW:
 
 The tools contain WRITE_LIKE_HUMAN_RULES and Instagram formatting guidelines."""
 
-        try:
-            # Connect if needed
-            print(f"🔗 Connecting Instagram SDK client...")
-            await client.connect()
+        # Use context manager for automatic cleanup
+        async with ClaudeSDKClient(options=options) as client:
+            try:
+                # Send the creation request
+                print(f"📤 Sending Instagram creation prompt...")
+                await client.query(creation_prompt)
+                print(f"⏳ Instagram agent processing (this takes 30-60s)...")
 
-            # Send the creation request
-            print(f"📤 Sending Instagram creation prompt...")
-            await client.query(creation_prompt)
-            print(f"⏳ Instagram agent processing (this takes 30-60s)...")
+                # Collect the response - use LAST message
+                final_output = ""
+                message_count = 0
 
-            # Collect the response - use LAST message
-            final_output = ""
-            message_count = 0
+                async for msg in client.receive_response():
+                    message_count += 1
+                    msg_type = type(msg).__name__
+                    print(f"   📬 Received message {message_count}: type={msg_type}")
 
-            async for msg in client.receive_response():
-                message_count += 1
-                msg_type = type(msg).__name__
-                print(f"   📬 Received message {message_count}: type={msg_type}")
-
-                # Track all AssistantMessages with text content
-                if msg_type == 'AssistantMessage':
-                    if hasattr(msg, 'content'):
-                        if isinstance(msg.content, list):
-                            for block in msg.content:
-                                if isinstance(block, dict):
-                                    block_type = block.get('type', 'unknown')
-                                    print(f"      Block type: {block_type}")
-                                    if block_type == 'text':
-                                        text_content = block.get('text', '')
+                    # Track all AssistantMessages with text content
+                    if msg_type == 'AssistantMessage':
+                        if hasattr(msg, 'content'):
+                            if isinstance(msg.content, list):
+                                for block in msg.content:
+                                    if isinstance(block, dict):
+                                        block_type = block.get('type', 'unknown')
+                                        print(f"      Block type: {block_type}")
+                                        if block_type == 'text':
+                                            text_content = block.get('text', '')
+                                            if text_content:
+                                                final_output = text_content
+                                                print(f"      ✅ Got text output ({len(text_content)} chars)")
+                                    elif hasattr(block, 'text'):
+                                        text_content = block.text
                                         if text_content:
                                             final_output = text_content
-                                            print(f"      ✅ Got text output ({len(text_content)} chars)")
-                                elif hasattr(block, 'text'):
-                                    text_content = block.text
-                                    if text_content:
-                                        final_output = text_content
-                                        print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
-                        elif hasattr(msg.content, 'text'):
-                            text_content = msg.content.text
+                                            print(f"      ✅ Got text from block.text ({len(text_content)} chars)")
+                            elif hasattr(msg.content, 'text'):
+                                text_content = msg.content.text
+                                if text_content:
+                                    final_output = text_content
+                                    print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
+                        elif hasattr(msg, 'text'):
+                            text_content = msg.text
                             if text_content:
                                 final_output = text_content
-                                print(f"      ✅ Got text from content.text ({len(text_content)} chars)")
-                    elif hasattr(msg, 'text'):
-                        text_content = msg.text
-                        if text_content:
-                            final_output = text_content
-                            print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
+                                print(f"      ✅ Got text from msg.text ({len(text_content)} chars)")
 
-            logger.info("stream_complete", extra={
-                **log_context,
-                "message_count": message_count,
-                "output_length": len(final_output)
-            })
+                logger.info("stream_complete", extra={
+                    **log_context,
+                    "message_count": message_count,
+                    "output_length": len(final_output)
+                })
 
-            # Parse the output to extract structured data
-            result = await self._parse_output(final_output, operation_start_time, log_context)
+                # Parse the output to extract structured data
+                result = await self._parse_output(final_output, operation_start_time, log_context)
 
-            # ==================== CIRCUIT BREAKER SUCCESS ====================
-            # Record success and potentially close circuit if in HALF_OPEN
-            with self.circuit_breaker._lock:
-                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
-                    logger.info("circuit_breaker_recovered", extra={
-                        **log_context,
-                        "state": "CLOSED",
-                        "message": "Circuit successfully recovered after test request"
-                    })
-                self.circuit_breaker.failure_count = 0
-                self.circuit_breaker.state = CircuitState.CLOSED
+                # ==================== CIRCUIT BREAKER SUCCESS ====================
+                # Record success and potentially close circuit if in HALF_OPEN
+                with self.circuit_breaker._lock:
+                    if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                        logger.info("circuit_breaker_recovered", extra={
+                            **log_context,
+                            "state": "CLOSED",
+                            "message": "Circuit successfully recovered after test request"
+                        })
+                    self.circuit_breaker.failure_count = 0
+                    self.circuit_breaker.state = CircuitState.CLOSED
 
-            # Log operation success
-            operation_duration = asyncio.get_event_loop().time() - operation_start_time
-            log_operation_end(
-                logger,
-                operation="create_caption",
-                duration=operation_duration,
-                success=True,
-                context=log_context
-            )
+                # Log operation success
+                operation_duration = asyncio.get_event_loop().time() - operation_start_time
+                log_operation_end(
+                    logger,
+                    operation="create_caption",
+                    duration=operation_duration,
+                    success=True,
+                    context=log_context
+                )
 
-            return result
+                return result
 
-        except Exception as e:
-            # ==================== CIRCUIT BREAKER FAILURE ====================
-            # Record failure and potentially open circuit
-            import time
-            with self.circuit_breaker._lock:
-                self.circuit_breaker.failure_count += 1
-                self.circuit_breaker.last_failure_time = time.time()
+            except Exception as e:
+                # ==================== CIRCUIT BREAKER FAILURE ====================
+                # Record failure and potentially open circuit
+                import time
+                with self.circuit_breaker._lock:
+                    self.circuit_breaker.failure_count += 1
+                    self.circuit_breaker.last_failure_time = time.time()
 
-                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
-                    logger.error("circuit_breaker_test_failed", extra={
-                        **log_context,
-                        "state": "OPEN",
-                        "failure_count": self.circuit_breaker.failure_count,
-                        "message": "Circuit test failed - RE-OPENING"
-                    })
-                    self.circuit_breaker.state = CircuitState.OPEN
-                elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
-                    logger.error("circuit_breaker_opened", extra={
-                        **log_context,
-                        "state": "OPEN",
-                        "failure_count": self.circuit_breaker.failure_count,
-                        "threshold": self.circuit_breaker.failure_threshold,
-                        "message": "Circuit OPENING - threshold reached"
-                    })
-                    self.circuit_breaker.state = CircuitState.OPEN
+                    if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                        logger.error("circuit_breaker_test_failed", extra={
+                            **log_context,
+                            "state": "OPEN",
+                            "failure_count": self.circuit_breaker.failure_count,
+                            "message": "Circuit test failed - RE-OPENING"
+                        })
+                        self.circuit_breaker.state = CircuitState.OPEN
+                    elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
+                        logger.error("circuit_breaker_opened", extra={
+                            **log_context,
+                            "state": "OPEN",
+                            "failure_count": self.circuit_breaker.failure_count,
+                            "threshold": self.circuit_breaker.failure_threshold,
+                            "message": "Circuit OPENING - threshold reached"
+                        })
+                        self.circuit_breaker.state = CircuitState.OPEN
 
-            # Log error with context
-            log_error(
-                logger,
-                message="create_caption_failed",
-                error=e,
-                context={**log_context, "error_type": type(e).__name__}
-            )
+                # Log error with context
+                log_error(
+                    logger,
+                    message="create_caption_failed",
+                    error=e,
+                    context={**log_context, "error_type": type(e).__name__}
+                )
 
-            return {
-                "success": False,
-                "error": str(e),
-                "caption": None,
-                "circuit_state": self.circuit_breaker.state.name
-            }
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "caption": None,
+                    "circuit_state": self.circuit_breaker.state.name
+                }
 
     async def _parse_output(
         self,
