@@ -41,7 +41,7 @@ class EmailWorkflow(ContentWorkflow):
 - Body length: {self._get_word_count_guidance()}
 - CTA format: Use backticks like `{{call_cta}}` or `{{app_cta}}` or `{{ghost_cta}}`
 - Formatting: One sentence per line (n8n requirement)
-- Sign-off: End with first name only (e.g., your name, not "Cole" or "Dickie")
+- Sign-off: End with first name only (use the author's name from CLIENT BUSINESS CONTEXT)
 
 **{self.email_type.upper()} EMAIL STRUCTURE:**
 {self._get_type_structure()}

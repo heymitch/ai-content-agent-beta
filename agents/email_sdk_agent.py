@@ -491,7 +491,7 @@ class EmailSDKAgent:
             batch_mode: If True, always create unique session IDs (prevents conflicts)
         """
         self.user_id = user_id
-        self.sessions = {}  # Track multiple content sessions
+        # No longer using sessions - context manager handles cleanup
         self.isolated_mode = isolated_mode  # Test mode flag
         self.channel_id = channel_id  # Slack channel for Supabase/Airtable
         self.thread_ts = thread_ts  # Slack thread for Supabase/Airtable
@@ -744,32 +744,24 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final email with FINAL 
 
         print("📧 Email SDK Agent initialized with 7 tools (6 lean tools + external_validation + comprehensive apply_fixes)")
 
-    def get_or_create_session(self, session_id: str) -> ClaudeSDKClient:
-        """Get or create a persistent session for content creation"""
-        if session_id not in self.sessions:
-            # Only clear env vars in isolated test mode
-            if self.isolated_mode:
-                os.environ.pop('CLAUDECODE', None)
-                os.environ.pop('CLAUDE_CODE_ENTRYPOINT', None)
-                os.environ.pop('CLAUDE_SESSION_ID', None)
-                os.environ.pop('CLAUDE_WORKSPACE', None)
-                os.environ['CLAUDE_HOME'] = '/tmp/email_agent'
+    def get_agent_options(self) -> ClaudeAgentOptions:
+        """Get ClaudeAgentOptions for creating SDK client"""
+        # Only clear env vars in isolated test mode
+        if self.isolated_mode:
+            os.environ.pop('CLAUDECODE', None)
+            os.environ.pop('CLAUDE_CODE_ENTRYPOINT', None)
+            os.environ.pop('CLAUDE_SESSION_ID', None)
+            os.environ.pop('CLAUDE_WORKSPACE', None)
+            os.environ['CLAUDE_HOME'] = '/tmp/email_agent'
 
-            options = ClaudeAgentOptions(
-                mcp_servers={"email_tools": self.mcp_server},
-                allowed_tools=["mcp__email_tools__*"],
-                system_prompt=self.system_prompt,
-                model="claude-sonnet-4-5-20250929",
-                permission_mode="bypassPermissions",
-                continue_conversation=not self.isolated_mode  # False in test mode, True in prod
-            )
-
-
-            self.sessions[session_id] = ClaudeSDKClient(options=options)
-            mode_str = " (isolated test mode)" if self.isolated_mode else ""
-            print(f"📝 Created Email session: {session_id}{mode_str}")
-
-        return self.sessions[session_id]
+        return ClaudeAgentOptions(
+            mcp_servers={"email_tools": self.mcp_server},
+            allowed_tools=["mcp__email_tools__*"],
+            system_prompt=self.system_prompt,
+            model="claude-sonnet-4-5-20250929",
+            permission_mode="bypassPermissions",
+            continue_conversation=not self.isolated_mode  # False in test mode, True in prod
+        )
 
     async def create_email(
         self,
@@ -854,7 +846,8 @@ DO NOT explain. DO NOT iterate beyond one revise. Return final email with FINAL 
                         **log_context
                     )
 
-        client = self.get_or_create_session(session_id)
+        # Get agent options for context manager
+        options = self.get_agent_options()
 
         # Build the creation prompt
         creation_prompt = f"""You MUST use the MCP tools to create this email newsletter.
@@ -879,123 +872,121 @@ If any tool returns an error:
 
 The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style that MUST be applied."""
 
-        try:
-            # Connect if needed
-            print(f"🔗 Connecting Email SDK client...")
-            await client.connect()
+        # Use context manager for automatic cleanup
+        async with ClaudeSDKClient(options=options) as client:
+            try:
+                # Send the creation request
+                print(f"📤 Sending Email creation prompt...")
+                await client.query(creation_prompt)
+                print(f"⏳ Email agent processing (this takes 30-60s)...")
 
-            # Send the creation request
-            print(f"📤 Sending Email creation prompt...")
-            await client.query(creation_prompt)
-            print(f"⏳ Email agent processing (this takes 30-60s)...")
+                # Collect the response - keep the LAST text output we see
+                final_output = ""
+                message_count = 0
+                last_text_message = None
 
-            # Collect the response - keep the LAST text output we see
-            final_output = ""
-            message_count = 0
-            last_text_message = None
+                async for msg in client.receive_response():
+                    message_count += 1
+                    msg_type = type(msg).__name__
+                    print(f"   📬 Received message {message_count}: type={msg_type}")
 
-            async for msg in client.receive_response():
-                message_count += 1
-                msg_type = type(msg).__name__
-                print(f"   📬 Received message {message_count}: type={msg_type}")
-
-                # Track all AssistantMessages with text content (keep the last one)
-                if msg_type == 'AssistantMessage':
-                    if hasattr(msg, 'content'):
-                        if isinstance(msg.content, list):
-                            for block in msg.content:
-                                if isinstance(block, dict):
-                                    block_type = block.get('type', 'unknown')
-                                    print(f"      Block type: {block_type}")
-                                    if block_type == 'text':
-                                        text_content = block.get('text', '')
+                    # Track all AssistantMessages with text content (keep the last one)
+                    if msg_type == 'AssistantMessage':
+                        if hasattr(msg, 'content'):
+                            if isinstance(msg.content, list):
+                                for block in msg.content:
+                                    if isinstance(block, dict):
+                                        block_type = block.get('type', 'unknown')
+                                        print(f"      Block type: {block_type}")
+                                        if block_type == 'text':
+                                            text_content = block.get('text', '')
+                                            if text_content:
+                                                final_output = text_content
+                                                last_text_message = message_count
+                                                print(f"      ✅ Got text output ({len(final_output)} chars)")
+                                    elif hasattr(block, 'text'):
+                                        text_content = block.text
                                         if text_content:
                                             final_output = text_content
                                             last_text_message = message_count
-                                            print(f"      ✅ Got text output ({len(final_output)} chars)")
-                                elif hasattr(block, 'text'):
-                                    text_content = block.text
-                                    if text_content:
-                                        final_output = text_content
-                                        last_text_message = message_count
-                                        print(f"      ✅ Got text from block.text ({len(final_output)} chars)")
-                        elif hasattr(msg.content, 'text'):
-                            text_content = msg.content.text
+                                            print(f"      ✅ Got text from block.text ({len(final_output)} chars)")
+                            elif hasattr(msg.content, 'text'):
+                                text_content = msg.content.text
+                                if text_content:
+                                    final_output = text_content
+                                    last_text_message = message_count
+                                    print(f"      ✅ Got text from content.text ({len(final_output)} chars)")
+                        elif hasattr(msg, 'text'):
+                            text_content = msg.text
                             if text_content:
                                 final_output = text_content
                                 last_text_message = message_count
-                                print(f"      ✅ Got text from content.text ({len(final_output)} chars)")
-                    elif hasattr(msg, 'text'):
-                        text_content = msg.text
-                        if text_content:
-                            final_output = text_content
-                            last_text_message = message_count
-                            print(f"      ✅ Got text from msg.text ({len(final_output)} chars)")
+                                print(f"      ✅ Got text from msg.text ({len(final_output)} chars)")
 
-            print(f"\n   ✅ Stream complete after {message_count} messages (last text at message {last_text_message})")
-            print(f"   📝 Final output: {len(final_output)} chars")
+                print(f"\n   ✅ Stream complete after {message_count} messages (last text at message {last_text_message})")
+                print(f"   📝 Final output: {len(final_output)} chars")
 
-            # Parse the output to extract structured data
-            return await self._parse_output(final_output, operation_start_time, log_context)
+                # Parse the output to extract structured data
+                return await self._parse_output(final_output, operation_start_time, log_context)
 
-        except Exception as e:
-            # Log error with full context
-            # Calculate duration if operation_start_time was set
-            try:
-                operation_duration = asyncio.get_event_loop().time() - operation_start_time
-            except NameError:
-                # operation_start_time wasn't set (error happened very early)
-                operation_duration = 0.0
+            except Exception as e:
+                # Log error with full context
+                # Calculate duration if operation_start_time was set
+                try:
+                    operation_duration = asyncio.get_event_loop().time() - operation_start_time
+                except NameError:
+                    # operation_start_time wasn't set (error happened very early)
+                    operation_duration = 0.0
 
-            log_error(
-                logger,
-                "Email SDK Agent error",
-                error=e,
-                context=log_context
-            )
-            log_operation_end(
-                logger,
-                "create_email",
-                duration=operation_duration,
-                success=False,
-                context=log_context,
-                error_type=type(e).__name__
-            )
+                log_error(
+                    logger,
+                    "Email SDK Agent error",
+                    error=e,
+                    context=log_context
+                )
+                log_operation_end(
+                    logger,
+                    "create_email",
+                    duration=operation_duration,
+                    success=False,
+                    context=log_context,
+                    error_type=type(e).__name__
+                )
 
-            # Circuit breaker: Mark operation as failed
-            with self.circuit_breaker._lock:
-                self.circuit_breaker.failure_count += 1
-                self.circuit_breaker.last_failure_time = time_module.time()
+                # Circuit breaker: Mark operation as failed
+                with self.circuit_breaker._lock:
+                    self.circuit_breaker.failure_count += 1
+                    self.circuit_breaker.last_failure_time = time_module.time()
 
-                if self.circuit_breaker.state == CircuitState.HALF_OPEN:
-                    logger.error(
-                        "❌ Circuit breaker test failed - RE-OPENING",
-                        circuit_breaker="email_agent",
-                        failure_count=self.circuit_breaker.failure_count,
-                        **log_context
-                    )
-                    self.circuit_breaker.state = CircuitState.OPEN
-                elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
-                    logger.error(
-                        "🔥 Circuit breaker OPENING - threshold reached",
-                        circuit_breaker="email_agent",
-                        failure_count=self.circuit_breaker.failure_count,
-                        threshold=self.circuit_breaker.failure_threshold,
-                        **log_context
-                    )
-                    self.circuit_breaker.state = CircuitState.OPEN
-                else:
-                    logger.warning(
-                        f"⚠️ Circuit breaker failure {self.circuit_breaker.failure_count}/{self.circuit_breaker.failure_threshold}",
-                        circuit_breaker="email_agent",
-                        **log_context
-                    )
+                    if self.circuit_breaker.state == CircuitState.HALF_OPEN:
+                        logger.error(
+                            "❌ Circuit breaker test failed - RE-OPENING",
+                            circuit_breaker="email_agent",
+                            failure_count=self.circuit_breaker.failure_count,
+                            **log_context
+                        )
+                        self.circuit_breaker.state = CircuitState.OPEN
+                    elif self.circuit_breaker.failure_count >= self.circuit_breaker.failure_threshold:
+                        logger.error(
+                            "🔥 Circuit breaker OPENING - threshold reached",
+                            circuit_breaker="email_agent",
+                            failure_count=self.circuit_breaker.failure_count,
+                            threshold=self.circuit_breaker.failure_threshold,
+                            **log_context
+                        )
+                        self.circuit_breaker.state = CircuitState.OPEN
+                    else:
+                        logger.warning(
+                            f"⚠️ Circuit breaker failure {self.circuit_breaker.failure_count}/{self.circuit_breaker.failure_threshold}",
+                            circuit_breaker="email_agent",
+                            **log_context
+                        )
 
-            return {
-                "success": False,
-                "error": str(e),
-                "email": None
-            }
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "email": None
+                }
 
     async def _parse_output(self, output: str, operation_start_time: float, log_context: dict) -> Dict[str, Any]:
         """Parse agent output into structured response using Haiku extraction"""

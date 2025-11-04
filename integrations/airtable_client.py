@@ -198,6 +198,42 @@ class AirtableContentCalendar:
                 'error': str(e)
             }
 
+    def get_posts_in_range(self, start_date, end_date):
+        """
+        Fetch posts from Airtable within a date range.
+
+        Args:
+            start_date: datetime object for start of range
+            end_date: datetime object for end of range
+
+        Returns:
+            List of post records with their fields
+        """
+        try:
+            # Format dates for Airtable filter
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str = end_date.strftime("%Y-%m-%d")
+
+            # Build filter formula
+            # Airtable formula: AND(IS_AFTER({Publish Date}, 'start'), IS_BEFORE({Publish Date}, 'end'))
+            formula = f"AND(IS_AFTER({{Publish Date}}, '{start_str}'), IS_BEFORE({{Publish Date}}, DATEADD('{end_str}', 1, 'days')))"
+
+            # Fetch records with filter
+            records = self.table.all(formula=formula)
+
+            # Extract fields from records
+            posts = []
+            for record in records:
+                fields = record.get('fields', {})
+                fields['record_id'] = record.get('id')  # Include record ID
+                posts.append(fields)
+
+            return posts
+
+        except Exception as e:
+            print(f"Error fetching posts from Airtable: {e}")
+            return []
+
     def list_content_records(
         self,
         platform: Optional[str] = None,
