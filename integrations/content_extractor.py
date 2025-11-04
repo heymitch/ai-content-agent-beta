@@ -8,6 +8,7 @@ import json
 import logging
 from typing import Dict, Any, Optional
 from anthropic import Anthropic
+from utils.anthropic_client import get_anthropic_client
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ async def extract_structured_content(
         logger.warning("ANTHROPIC_API_KEY not set, falling back to raw output")
         return _fallback_extraction(raw_output, platform)
 
-    client = Anthropic(api_key=api_key)
+    client = get_anthropic_client()
 
     # Build extraction prompt
     prompt = f"""Extract the FINAL, COMPLETE {platform} post from this agent output.

@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import httpx
 from anthropic import Anthropic
+from utils.anthropic_client import get_anthropic_client
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ async def run_quality_check(content: str, platform: str) -> Dict[str, Any]:
             "Please set it to run quality checks."
         )
 
-    client = Anthropic(api_key=api_key)
+    client = get_anthropic_client()
 
     # Format prompt for the specific platform
     prompt = QUALITY_CHECK_PROMPT.format(post=content)

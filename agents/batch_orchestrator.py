@@ -579,11 +579,18 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
             timeout=300  # 5 minutes max per post (normal: 2-4 min, complex: 4-5 min)
         )
 
-        # CRITICAL: Wait for SDK cleanup to complete before starting next post
-        # The SDK workflow has a finally block that disconnects connections.
-        # Give it time to complete to prevent race conditions on Replit.
-        await asyncio.sleep(2)  # 2 second grace period for cleanup
-        print(f"   ✅ Post {post_index + 1} cleanup complete, ready for next post", flush=True)
+        # CRITICAL: Force cleanup to prevent connection exhaustion
+        # This fixes the Post 6+ hang issue by ensuring all resources are freed
+        await asyncio.sleep(3)  # Increased from 2 to 3 seconds for connection cleanup
+
+        # Force garbage collection to clean up any lingering connections
+        import gc
+        gc.collect()
+
+        # Additional cleanup delay after GC
+        await asyncio.sleep(1)
+
+        print(f"   ✅ Post {post_index + 1} cleanup complete (GC forced), ready for next post", flush=True)
 
         # Extract metadata
         score = extract_score_from_result(result)
