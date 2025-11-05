@@ -81,14 +81,15 @@ async function bootstrap() {
   });
 
   const bootstrapPromise = (async () => {
-    const client = new Client({
-      connectionString: DB_URL,
-      ssl: { rejectUnauthorized: false },
-      connectionTimeoutMillis: 10000, // 10s connection timeout
-      // Disable prepared statements for Transaction pooler compatibility
-      statement_timeout: 30000 // 30s statement timeout
-    });
-
+    let client;
+    try {
+      client = new Client({
+        connectionString: DB_URL,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 10000, // 10s connection timeout
+        // Disable prepared statements for Transaction pooler compatibility
+        statement_timeout: 30000 // 30s statement timeout
+      });
       // Connect to database
       await client.connect();
       log('✅', 'Connected to Supabase database', colors.green);
