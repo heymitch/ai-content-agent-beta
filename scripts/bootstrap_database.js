@@ -202,6 +202,8 @@ async function bootstrap() {
       console.log('     CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
       console.log('     CREATE EXTENSION IF NOT EXISTS vector;');
       console.log('');
+      // Rethrow error so Promise.race can catch it and handle gracefully
+      throw err;
     } finally {
       if (client) {
         await client.end().catch(() => {}); // Ignore errors on cleanup
