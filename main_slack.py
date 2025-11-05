@@ -102,17 +102,95 @@ EVENT_CACHE_TTL = 300  # 5 minutes
 # Thread participation TTL (used for Supabase query)
 THREAD_PARTICIPATION_TTL = 24  # 24 hours
 
-# Initialize Supabase
-supabase: Client = create_client(
-    os.getenv('SUPABASE_URL'),
-    os.getenv('SUPABASE_KEY')
-)
+# ============= CLIENT INITIALIZATION WITH ERROR HANDLING =============
 
-# Initialize Anthropic
-anthropic_client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+# Initialize clients with error handling (won't crash on startup)
+# Clients are created lazily when first accessed
+supabase: Client = None
+anthropic_client = None
+slack_client = None
+_init_errors = {}
 
-# Initialize Slack client
-slack_client = WebClient(token=os.getenv('SLACK_BOT_TOKEN'))
+def _init_supabase():
+    """Initialize Supabase client with error handling"""
+    global supabase, _init_errors
+    if supabase is None:
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_KEY')
+        
+        if not supabase_url or not supabase_key:
+            error_msg = "Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_KEY in environment"
+            _init_errors['supabase'] = error_msg
+            print(f"⚠️ {error_msg}")
+            return False
+        
+        try:
+            supabase = create_client(supabase_url, supabase_key)
+            # Test connection with a simple query (with timeout)
+            try:
+                supabase.table('_migrations').select('id').limit(1).execute()
+            except Exception:
+                # Table might not exist yet, that's OK
+                pass
+            print("✅ Supabase client initialized")
+            return True
+        except Exception as e:
+            error_msg = f"Failed to initialize Supabase client: {str(e)}"
+            _init_errors['supabase'] = error_msg
+            print(f"⚠️ {error_msg}")
+            return False
+    return True
+
+def _init_anthropic():
+    """Initialize Anthropic client with error handling"""
+    global anthropic_client, _init_errors
+    if anthropic_client is None:
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            error_msg = "Missing ANTHROPIC_API_KEY in environment"
+            _init_errors['anthropic'] = error_msg
+            print(f"⚠️ {error_msg}")
+            return False
+        
+        try:
+            anthropic_client = Anthropic(api_key=api_key)
+            print("✅ Anthropic client initialized")
+            return True
+        except Exception as e:
+            error_msg = f"Failed to initialize Anthropic client: {str(e)}"
+            _init_errors['anthropic'] = error_msg
+            print(f"⚠️ {error_msg}")
+            return False
+    return True
+
+def _init_slack():
+    """Initialize Slack client with error handling"""
+    global slack_client, _init_errors
+    if slack_client is None:
+        token = os.getenv('SLACK_BOT_TOKEN')
+        if not token:
+            error_msg = "Missing SLACK_BOT_TOKEN in environment"
+            _init_errors['slack'] = error_msg
+            print(f"⚠️ {error_msg}")
+            return False
+        
+        try:
+            slack_client = WebClient(token=token)
+            # Don't test connection here - let it fail gracefully on first use
+            print("✅ Slack client initialized")
+            return True
+        except Exception as e:
+            error_msg = f"Failed to initialize Slack client: {str(e)}"
+            _init_errors['slack'] = error_msg
+            print(f"⚠️ {error_msg}")
+            return False
+    return True
+
+# Initialize clients during startup (non-blocking)
+# If initialization fails, clients remain None and will raise errors when accessed
+_init_supabase()
+_init_anthropic()
+_init_slack()
 
 # Optional: Langfuse for observability
 langfuse_enabled = bool(os.getenv('LANGFUSE_PUBLIC_KEY') and os.getenv('LANGFUSE_SECRET_KEY'))
@@ -158,12 +236,48 @@ def get_slack_handler():
 _handler_creation_count = 0
 
 @app.on_event("startup")
-async def clear_dev_caches():
-    """Clear handler cache on startup to ensure fresh prompts after code updates"""
+async def startup_validation():
+    """Validate environment and initialize clients on startup"""
     global slack_handler, _handler_creation_count
     slack_handler = None
     _handler_creation_count = 0
     print("🔄 Startup: Cleared handler cache (ensures fresh system prompts on hot reload)")
+    
+    # Validate environment variables
+    print("\n🔍 Validating environment variables...")
+    required_vars = {
+        'ANTHROPIC_API_KEY': 'Anthropic API key for Claude',
+        'SUPABASE_URL': 'Supabase project URL',
+        'SUPABASE_KEY': 'Supabase anon/service key',
+        'SLACK_BOT_TOKEN': 'Slack bot user OAuth token',
+        'SLACK_SIGNING_SECRET': 'Slack signing secret for webhook verification'
+    }
+    
+    missing_vars = []
+    for var, description in required_vars.items():
+        if not os.getenv(var):
+            missing_vars.append(f"  - {var}: {description}")
+    
+    if missing_vars:
+        print("⚠️ Missing required environment variables:")
+        for var in missing_vars:
+            print(var)
+        print("\n💡 Set these in Replit Secrets or .env file")
+    else:
+        print("✅ All required environment variables present")
+    
+    # Try to initialize clients (non-blocking)
+    print("\n🔄 Initializing clients...")
+    _init_supabase()
+    _init_anthropic()
+    _init_slack()
+    
+    if _init_errors:
+        print(f"\n⚠️ {len(_init_errors)} client(s) failed to initialize:")
+        for client, error in _init_errors.items():
+            print(f"  - {client}: {error}")
+    else:
+        print("\n✅ All clients initialized successfully")
 
 # ============= RATE LIMITING =============
 
@@ -254,34 +368,66 @@ def health_check():
 async def readiness_check():
     """
     Readiness check - verifies agent can actually function.
-    Phase 0.3: Enhanced health checks
+    Phase 0.3: Enhanced health checks with connection validation
     """
     checks = {}
     ready = True
 
-    # Check 1: Anthropic API key present
+    # Check 1: Anthropic API key present and client initialized
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-    checks["anthropic_key"] = "present" if anthropic_key else "missing"
-    if not anthropic_key:
+    if anthropic_key:
+        if anthropic_client is None:
+            checks["anthropic"] = "initialization_failed"
+            if 'anthropic' in _init_errors:
+                checks["anthropic_error"] = _init_errors['anthropic']
+            ready = False
+        else:
+            checks["anthropic"] = "ready"
+    else:
+        checks["anthropic"] = "missing_key"
         ready = False
 
-    # Check 2: Supabase credentials present
+    # Check 2: Supabase credentials present and client initialized
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_KEY")
-    checks["supabase"] = "configured" if (supabase_url and supabase_key) else "missing"
-    if not (supabase_url and supabase_key):
+    if supabase_url and supabase_key:
+        if supabase is None:
+            checks["supabase"] = "initialization_failed"
+            if 'supabase' in _init_errors:
+                checks["supabase_error"] = _init_errors['supabase']
+            ready = False
+        else:
+            # Test actual connection
+            try:
+                supabase.table('_migrations').select('id').limit(1).execute()
+                checks["supabase"] = "connected"
+            except Exception as e:
+                checks["supabase"] = "connection_failed"
+                checks["supabase_error"] = str(e)
+                ready = False
+    else:
+        checks["supabase"] = "missing_credentials"
         ready = False
 
-    # Check 3: Slack bot token present
+    # Check 3: Slack bot token present and client initialized
     slack_token = os.getenv("SLACK_BOT_TOKEN")
-    checks["slack_token"] = "present" if slack_token else "missing"
-    if not slack_token:
+    if slack_token:
+        if slack_client is None:
+            checks["slack"] = "initialization_failed"
+            if 'slack' in _init_errors:
+                checks["slack_error"] = _init_errors['slack']
+            ready = False
+        else:
+            checks["slack"] = "ready"
+    else:
+        checks["slack"] = "missing_token"
         ready = False
 
     return {
         "ready": ready,
         "checks": checks,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "init_errors": _init_errors if _init_errors else None
     }
 
 
@@ -482,7 +628,12 @@ async def slack_post_message_endpoint(request: Request):
 
         logger.info(f"Posting message to Slack channel {channel_id} (user: {user_id or 'n8n'})")
 
-        # Post message to Slack
+        # Post message to Slack (with client validation)
+        if slack_client is None:
+            return {
+                "error": "Slack client not initialized"
+            }
+        
         response = slack_client.chat_postMessage(
             channel=channel_id,
             text=message,
@@ -612,6 +763,10 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
     # Helper function to send messages
     def send_slack_message(channel, text, thread_ts=None):
         """Send message to Slack channel"""
+        if slack_client is None:
+            print(f"❌ Cannot send message: Slack client not initialized")
+            return {'ok': False, 'error': 'Slack client not initialized'}
+        
         try:
             response = slack_client.chat_postMessage(
                 channel=channel,
@@ -730,18 +885,54 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
         # Process in background to avoid Slack's 3-second timeout
         async def process_message():
             try:
+                # Validate clients are initialized
+                if anthropic_client is None:
+                    error_msg = "Anthropic client not initialized. Please check ANTHROPIC_API_KEY."
+                    print(f"❌ {error_msg}")
+                    send_slack_message(
+                        channel=channel,
+                        text=f"❌ Configuration error: {error_msg}\n\nPlease check your environment variables.",
+                        thread_ts=thread_ts
+                    )
+                    return
+                
+                if supabase is None:
+                    print("⚠️ Supabase not initialized, continuing without database features")
+                
                 # Import Claude Agent SDK handler
                 from slack_bot.claude_agent_handler import ClaudeAgentHandler
                 print("✅ Claude Agent SDK loaded successfully")
 
                 handler = get_slack_handler()
+                
+                if handler is None:
+                    error_msg = "Failed to initialize Slack handler"
+                    print(f"❌ {error_msg}")
+                    send_slack_message(
+                        channel=channel,
+                        text=f"❌ {error_msg}. Please check server logs.",
+                        thread_ts=thread_ts
+                    )
+                    return
 
                 # Use the REAL Claude Agent SDK handler
                 # ALWAYS recreate to pick up prompt changes on module reload
-                handler.claude_agent = ClaudeAgentHandler(
-                    memory_handler=handler.memory if handler else None,
-                    slack_client=slack_client  # NEW: Pass slack_client for progress updates
-                )
+                try:
+                    handler.claude_agent = ClaudeAgentHandler(
+                        memory_handler=handler.memory if handler else None,
+                        slack_client=slack_client  # NEW: Pass slack_client for progress updates
+                    )
+                except Exception as e:
+                    error_msg = f"Failed to initialize Claude Agent: {str(e)}"
+                    print(f"❌ {error_msg}")
+                    import traceback
+                    traceback.print_exc()
+                    send_slack_message(
+                        channel=channel,
+                        text=f"❌ {error_msg}\n\nThis may be a temporary issue. Please try again.",
+                        thread_ts=thread_ts
+                    )
+                    return
 
                 global _handler_creation_count
                 _handler_creation_count += 1
@@ -749,37 +940,62 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
 
                 # Save user message to conversation history
                 if handler.memory:
-                    handler.memory.add_message(
-                        thread_ts=thread_ts,
-                        channel_id=channel,
-                        user_id=user_id,
-                        role='user',
-                        content=message_text
-                    )
-                    print(f"💾 Saved user message to conversation history")
+                    try:
+                        handler.memory.add_message(
+                            thread_ts=thread_ts,
+                            channel_id=channel,
+                            user_id=user_id,
+                            role='user',
+                            content=message_text
+                        )
+                        print(f"💾 Saved user message to conversation history")
+                    except Exception as e:
+                        print(f"⚠️ Failed to save message to history: {e}")
 
                 # The agent decides what to do based on context:
                 # - Create content → delegates to workflows
                 # - Answer questions → uses web_search if needed
                 # - Analyze performance → uses analysis tools
                 # - General conversation → maintains thread context
-                response_text = await handler.claude_agent.handle_conversation(
-                    message=message_text,
-                    user_id=user_id,
-                    thread_ts=thread_ts,  # Use thread_ts for session continuity
-                    channel_id=channel
-                )
+                try:
+                    response_text = await handler.claude_agent.handle_conversation(
+                        message=message_text,
+                        user_id=user_id,
+                        thread_ts=thread_ts,  # Use thread_ts for session continuity
+                        channel_id=channel
+                    )
+                except RuntimeError as e:
+                    # SDK client creation failure - provide helpful error
+                    error_msg = str(e)
+                    if "Failed to create Claude SDK client" in error_msg:
+                        print(f"❌ SDK client creation failed: {error_msg}")
+                        send_slack_message(
+                            channel=channel,
+                            text=f"❌ I'm having trouble connecting to my AI services right now. This might be a temporary issue.\n\nError: {error_msg}\n\nPlease try again in a moment.",
+                            thread_ts=thread_ts
+                        )
+                    else:
+                        raise
+                except Exception as e:
+                    # Other errors - log and provide fallback response
+                    print(f"❌ Error in agent conversation: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    raise
 
                 # Save assistant response to conversation history
                 if handler.memory:
-                    handler.memory.add_message(
-                        thread_ts=thread_ts,
-                        channel_id=channel,
-                        user_id='bot',
-                        role='assistant',
-                        content=response_text
-                    )
-                    print(f"💾 Saved assistant response to conversation history")
+                    try:
+                        handler.memory.add_message(
+                            thread_ts=thread_ts,
+                            channel_id=channel,
+                            user_id='bot',
+                            role='assistant',
+                            content=response_text
+                        )
+                        print(f"💾 Saved assistant response to conversation history")
+                    except Exception as e:
+                        print(f"⚠️ Failed to save response to history: {e}")
 
                 # Send response
                 send_slack_message(
@@ -792,9 +1008,21 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                 print(f"❌ Error: {e}")
                 import traceback
                 traceback.print_exc()
+                
+                # Provide user-friendly error message
+                error_detail = str(e)
+                if "ANTHROPIC_API_KEY" in error_detail or "anthropic" in error_detail.lower():
+                    user_msg = "❌ I'm having trouble connecting to my AI services. Please check that ANTHROPIC_API_KEY is set correctly."
+                elif "supabase" in error_detail.lower() or "database" in error_detail.lower():
+                    user_msg = "❌ Database connection issue. The app will continue, but some features may be limited."
+                elif "timeout" in error_detail.lower():
+                    user_msg = "❌ Request timed out. This might be a temporary issue. Please try again."
+                else:
+                    user_msg = f"❌ Sorry, I encountered an error: {error_detail[:200]}"
+                
                 send_slack_message(
                     channel=channel,
-                    text=f"❌ Sorry, I encountered an error: {str(e)}",
+                    text=user_msg,
                     thread_ts=thread_ts
                 )
 

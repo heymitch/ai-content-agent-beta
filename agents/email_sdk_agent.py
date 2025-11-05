@@ -880,20 +880,36 @@ The tools contain WRITE_LIKE_HUMAN_RULES and PGA writing style that MUST be appl
                 await client.query(creation_prompt)
                 print(f"⏳ Email agent processing (this takes 30-60s)...")
 
-                # Collect the response - keep the LAST text output we see
+                # Collect the response with timeout protection
                 final_output = ""
                 message_count = 0
                 last_text_message = None
 
-                async for msg in client.receive_response():
-                    message_count += 1
-                    msg_type = type(msg).__name__
-                    print(f"   📬 Received message {message_count}: type={msg_type}")
+                # Timeout configuration
+                idle_timeout = 180  # seconds between messages (handle long tool calls)
+                overall_deadline = 600  # seconds - max total time
 
-                    # Track all AssistantMessages with text content (keep the last one)
-                    if msg_type == 'AssistantMessage':
-                        if hasattr(msg, 'content'):
-                            if isinstance(msg.content, list):
+                try:
+                    start_time = asyncio.get_event_loop().time()
+
+                    async for msg in client.receive_response():
+                        # Check overall deadline
+                        elapsed = asyncio.get_event_loop().time() - start_time
+                        if elapsed > overall_deadline:
+                            if final_output and len(final_output) > 100:
+                                print(f"   ⚠️  Hit deadline but have valid content ({len(final_output)} chars)")
+                                break
+                            raise TimeoutError(f"Overall deadline exceeded ({overall_deadline}s)")
+
+                        # Process the message
+                        message_count += 1
+                        msg_type = type(msg).__name__
+                        print(f"   📬 Received message {message_count}: type={msg_type}")
+
+                        # Track all AssistantMessages with text content (keep the last one)
+                        if msg_type == 'AssistantMessage':
+                            if hasattr(msg, 'content'):
+                                if isinstance(msg.content, list):
                                 for block in msg.content:
                                     if isinstance(block, dict):
                                         block_type = block.get('type', 'unknown')

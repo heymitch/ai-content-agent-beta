@@ -1002,9 +1002,9 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
                 message_count = 0
 
                 # Timeout configuration (Phase 0: Async/Reliability Fixes)
-                idle_timeout = 60  # seconds - no message triggers recovery
-                overall_deadline = 240  # seconds - max total time
-                max_stream_retries = 2  # reconnect attempts
+                idle_timeout = 180  # seconds - no message triggers recovery (increased from 60 to handle long tool calls)
+                overall_deadline = 600  # seconds - max total time (increased from 240 for complex operations)
+                max_stream_retries = 3  # reconnect attempts (increased from 2)
 
                 async def collect_response_with_timeout():
                     nonlocal final_output, message_count, client
@@ -1084,6 +1084,12 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
                                                 print(f"         PREVIEW: {preview}...")
 
                                 except asyncio.TimeoutError:
+                                    # Check if we already have valid content before failing
+                                    if final_output and len(final_output) > 100:
+                                        print(f"   ⚠️  Stream idle timeout, but we have valid content ({len(final_output)} chars)")
+                                        print(f"   ✅ Returning successfully with received content")
+                                        return  # Exit successfully with what we have
+
                                     # Idle timeout - no message received in {idle_timeout} seconds
                                     attempt += 1
                                     logger.warning(
@@ -1101,6 +1107,11 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
                                             f"Max stream retries exceeded ({max_stream_retries}). "
                                             f"Last message count: {message_count}"
                                         )
+
+                                    # Exponential backoff before retry
+                                    backoff_time = min(2 ** (attempt - 1) * 5, 30)  # 5s, 10s, 20s, max 30s
+                                    print(f"   ⏳ Waiting {backoff_time}s before retry...")
+                                    await asyncio.sleep(backoff_time)
 
                                     # With context manager, we can't reconnect - just fail and retry at higher level
                                     print(f"   ⚠️ Stream timeout - will need to retry entire operation")

@@ -997,9 +997,9 @@ The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
                 message_count = 0
 
                 # Timeout configuration
-                idle_timeout = 60  # seconds - no message triggers recovery
-                overall_deadline = 240  # seconds - max total time
-                max_stream_retries = 2  # reconnect attempts
+                idle_timeout = 180  # seconds - no message triggers recovery (increased from 60 to handle long tool calls)
+                overall_deadline = 600  # seconds - max total time (increased from 240 for complex operations)
+                max_stream_retries = 3  # reconnect attempts (increased from 2)
 
                 async def collect_response_with_timeout():
                     nonlocal final_output, message_count, client
@@ -1062,6 +1062,12 @@ The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
                                                 print(f"         PREVIEW: {preview}...")
 
                                 except asyncio.TimeoutError:
+                                    # Check if we already have valid content before failing
+                                    if final_output and len(final_output) > 100:
+                                        print(f"   ⚠️  Stream idle timeout, but we have valid content ({len(final_output)} chars)")
+                                        print(f"   ✅ Returning successfully with received content")
+                                        return  # Exit successfully with what we have
+
                                     attempt += 1
                                     logger.warning(
                                         f"⚠️  Stream idle timeout (attempt {attempt}/{max_stream_retries + 1}).",
@@ -1071,7 +1077,14 @@ The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
                                     )
                                     if attempt > max_stream_retries:
                                         raise TimeoutError(f"Max stream retries exceeded ({max_stream_retries}).")
-                                    raise TimeoutError(f"Stream idle timeout after {message_count} messages.")
+
+                                    # Exponential backoff before retry
+                                    backoff_time = min(2 ** (attempt - 1) * 5, 30)  # 5s, 10s, 20s, max 30s
+                                    print(f"   ⏳ Waiting {backoff_time}s before retry...")
+                                    await asyncio.sleep(backoff_time)
+
+                                    # Don't raise here - continue the while loop to retry
+                                    break  # Break inner loop to trigger reconnect
 
                                 except StopAsyncIteration:
                                     print(f"   ✅ Stream completed normally")

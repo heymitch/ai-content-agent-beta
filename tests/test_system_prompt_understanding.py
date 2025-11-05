@@ -80,7 +80,9 @@ class SystemPromptTester:
             'forbidden_terms': [],
             'preferred_style': [],
             'platform_specifics': {},
-            'tone_guidelines': []
+            'tone_guidelines': [],
+            'instructions': [],  # General instructions
+            'voice_examples': []  # Voice examples
         }
 
         if not self.claude_md_content:
@@ -89,46 +91,43 @@ class SystemPromptTester:
         lines = self.claude_md_content.split('\n')
         current_section = None
 
+        # Look specifically for forbidden terms/phrases
         for line in lines:
-            line = line.strip()
+            if any(phrase in line.upper() for phrase in ['DO NOT', "DON'T", 'NEVER', 'AVOID']):
+                elements['forbidden_terms'].append(line.strip())
 
-            # Detect sections
-            if 'BRAND VOICE' in line.upper() or 'WRITING STYLE' in line.upper():
-                current_section = 'brand_voice'
-            elif 'COMPANY' in line.upper() and ('INFO' in line.upper() or 'DETAILS' in line.upper()):
+        # Extract general instructions and patterns
+        in_voice_section = False
+        for line in lines:
+            line_stripped = line.strip()
+
+            # Check for voice/writing examples
+            if 'VOICE' in line.upper() or 'EXAMPLE' in line.upper():
+                in_voice_section = True
+            elif line.startswith('#'):
+                in_voice_section = False
+
+            if in_voice_section and line_stripped and not line.startswith('#'):
+                elements['voice_examples'].append(line_stripped[:200])  # Limit length
+
+            # Extract company/brand specific info
+            if any(word in line.upper() for word in ['COMPANY', 'BRAND', 'ORGANIZATION']):
                 current_section = 'company_info'
             elif 'AUDIENCE' in line.upper() or 'TARGET' in line.upper():
                 current_section = 'target_audience'
             elif 'THEME' in line.upper() or 'TOPIC' in line.upper():
                 current_section = 'content_themes'
-            elif 'AVOID' in line.upper() or 'NEVER' in line.upper() or 'FORBIDDEN' in line.upper():
-                current_section = 'forbidden_terms'
             elif 'PLATFORM' in line.upper():
                 current_section = 'platform_specifics'
-            elif 'TONE' in line.upper():
+            elif 'TONE' in line.upper() or 'STYLE' in line.upper():
                 current_section = 'tone_guidelines'
             elif line.startswith('#'):
-                # New section, reset
-                if not any(keyword in line.upper() for keyword in ['BRAND', 'COMPANY', 'AUDIENCE', 'THEME', 'AVOID', 'PLATFORM', 'TONE']):
-                    current_section = None
-                continue
+                current_section = None
 
-            # Collect content based on current section
-            if current_section and line and not line.startswith('#'):
-                if current_section == 'company_info':
-                    if ':' in line:
-                        key, value = line.split(':', 1)
-                        elements['company_info'][key.strip()] = value.strip()
-                elif current_section == 'platform_specifics':
-                    if 'LinkedIn' in line:
-                        elements['platform_specifics']['linkedin'] = line
-                    elif 'Twitter' in line or 'X:' in line:
-                        elements['platform_specifics']['twitter'] = line
-                    elif 'Email' in line:
-                        elements['platform_specifics']['email'] = line
-                else:
-                    if isinstance(elements[current_section], list):
-                        elements[current_section].append(line)
+            # Collect general instructions
+            if line_stripped and not line.startswith('#'):
+                if 'claude' in line.lower() or 'sdk' in line.lower():
+                    elements['instructions'].append(line_stripped[:100])
 
         return elements
 
@@ -238,14 +237,20 @@ class SystemPromptTester:
                 # Check forbidden terms are noted
                 found_warnings = 0
                 for term in scenario.get('avoid', []):
-                    # Check if the system knows to avoid this term
-                    if term.lower() in system_prompt.lower():
-                        found_warnings += 1
-                        result['details'].append(f"✓ System aware to avoid: {term}")
-                    else:
-                        result['details'].append(f"⚠️  No explicit warning about: {term}")
+                    # Only check if it's actually a forbidden term (contains DO NOT, NEVER, etc.)
+                    if any(phrase in term.upper() for phrase in ['DO NOT', "DON'T", 'NEVER', 'AVOID']):
+                        # Extract the key part after the prohibition
+                        key_part = term.split()[-3:] if len(term.split()) > 3 else term
+                        key_phrase = ' '.join(key_part) if isinstance(key_part, list) else key_part
 
-                result['score'] = (found_warnings / len(scenario.get('avoid', [1]))) * 100
+                        if key_phrase.lower() in system_prompt.lower():
+                            found_warnings += 1
+                            result['details'].append(f"✓ System aware of restriction: {term[:50]}...")
+                        else:
+                            result['details'].append(f"⚠️  Restriction not found: {term[:50]}...")
+
+                total_items = len(scenario.get('avoid', [1]))
+                result['score'] = (found_warnings / total_items) * 100 if total_items > 0 else 100
 
             elif scenario['check_type'] == 'facts':
                 # Check company info is referenced

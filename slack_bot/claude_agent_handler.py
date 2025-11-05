@@ -508,14 +508,20 @@ async def plan_content_batch(args):
     try:
         # Access global Slack context for metadata
         context = _current_slack_context
+        
+        # Get slack_client from current handler for progress updates
+        slack_client = None
+        if _current_handler and _current_handler.slack_client:
+            slack_client = _current_handler.slack_client
 
-        # Pass Slack metadata to batch plan
+        # Pass Slack metadata to batch plan (including slack_client for progress updates)
         plan = create_batch_plan(
             posts_list,
             description,
             channel_id=context.get('channel_id'),
             thread_ts=context.get('thread_ts'),
-            user_id=context.get('user_id')
+            user_id=context.get('user_id'),
+            slack_client=slack_client  # NEW: Store slack_client for progress updates
         )
 
         # Format plan summary
@@ -582,17 +588,34 @@ async def execute_post_from_plan(args):
 
     try:
         result = await execute_single_post_from_plan(plan_id, post_index)
+        
+        # Get user_id from current Slack context for tagging
+        user_id = _current_slack_context.get('user_id', '')
+        user_tag = f"<@{user_id}>" if user_id else ""
+        
+        # Get plan to determine total count
+        from agents.batch_orchestrator import _batch_plans
+        plan = _batch_plans.get(plan_id)
+        total_posts = len(plan['posts']) if plan else '?'
+        post_num = post_index + 1
 
         if result.get('error'):
+            error_message = f"❌ {result['error']}"
+            if user_tag:
+                error_message = f"{user_tag} {error_message}"
             return {
                 "content": [{
                     "type": "text",
-                    "text": f"❌ {result['error']}"
+                    "text": error_message
                 }]
             }
 
-        # Format result
-        output = f"""✅ **Post {post_index + 1} Complete**
+        # Format result with user tag (full response should tag user)
+        next_post_hint = ""
+        if post_num < total_posts:
+            next_post_hint = f"\n**Next:** Execute post {post_num + 1} to continue the batch."
+        
+        output = f"""{user_tag} ✅ **Post {post_num}/{total_posts} Complete**
 
 📊 **Quality Score:** {result.get('score', 'N/A')}/25
 🎯 **Platform:** {result.get('platform', 'unknown').capitalize()}
@@ -600,9 +623,7 @@ async def execute_post_from_plan(args):
 📎 **Airtable:** {result.get('airtable_url', 'N/A')}
 
 **Learnings Applied:**
-{result.get('learnings_summary', 'First post in batch - no prior learnings')}
-
-**Next:** Execute post {post_index + 2} to continue the batch."""
+{result.get('learnings_summary', 'First post in batch - no prior learnings')}{next_post_hint}"""
 
         return {
             "content": [{
@@ -1018,6 +1039,12 @@ class ClaudeAgentHandler:
         # Session version tracking for cache invalidation
         self._session_prompt_versions = {}  # thread_ts -> prompt hash
         self._session_created_at = {}  # thread_ts -> timestamp
+        
+        # Resource management limits (Replit constraints)
+        self.MAX_CONCURRENT_SESSIONS = 10  # Max sessions before cleanup
+        self.SESSION_TTL = 3600  # 1 hour session lifetime
+        self.CLEANUP_INTERVAL = 300  # Clean up old sessions every 5 minutes
+        self._last_cleanup = time.time()
 
         # System prompt for the agent
         self.system_prompt = """You are CMO, a senior content strategist with 8+ years building brands from zero to millions of followers. You speak like a real person - direct, insightful, occasionally sarcastic, always helpful. You adapt to conversations but always drives toward actionable outcomes you can "take to your team" (delegate to subagents).
@@ -1054,47 +1081,25 @@ Do NOT tell users to "check websites" - YOU search for them.
 
 **CRITICAL: BATCH MODE IS THE DEFAULT FOR ALL CONTENT CREATION**
 
-**TWO PHASES:**
-
-**PHASE 1: Strategic Conversation (OPTIONAL)**
-- User is exploring ideas, developing strategy, asking "what do you think?"
-- Feel free to discuss angles, positioning, tone, examples
-- Ask clarifying questions to help refine the approach
-- When user says "create", "write", "make", "draft", "execute", "let's do it" + content type → **IMMEDIATELY CALL plan_content_batch TOOL (DO NOT draft content inline)**
-
-**PHASE 2: Content Creation via Batch Mode (REQUIRED)**
-
-CRITICAL: The INSTANT user approves/requests content creation:
-1. Call plan_content_batch tool with the posts array
-2. Then call execute_post_from_plan for each post
-3. DO NOT write draft posts in conversation first
-4. DO NOT show previews before calling tools
-5. TOOLS FIRST, then show results
-
-When user requests content creation, follow this workflow:
+When user explicitly requests ANY content creation (1 post or 100 posts), follow this workflow:
 
 1. **Search for Context** (if topic provided):
    - Call search_company_documents(query="[topic] case studies examples testimonials")
    - Call search_knowledge_base if needed for brand voice/strategy
 
-2. **Create Batch Plan** (CALL THE TOOL NOW):
-   - IMMEDIATELY call plan_content_batch with posts array
-   - DO NOT draft example posts first
-   - DO NOT show "here's what Post 1 would look like..."
+2. **Create Batch Plan**:
+   - Call plan_content_batch with posts array
    - NEVER generate post content inline in conversation
-   - ALWAYS delegate to SDK subagents via the tool
+   - ALWAYS delegate to SDK subagents
 
-3. **Execute Posts** (CALL THE TOOL NOW):
+3. **Execute Posts**:
    - Call execute_post_from_plan for each post in the plan
    - SDK subagents handle actual content generation
    - Posts auto-save to Airtable
-   - CRITICAL: The tool returns a summary (score + hook + Airtable link)
-   - DO NOT show the full post content in Slack - only show the tool's summary
-   - Full post is in Airtable, user can click the link to see it
 
 **Tools to use:**
 - plan_content_batch → Creates structured plan with post specs
-- execute_post_from_plan → Returns summary with score, hook preview, Airtable link (DO NOT add full post)
+- execute_post_from_plan → Delegates to LinkedIn/Twitter/Email/YouTube/Instagram SDK agents
 
 **Examples (ALL use batch mode):**
 ✅ "Write a LinkedIn post about X" → plan_content_batch + execute_post_from_plan
@@ -1172,7 +1177,51 @@ Platform name mapping:
 CRITICAL: NEVER generate multiple posts inline in conversation!
 ALWAYS use plan_content_batch → execute_post_from_plan → SDK subagents.
 
-**How CO-WRITE works (RARE):**
+**BATCH MODE (DEFAULT - 99% of requests)**
+
+This is the DEFAULT for ALL content creation requests.
+
+**When to use:** ALWAYS, unless user EXPLICITLY says "co-write", "collaborate", or "iterate"
+
+**Examples (ALL use BATCH):**
+✅ "Create 5 LinkedIn posts about AI" → BATCH
+✅ "Write a Twitter thread on this topic" → BATCH
+✅ "Make 10 posts for next week" → BATCH
+✅ "Write a post about marketing" → BATCH (single post still uses BATCH)
+✅ "Generate content about startups" → BATCH
+✅ "Draft 5 posts about AI" → BATCH (count >1 = BATCH, ignore "draft")
+✅ "Help me create content" → BATCH (generic request = BATCH)
+
+**How BATCH works:**
+- Works for ANY count (1, 5, 15, 50 posts)
+- Sequential execution with learning accumulation
+- Posts automatically save to Airtable
+- Real-time progress updates
+- Tools: plan_content_batch, execute_post_from_plan, cancel_batch, get_batch_status
+
+**CO-WRITE MODE (RARE - 1% of requests)**
+
+ONLY use when user EXPLICITLY requests collaboration with specific keywords.
+
+**When to use:** User message contains "co-write", "collaborate with me", or "iterate with me"
+
+**If UNCERTAIN, ASK:**
+"Just to confirm - do you want me to:
+A) Create these posts now (batch mode - automated)
+B) Draft them for your review first (co-write mode - collaborative)?"
+
+**Examples (ONLY these trigger CO-WRITE):**
+⚠️ "Co-write a post with me" → ASK TO CONFIRM
+⚠️ "Let's collaborate on content together" → ASK TO CONFIRM
+⚠️ "I want to iterate with you on this" → ASK TO CONFIRM
+
+**IMPORTANT: These DO NOT trigger CO-WRITE:**
+❌ "Draft a post" → BATCH (no "co-write" keyword)
+❌ "Show me content about X" → BATCH (showing != co-writing)
+❌ "Help me write posts" → BATCH (generic help request)
+❌ "Write a draft" → BATCH (no explicit collaboration request)
+
+**How CO-WRITE works:**
 - Always 1 post at a time
 - Return draft to user, WAIT for explicit approval
 - NEVER auto-send to calendar - user must say "approve" or "send"
@@ -1486,10 +1535,70 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         # Default to batch mode
         return False
 
-    def _get_or_create_session(self, thread_ts: str, request_id: str = "NONE") -> ClaudeSDKClient:
-        """Get existing session for thread or create new one"""
-        SESSION_TTL = 3600  # 1 hour session lifetime
+    def _cleanup_old_sessions(self, request_id: str = "NONE"):
+        """Clean up expired sessions and enforce session limits"""
         now = time.time()
+        
+        # Periodic cleanup (every CLEANUP_INTERVAL seconds)
+        if now - self._last_cleanup < self.CLEANUP_INTERVAL:
+            return
+        
+        self._last_cleanup = now
+        print(f"[{request_id}] 🧹 Running session cleanup...")
+        
+        # Remove expired sessions
+        expired_sessions = []
+        for thread_ts, created_at in list(self._session_created_at.items()):
+            age = now - created_at
+            if age > self.SESSION_TTL:
+                expired_sessions.append(thread_ts)
+        
+        for thread_ts in expired_sessions:
+            print(f"[{request_id}]    Removing expired session: {thread_ts[:8]}")
+            self._remove_session(thread_ts)
+        
+        # If still over limit, remove oldest sessions (LRU eviction)
+        if len(self._thread_sessions) > self.MAX_CONCURRENT_SESSIONS:
+            # Sort by creation time (oldest first)
+            sessions_by_age = sorted(
+                self._session_created_at.items(),
+                key=lambda x: x[1]
+            )
+            
+            # Remove oldest sessions until under limit
+            to_remove = len(self._thread_sessions) - self.MAX_CONCURRENT_SESSIONS
+            for i in range(to_remove):
+                thread_ts = sessions_by_age[i][0]
+                print(f"[{request_id}]    Evicting oldest session (limit reached): {thread_ts[:8]}")
+                self._remove_session(thread_ts)
+        
+        print(f"[{request_id}]    ✅ Cleanup complete: {len(self._thread_sessions)} active sessions")
+    
+    def _remove_session(self, thread_ts: str):
+        """Remove a session and clean up all related state"""
+        if thread_ts in self._thread_sessions:
+            # Close connection if it exists
+            try:
+                client = self._thread_sessions[thread_ts]
+                # Note: SDK client doesn't have explicit close(), but we can remove it
+                del self._thread_sessions[thread_ts]
+            except Exception as e:
+                print(f"⚠️ Error closing session {thread_ts[:8]}: {e}")
+        
+        self._connected_sessions.discard(thread_ts)
+        if thread_ts in self._session_prompt_versions:
+            del self._session_prompt_versions[thread_ts]
+        if thread_ts in self._session_created_at:
+            del self._session_created_at[thread_ts]
+        if thread_ts in self._conversation_context:
+            del self._conversation_context[thread_ts]
+
+    async def _get_or_create_session(self, thread_ts: str, request_id: str = "NONE") -> ClaudeSDKClient:
+        """Get existing session for thread or create new one with resource limits"""
+        now = time.time()
+        
+        # Clean up old sessions before creating new ones
+        self._cleanup_old_sessions(request_id)
 
         # Verbose logging for debugging
         print(f"[{request_id}] 🔍 Session lookup for thread {thread_ts[:8]}")
@@ -1518,7 +1627,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 age = now - self._session_created_at[thread_ts]
                 age_mins = int(age / 60)
                 print(f"[{request_id}]    Session age: {age_mins} minutes")
-                if age > SESSION_TTL:
+                if age > self.SESSION_TTL:
                     print(f"[{request_id}] ⏰ SESSION EXPIRED ({age_mins} minutes old)")
                     print(f"[{request_id}]    Invalidating session for thread {thread_ts[:8]}")
                     del self._thread_sessions[thread_ts]
@@ -1529,7 +1638,27 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         # Create new session if needed
         if thread_ts not in self._thread_sessions:
+            # Check session limit before creating
+            if len(self._thread_sessions) >= self.MAX_CONCURRENT_SESSIONS:
+                print(f"[{request_id}] ⚠️ Session limit reached ({self.MAX_CONCURRENT_SESSIONS}), cleaning up...")
+                self._cleanup_old_sessions(request_id)
+                
+                # If still at limit after cleanup, remove oldest session
+                if len(self._thread_sessions) >= self.MAX_CONCURRENT_SESSIONS:
+                    oldest_thread = min(
+                        self._session_created_at.items(),
+                        key=lambda x: x[1]
+                    )[0]
+                    print(f"[{request_id}]    Evicting oldest session: {oldest_thread[:8]}")
+                    self._remove_session(oldest_thread)
+            
             print(f"[{request_id}] ✨ Creating NEW session for thread {thread_ts[:8]}")
+            print(f"[{request_id}]    Active sessions: {len(self._thread_sessions)}/{self.MAX_CONCURRENT_SESSIONS}")
+            
+            # Validate MCP server before creating SDK client
+            if not self.mcp_server:
+                raise RuntimeError("MCP server not initialized. Cannot create SDK client.")
+            
             # Configure options for this thread
             # setting_sources=["project"] tells SDK to automatically load .claude/CLAUDE.md for brand context
             options = ClaudeAgentOptions(
@@ -1542,18 +1671,52 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 continue_conversation=True  # KEY: Maintain context across messages
             )
 
-            self._thread_sessions[thread_ts] = ClaudeSDKClient(options=options)
-            self._session_prompt_versions[thread_ts] = self.prompt_version
-            self._session_created_at[thread_ts] = now
+            # Create SDK client with timeout and retry logic
+            max_retries = 3
+            retry_delay = 2  # seconds
+            last_error = None
+            
+            for attempt in range(max_retries):
+                try:
+                    print(f"[{request_id}]    Attempt {attempt + 1}/{max_retries} to create SDK client...")
+                    
+                    # Create client with timeout protection
+                    client = ClaudeSDKClient(options=options)
+                    
+                    # Test connection (with timeout)
+                    # Note: SDK client creation is synchronous, but we wrap it in timeout
+                    # The actual connection happens lazily, so we can't fully test here
+                    # But we can at least verify the client object was created
+                    
+                    self._thread_sessions[thread_ts] = client
+                    self._session_prompt_versions[thread_ts] = self.prompt_version
+                    self._session_created_at[thread_ts] = now
 
-            print(f"[{request_id}]    ✅ Session created with prompt version: {self.prompt_version}")
-            print(f"[{request_id}]    System prompt preview: {self.system_prompt[:80]}...")
+                    print(f"[{request_id}]    ✅ Session created with prompt version: {self.prompt_version}")
+                    print(f"[{request_id}]    System prompt preview: {self.system_prompt[:80]}...")
 
-            # DEBUG: Verify which prompt version is loaded
-            if "BATCH MODE IS THE DEFAULT" in self.system_prompt:
-                print(f"[{request_id}]    ✅ Using NEW architecture (BATCH-first with SDK subagents)")
-            else:
-                print(f"[{request_id}]    ⚠️ Using OLD architecture (missing batch emphasis)")
+                    # DEBUG: Verify which prompt version is loaded
+                    if "BATCH MODE IS THE DEFAULT" in self.system_prompt:
+                        print(f"[{request_id}]    ✅ Using NEW architecture (BATCH-first with SDK subagents)")
+                    else:
+                        print(f"[{request_id}]    ⚠️ Using OLD architecture (missing batch emphasis)")
+                    
+                    break  # Success
+                    
+                except Exception as e:
+                    last_error = e
+                    print(f"[{request_id}]    ⚠️ Attempt {attempt + 1} failed: {str(e)}")
+                    
+                    if attempt < max_retries - 1:
+                        print(f"[{request_id}]    🔄 Retrying in {retry_delay}s...")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        # All retries exhausted
+                        print(f"[{request_id}]    ❌ Failed to create SDK client after {max_retries} attempts")
+                        raise RuntimeError(
+                            f"Failed to create Claude SDK client after {max_retries} attempts: {str(last_error)}"
+                        ) from last_error
         else:
             print(f"[{request_id}]    ✅ Reusing existing session (version: {self._session_prompt_versions.get(thread_ts, 'unknown')})")
 
@@ -1644,117 +1807,76 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             print(f"[{request_id}] 🚀 Using batch mode (default)")
 
         try:
-            # Retry logic for SDK timeouts
-            max_retries = 2
-            retry_delay = 5  # seconds
-            timeout_seconds = 180  # 3 minutes per attempt
+            # Get or create cached session for this thread
+            client = await self._get_or_create_session(thread_ts, request_id)
 
-            for attempt in range(max_retries + 1):
-                try:
-                    if attempt > 0:
-                        print(f"[{request_id}] 🔄 Retry attempt {attempt}/{max_retries} after {retry_delay}s delay...")
-                        await asyncio.sleep(retry_delay)
-                        # Exponential backoff
-                        retry_delay *= 2
+            # Only connect if this is a NEW session (not already connected)
+            if thread_ts not in self._connected_sessions:
+                print(f"[{request_id}] 🔌 Connecting NEW client session...")
+                await client.connect()
+                self._connected_sessions.add(thread_ts)
+                print(f"[{request_id}] ✅ Client connected successfully")
+            else:
+                print(f"[{request_id}] ♻️ Reusing connected client...")
 
-                    # Get or create cached session for this thread
-                    client = self._get_or_create_session(thread_ts, request_id)
+            # Send the query
+            print(f"[{request_id}] 📨 Sending query to Claude SDK...")
+            await client.query(contextualized_message)
 
-                    # Only connect if this is a NEW session (not already connected)
-                    if thread_ts not in self._connected_sessions:
-                        print(f"[{request_id}] 🔌 Connecting NEW client session...")
-                        await client.connect()
-                        self._connected_sessions.add(thread_ts)
-                        print(f"[{request_id}] ✅ Client connected successfully")
-                    else:
-                        print(f"[{request_id}] ♻️ Reusing connected client...")
+            # Collect ONLY the latest response (memory stays intact in session)
+            latest_response = ""
+            print(f"[{request_id}] ⏳ Waiting for Claude SDK response...")
+            async for msg in client.receive_response():
+                # Each message REPLACES the previous (we only want the final response)
+                # The SDK maintains full conversation history internally
+                msg_type = type(msg).__name__
 
-                    # Send the query
-                    print(f"[{request_id}] 📨 Sending query to Claude SDK...")
-                    await client.query(contextualized_message)
-
-                    # Collect ONLY the latest response (memory stays intact in session)
-                    latest_response = ""
-                    print(f"[{request_id}] ⏳ Waiting for Claude SDK response (timeout: {timeout_seconds}s, attempt {attempt + 1}/{max_retries + 1})...")
-
-                    # Wrap in timeout
-                    async def collect_response():
-                        nonlocal latest_response
-                        async for msg in client.receive_response():
-                            # Each message REPLACES the previous (we only want the final response)
-                            # The SDK maintains full conversation history internally
-                            msg_type = type(msg).__name__
-
-                            # Extract text content and log tool calls
-                            text_preview = None
-                            if hasattr(msg, 'content'):
-                                if isinstance(msg.content, list):
-                                    for block in msg.content:
-                                        # Handle dict-style blocks (raw API format)
-                                        if isinstance(block, dict):
-                                            block_type = block.get('type')
-                                            if block_type == 'text':
-                                                latest_response = block.get('text', '')
-                                                text_preview = latest_response[:150]
-                                            elif block_type == 'tool_use':
-                                                tool_name = block.get('name', 'unknown')
-                                                tool_input = block.get('input', {})
-                                                # Create brief preview of args
-                                                args_preview = str(tool_input)[:100]
-                                                print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
-                                            elif block_type == 'tool_result':
-                                                result_preview = str(block.get('content', ''))[:100]
-                                                print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
-                                        # Handle object-style blocks (SDK format)
-                                        elif hasattr(block, 'text'):
-                                            latest_response = block.text
-                                            text_preview = latest_response[:150]
-                                        elif hasattr(block, 'name'):  # Likely a tool_use block
-                                            tool_name = block.name
-                                            tool_input = getattr(block, 'input', {})
-                                            args_preview = str(tool_input)[:100]
-                                            print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
-                                elif hasattr(msg.content, 'text'):
-                                    latest_response = msg.content.text
+                # Extract text content and log tool calls
+                text_preview = None
+                if hasattr(msg, 'content'):
+                    if isinstance(msg.content, list):
+                        for block in msg.content:
+                            # Handle dict-style blocks (raw API format)
+                            if isinstance(block, dict):
+                                block_type = block.get('type')
+                                if block_type == 'text':
+                                    latest_response = block.get('text', '')
                                     text_preview = latest_response[:150]
-                                else:
-                                    latest_response = str(msg.content)
-                            elif hasattr(msg, 'text'):
-                                latest_response = msg.text
+                                elif block_type == 'tool_use':
+                                    tool_name = block.get('name', 'unknown')
+                                    tool_input = block.get('input', {})
+                                    # Create brief preview of args
+                                    args_preview = str(tool_input)[:100]
+                                    print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
+                                elif block_type == 'tool_result':
+                                    result_preview = str(block.get('content', ''))[:100]
+                                    print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
+                            # Handle object-style blocks (SDK format)
+                            elif hasattr(block, 'text'):
+                                latest_response = block.text
                                 text_preview = latest_response[:150]
+                            elif hasattr(block, 'name'):  # Likely a tool_use block
+                                tool_name = block.name
+                                tool_input = getattr(block, 'input', {})
+                                args_preview = str(tool_input)[:100]
+                                print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
+                    elif hasattr(msg.content, 'text'):
+                        latest_response = msg.content.text
+                        text_preview = latest_response[:150]
+                    else:
+                        latest_response = str(msg.content)
+                elif hasattr(msg, 'text'):
+                    latest_response = msg.text
+                    text_preview = latest_response[:150]
 
-                            # Log with content preview
-                            if text_preview:
-                                print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
-                            else:
-                                print(f"[{request_id}] 📩 {msg_type} (no text content)")
+                # Log with content preview
+                if text_preview:
+                    print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
+                else:
+                    print(f"[{request_id}] 📩 {msg_type} (no text content)")
 
-                    # Execute with timeout
-                    try:
-                        await asyncio.wait_for(collect_response(), timeout=timeout_seconds)
-                    except asyncio.TimeoutError:
-                        if attempt < max_retries:
-                            print(f"[{request_id}] ⏱️ SDK timeout after {timeout_seconds}s - will retry")
-                            # Clear the connection and try again
-                            self._connected_sessions.discard(thread_ts)
-                            continue
-                        else:
-                            print(f"[{request_id}] ⏱️ SDK timeout after {timeout_seconds}s - no more retries")
-                            raise
-
-                    # If we got here, success!
-                    final_text = latest_response  # Only use the latest response
-                    print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
-                    break  # Exit retry loop on success
-
-                except asyncio.TimeoutError:
-                    # Final timeout - all retries exhausted
-                    print(f"[{request_id}] ❌ All retry attempts exhausted")
-                    raise
-                except Exception as e:
-                    # Other errors - don't retry
-                    print(f"[{request_id}] ❌ SDK error (not retrying): {e}")
-                    raise
+            final_text = latest_response  # Only use the latest response
+            print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
 
             # Format for Slack
             final_text = self._format_for_slack(final_text)

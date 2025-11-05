@@ -424,7 +424,8 @@ def create_batch_plan(
     description: str,
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    slack_client=None  # NEW: Slack client for progress updates
 ) -> Dict[str, Any]:
     """
     Create a batch plan and store it in the global registry with RICH context preservation
@@ -480,7 +481,8 @@ def create_batch_plan(
         'slack_metadata': {
             'channel_id': channel_id,
             'thread_ts': thread_ts,
-            'user_id': user_id
+            'user_id': user_id,
+            'slack_client': slack_client  # NEW: Store slack_client reference for progress updates
         }
     }
 
@@ -562,10 +564,31 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     # Get strategic context for this post (NO learning accumulation)
     strategic_context = context_mgr.get_context_for_post(post_index)
 
-    print(f"\n📝 Executing post {post_index + 1}/{len(plan['posts'])}", flush=True)
+    # Get slack_client from plan metadata for progress updates
+    slack_client = slack_metadata.get('slack_client')
+    total_posts = len(plan['posts'])
+    post_num = post_index + 1
+
+    print(f"\n📝 Executing post {post_num}/{total_posts}", flush=True)
     print(f"   Platform: {post_spec['platform']}", flush=True)
     print(f"   Strategic context: {len(strategic_context)} chars", flush=True)
     print(f"   Slack context: channel={channel_id}, thread={thread_ts}, user={user_id}", flush=True)
+
+    # Helper function to send progress updates (non-blocking, no user tag)
+    # Only sends updates for batches with more than 1 post
+    def _send_progress_update(message: str):
+        """Send progress update to Slack (non-blocking, no user tag) - only for batches > 1"""
+        if total_posts > 1 and slack_client and channel_id and thread_ts:
+            try:
+                # Send asynchronously without blocking
+                slack_client.chat_postMessage(
+                    channel=channel_id,
+                    thread_ts=thread_ts,
+                    text=message  # NO user tag - silent progress update
+                )
+            except Exception as e:
+                # Log but don't crash batch if Slack update fails
+                print(f"   ⚠️ Failed to send progress update: {e}", flush=True)
 
     try:
         # Execute post using SDK agent with strategic context AND Slack metadata
@@ -615,14 +638,14 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
             alignment = context_mgr.check_alignment(post_index, content)
 
             if alignment < 0.5:
-                print(f"   ⚠️ Post {post_index + 1} has low strategic alignment: {alignment:.1%}")
+                print(f"   ⚠️ Post {post_num} has low strategic alignment: {alignment:.1%}")
                 print(f"      Consider reviewing if content matches intended outline")
             else:
-                print(f"   ✅ Post {post_index + 1} strategic alignment: {alignment:.1%}")
+                print(f"   ✅ Post {post_num} strategic alignment: {alignment:.1%}")
 
         # Update context manager
         await context_mgr.add_post_summary({
-            'post_num': post_index + 1,
+            'post_num': post_num,
             'score': score,
             'hook': hook,
             'platform': post_spec['platform'],
@@ -630,6 +653,17 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
         })
 
         print(f"   ✅ Success: Score {score}/25")
+
+        # Send "Post X complete" message AFTER success (non-blocking, no user tag)
+        # Only for batches with more than 1 post
+        if total_posts > 1:
+            completion_message = (
+                f"✅ Post {post_num}/{total_posts} complete! "
+                f"Score: **{score}/25**"
+            )
+            if airtable_url:
+                completion_message += f" | <{airtable_url}|View>"
+            _send_progress_update(completion_message)
 
         return {
             'success': True,
@@ -642,14 +676,21 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
 
     except asyncio.TimeoutError:
         # Hard timeout hit - post took >5 minutes (likely connection hang)
-        print(f"   ⏱️ TIMEOUT: Post {post_index + 1} exceeded 5-minute limit")
+        print(f"   ⏱️ TIMEOUT: Post {post_num} exceeded 5-minute limit")
         print(f"   This usually means SDK connection hung - check Replit connection limits")
+
+        # Send timeout progress update (non-blocking, no user tag) - only for batches > 1
+        if total_posts > 1:
+            timeout_message = (
+                f"⚠️ Post {post_num}/{total_posts} timed out. Continuing..."
+            )
+            _send_progress_update(timeout_message)
 
         return {
             'success': False,
             'score': 0,
             'platform': post_spec['platform'],
-            'hook': f"Post {post_index + 1} timed out after 5 minutes",
+            'hook': f"Post {post_num} timed out after 5 minutes",
             'airtable_url': None,
             'error': f"Timeout after 300s - likely connection hang. Check SDK disconnect() calls."
         }
@@ -663,11 +704,18 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
         # Include enough info for user to see what went wrong
         error_msg = str(e)[:300]  # Truncate long errors
 
+        # Send error progress update (non-blocking, no user tag) - only for batches > 1
+        if total_posts > 1:
+            error_update_message = (
+                f"⚠️ Post {post_num}/{total_posts} failed: {error_msg[:100]}... Continuing..."
+            )
+            _send_progress_update(error_update_message)
+
         return {
             'success': False,
             'score': 0,
             'platform': post_spec['platform'],
-            'hook': f"Post {post_index + 1} failed - {error_msg[:50]}...",
+            'hook': f"Post {post_num} failed - {error_msg[:50]}...",
             'airtable_url': None,
             'error': error_msg
         }
