@@ -1644,76 +1644,117 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             print(f"[{request_id}] 🚀 Using batch mode (default)")
 
         try:
-            # Get or create cached session for this thread
-            client = self._get_or_create_session(thread_ts, request_id)
+            # Retry logic for SDK timeouts
+            max_retries = 2
+            retry_delay = 5  # seconds
+            timeout_seconds = 180  # 3 minutes per attempt
 
-            # Only connect if this is a NEW session (not already connected)
-            if thread_ts not in self._connected_sessions:
-                print(f"[{request_id}] 🔌 Connecting NEW client session...")
-                await client.connect()
-                self._connected_sessions.add(thread_ts)
-                print(f"[{request_id}] ✅ Client connected successfully")
-            else:
-                print(f"[{request_id}] ♻️ Reusing connected client...")
+            for attempt in range(max_retries + 1):
+                try:
+                    if attempt > 0:
+                        print(f"[{request_id}] 🔄 Retry attempt {attempt}/{max_retries} after {retry_delay}s delay...")
+                        await asyncio.sleep(retry_delay)
+                        # Exponential backoff
+                        retry_delay *= 2
 
-            # Send the query
-            print(f"[{request_id}] 📨 Sending query to Claude SDK...")
-            await client.query(contextualized_message)
+                    # Get or create cached session for this thread
+                    client = self._get_or_create_session(thread_ts, request_id)
 
-            # Collect ONLY the latest response (memory stays intact in session)
-            latest_response = ""
-            print(f"[{request_id}] ⏳ Waiting for Claude SDK response...")
-            async for msg in client.receive_response():
-                # Each message REPLACES the previous (we only want the final response)
-                # The SDK maintains full conversation history internally
-                msg_type = type(msg).__name__
-
-                # Extract text content and log tool calls
-                text_preview = None
-                if hasattr(msg, 'content'):
-                    if isinstance(msg.content, list):
-                        for block in msg.content:
-                            # Handle dict-style blocks (raw API format)
-                            if isinstance(block, dict):
-                                block_type = block.get('type')
-                                if block_type == 'text':
-                                    latest_response = block.get('text', '')
-                                    text_preview = latest_response[:150]
-                                elif block_type == 'tool_use':
-                                    tool_name = block.get('name', 'unknown')
-                                    tool_input = block.get('input', {})
-                                    # Create brief preview of args
-                                    args_preview = str(tool_input)[:100]
-                                    print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
-                                elif block_type == 'tool_result':
-                                    result_preview = str(block.get('content', ''))[:100]
-                                    print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
-                            # Handle object-style blocks (SDK format)
-                            elif hasattr(block, 'text'):
-                                latest_response = block.text
-                                text_preview = latest_response[:150]
-                            elif hasattr(block, 'name'):  # Likely a tool_use block
-                                tool_name = block.name
-                                tool_input = getattr(block, 'input', {})
-                                args_preview = str(tool_input)[:100]
-                                print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
-                    elif hasattr(msg.content, 'text'):
-                        latest_response = msg.content.text
-                        text_preview = latest_response[:150]
+                    # Only connect if this is a NEW session (not already connected)
+                    if thread_ts not in self._connected_sessions:
+                        print(f"[{request_id}] 🔌 Connecting NEW client session...")
+                        await client.connect()
+                        self._connected_sessions.add(thread_ts)
+                        print(f"[{request_id}] ✅ Client connected successfully")
                     else:
-                        latest_response = str(msg.content)
-                elif hasattr(msg, 'text'):
-                    latest_response = msg.text
-                    text_preview = latest_response[:150]
+                        print(f"[{request_id}] ♻️ Reusing connected client...")
 
-                # Log with content preview
-                if text_preview:
-                    print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
-                else:
-                    print(f"[{request_id}] 📩 {msg_type} (no text content)")
+                    # Send the query
+                    print(f"[{request_id}] 📨 Sending query to Claude SDK...")
+                    await client.query(contextualized_message)
 
-            final_text = latest_response  # Only use the latest response
-            print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
+                    # Collect ONLY the latest response (memory stays intact in session)
+                    latest_response = ""
+                    print(f"[{request_id}] ⏳ Waiting for Claude SDK response (timeout: {timeout_seconds}s, attempt {attempt + 1}/{max_retries + 1})...")
+
+                    # Wrap in timeout
+                    async def collect_response():
+                        nonlocal latest_response
+                        async for msg in client.receive_response():
+                            # Each message REPLACES the previous (we only want the final response)
+                            # The SDK maintains full conversation history internally
+                            msg_type = type(msg).__name__
+
+                            # Extract text content and log tool calls
+                            text_preview = None
+                            if hasattr(msg, 'content'):
+                                if isinstance(msg.content, list):
+                                    for block in msg.content:
+                                        # Handle dict-style blocks (raw API format)
+                                        if isinstance(block, dict):
+                                            block_type = block.get('type')
+                                            if block_type == 'text':
+                                                latest_response = block.get('text', '')
+                                                text_preview = latest_response[:150]
+                                            elif block_type == 'tool_use':
+                                                tool_name = block.get('name', 'unknown')
+                                                tool_input = block.get('input', {})
+                                                # Create brief preview of args
+                                                args_preview = str(tool_input)[:100]
+                                                print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
+                                            elif block_type == 'tool_result':
+                                                result_preview = str(block.get('content', ''))[:100]
+                                                print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
+                                        # Handle object-style blocks (SDK format)
+                                        elif hasattr(block, 'text'):
+                                            latest_response = block.text
+                                            text_preview = latest_response[:150]
+                                        elif hasattr(block, 'name'):  # Likely a tool_use block
+                                            tool_name = block.name
+                                            tool_input = getattr(block, 'input', {})
+                                            args_preview = str(tool_input)[:100]
+                                            print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
+                                elif hasattr(msg.content, 'text'):
+                                    latest_response = msg.content.text
+                                    text_preview = latest_response[:150]
+                                else:
+                                    latest_response = str(msg.content)
+                            elif hasattr(msg, 'text'):
+                                latest_response = msg.text
+                                text_preview = latest_response[:150]
+
+                            # Log with content preview
+                            if text_preview:
+                                print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
+                            else:
+                                print(f"[{request_id}] 📩 {msg_type} (no text content)")
+
+                    # Execute with timeout
+                    try:
+                        await asyncio.wait_for(collect_response(), timeout=timeout_seconds)
+                    except asyncio.TimeoutError:
+                        if attempt < max_retries:
+                            print(f"[{request_id}] ⏱️ SDK timeout after {timeout_seconds}s - will retry")
+                            # Clear the connection and try again
+                            self._connected_sessions.discard(thread_ts)
+                            continue
+                        else:
+                            print(f"[{request_id}] ⏱️ SDK timeout after {timeout_seconds}s - no more retries")
+                            raise
+
+                    # If we got here, success!
+                    final_text = latest_response  # Only use the latest response
+                    print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
+                    break  # Exit retry loop on success
+
+                except asyncio.TimeoutError:
+                    # Final timeout - all retries exhausted
+                    print(f"[{request_id}] ❌ All retry attempts exhausted")
+                    raise
+                except Exception as e:
+                    # Other errors - don't retry
+                    print(f"[{request_id}] ❌ SDK error (not retrying): {e}")
+                    raise
 
             # Format for Slack
             final_text = self._format_for_slack(final_text)
