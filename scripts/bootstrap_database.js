@@ -183,6 +183,7 @@ async function bootstrap() {
       console.log('  ✅ All RPC functions and RLS policies');
       console.log('  ✅ Starter content and examples');
       console.log('');
+
     } catch (err) {
       console.log('');
       log('⚠️', 'Bootstrap skipped (connection failed):', colors.yellow);
