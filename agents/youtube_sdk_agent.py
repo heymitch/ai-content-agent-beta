@@ -638,9 +638,9 @@ Draft → Validation #1 → apply_fixes → **Validation #2 on REVISED script** 
 
 Return format MUST include REVISED script_text + FINAL validation metadata for Airtable."""
 
-        # Compose base prompt + client context (if exists)
-        from integrations.prompt_loader import load_system_prompt
-        self.system_prompt = load_system_prompt(base_prompt)
+        # Store base prompt only - SDK will load CLAUDE.md automatically via setting_sources
+        # This avoids "Argument list too long" errors when passing large prompts as parameters
+        self.system_prompt = base_prompt
 
         # Create MCP server with YouTube-specific tools (ENHANCED 7-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
@@ -669,13 +669,16 @@ Return format MUST include REVISED script_text + FINAL validation metadata for A
             os.environ.pop('CLAUDE_WORKSPACE', None)
             os.environ['CLAUDE_HOME'] = '/tmp/youtube_agent'
 
+        # setting_sources=["project"] tells SDK to automatically load .claude/CLAUDE.md from disk
+        # This avoids "Argument list too long" errors by loading prompt from file instead of passing as parameter
         return ClaudeAgentOptions(
             mcp_servers={"youtube_tools": self.mcp_server},
             allowed_tools=["mcp__youtube_tools__*"],
-            system_prompt=self.system_prompt,
+            setting_sources=["project"],  # Load .claude/CLAUDE.md automatically via SDK
+            system_prompt=self.system_prompt,  # Base prompt only (SDK will combine with CLAUDE.md)
             model="claude-sonnet-4-5-20250929",
             permission_mode="bypassPermissions",
-            continue_conversation=not self.isolated_mode  # False in test mode, True in prod
+            continue_conversation=not (self.isolated_mode or self.batch_mode)  # False in test/batch mode, True in prod
         )
 
     async def create_script(

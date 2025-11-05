@@ -1041,6 +1041,122 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
 
         print(f"👍 Reaction {reaction} added to message {message_ts}")
 
+        # Handle ✅ (white_check_mark) reaction for Haiku-generated Twitter posts
+        if reaction == 'white_check_mark':
+            try:
+                # Get the message that was reacted to
+                message_response = slack_client.conversations_history(
+                    channel=channel,
+                    latest=message_ts,
+                    limit=1,
+                    inclusive=True
+                )
+                
+                if message_response.get('ok') and message_response.get('messages'):
+                    message = message_response['messages'][0]
+                    message_text = message.get('text', '')
+                    
+                    # Check if this is a Haiku-generated Twitter post
+                    # Look for Twitter Post Generated and either "Haiku fast path" or just "Score:" line
+                    is_haiku_post = ('Twitter Post Generated' in message_text and
+                                    ('Haiku fast path' in message_text or
+                                     ('Score:' in message_text and 'twitter' in message_text.lower())))
+
+                    if is_haiku_post:
+                        # Extract post content from message
+                        # Format: "✅ Twitter Post Generated\n\n[Post content]\n\nHook: ...\nScore: ..."
+                        lines = message_text.split('\n')
+                        post_content = ""
+                        hook_preview = ""
+                        publish_date = None
+                        
+                        # Find the post content (between "Twitter Post Generated" and "Hook:")
+                        # Skip empty lines and header, collect content until we hit "Hook:"
+                        collecting_content = False
+                        for line in lines:
+                            if 'Twitter Post Generated' in line:
+                                collecting_content = True
+                                continue
+                            if collecting_content:
+                                if line.startswith('Hook:'):
+                                    hook_preview = line.replace('Hook:', '').strip()
+                                    break
+                                elif line.startswith('Score:'):
+                                    break
+                                elif line.strip():  # Only add non-empty lines
+                                    if post_content:
+                                        post_content += "\n" + line
+                                    else:
+                                        post_content = line
+                        
+                        # Clean up post content (remove any extra formatting)
+                        post_content = post_content.strip()
+                        
+                        if post_content:
+                            # Save to Airtable with retry logic
+                            from integrations.airtable_client import get_airtable_client
+                            import asyncio
+
+                            max_retries = 3
+                            retry_delay = 2
+                            result = None
+
+                            for attempt in range(max_retries):
+                                try:
+                                    airtable = get_airtable_client()
+
+                                    # Try to extract publish_date from context if available
+                                    # (This would need to be stored in message metadata, but for now we'll skip it)
+
+                                    result = airtable.create_content_record(
+                                        content=post_content,
+                                        platform='twitter',
+                                        post_hook=hook_preview if hook_preview else post_content[:100],
+                                        status='Draft',
+                                        publish_date=publish_date
+                                    )
+
+                                    if result and result.get('success'):
+                                        break  # Success, exit retry loop
+                                    elif attempt < max_retries - 1:
+                                        print(f"⚠️ Airtable save failed (attempt {attempt + 1}/{max_retries}), retrying...")
+                                        await asyncio.sleep(retry_delay)
+                                        retry_delay *= 2  # Exponential backoff
+                                except Exception as e:
+                                    print(f"❌ Airtable error (attempt {attempt + 1}/{max_retries}): {e}")
+                                    if attempt < max_retries - 1:
+                                        await asyncio.sleep(retry_delay)
+                                        retry_delay *= 2
+                                    else:
+                                        result = {'success': False, 'error': str(e)}
+
+                            if result and result.get('success'):
+                                # Send confirmation with 📅 emoji
+                                # Use original thread if the message was in a thread
+                                thread_ts = message.get('thread_ts', message_ts)
+                                slack_client.chat_postMessage(
+                                    channel=channel,
+                                    thread_ts=thread_ts,
+                                    text="📅 Saved to Airtable"
+                                )
+                                print(f"✅ Saved Haiku Twitter post to Airtable")
+                            else:
+                                print(f"❌ Failed to save to Airtable: {result.get('error')}")
+                                # Use original thread if the message was in a thread
+                                thread_ts = message.get('thread_ts', message_ts)
+                                slack_client.chat_postMessage(
+                                    channel=channel,
+                                    thread_ts=thread_ts,
+                                    text=f"❌ Failed to save to Airtable: {result.get('error', 'Unknown error')}"
+                                )
+                        else:
+                            print(f"⚠️ Could not extract post content from message")
+                            
+            except Exception as e:
+                print(f"❌ Error handling ✅ reaction: {e}")
+                import traceback
+                traceback.print_exc()
+
         handler = get_slack_handler()
         if handler and handler.reaction_handler:
             await handler.reaction_handler.handle_reaction(

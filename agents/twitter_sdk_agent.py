@@ -812,9 +812,9 @@ DO NOT:
 
 DO NOT explain. DO NOT iterate beyond one revise. Return final thread when threshold met."""
 
-        # Compose base prompt + client context (if exists)
-        from integrations.prompt_loader import load_system_prompt
-        self.system_prompt = load_system_prompt(base_prompt)
+        # Store base prompt only - SDK will load CLAUDE.md automatically via setting_sources
+        # This avoids "Argument list too long" errors when passing large prompts as parameters
+        self.system_prompt = base_prompt
 
         # Create MCP server with Twitter-specific tools (ENHANCED 7-TOOL WORKFLOW)
         self.mcp_server = create_sdk_mcp_server(
@@ -956,11 +956,14 @@ If any tool returns an error:
 The tools contain WRITE_LIKE_HUMAN_RULES that MUST be applied."""
 
         # Create SDK client options
+        # setting_sources=["project"] tells SDK to automatically load .claude/CLAUDE.md from disk
+        # This avoids "Argument list too long" errors by loading prompt from file instead of passing as parameter
         should_continue = not (self.isolated_mode or self.batch_mode)
         options = ClaudeAgentOptions(
             mcp_servers={"twitter_tools": self.mcp_server},
             allowed_tools=["mcp__twitter_tools__*"],
-            system_prompt=self.system_prompt,
+            setting_sources=["project"],  # Load .claude/CLAUDE.md automatically via SDK
+            system_prompt=self.system_prompt,  # Base prompt only (SDK will combine with CLAUDE.md)
             model="claude-sonnet-4-5-20250929",
             permission_mode="bypassPermissions",
             continue_conversation=should_continue  # False in test/batch mode

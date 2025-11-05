@@ -247,16 +247,65 @@ async def _execute_single_post(
         )
 
     elif platform == "twitter":
-        from agents.twitter_sdk_agent import create_twitter_thread_workflow
-        result = await create_twitter_thread_workflow(
-            topic=topic,
-            context=context,  # Strategic outline + optional strategy memory
-            style=style or 'tactical',
-            channel_id=channel_id,
-            thread_ts=thread_ts,
-            user_id=user_id,
-            publish_date=publish_date
-        )
+        # Intelligent routing: Check if this should be a single post (Haiku fast path) or thread (SDK agent)
+        # Check context for content_length directive or keywords
+        content_length = "auto"
+        context_lower = context.lower() if context else ""
+        topic_lower = topic.lower() if topic else ""
+        
+        # Detect thread keywords
+        thread_keywords = ["thread", "thread of", "twitter thread", "long thread", "short thread"]
+        is_thread = any(keyword in context_lower or keyword in topic_lower for keyword in thread_keywords)
+        
+        # Detect single post keywords
+        single_post_keywords = ["single post", "one tweet", "twitter post", "single tweet"]
+        is_single_post = any(keyword in context_lower or keyword in topic_lower for keyword in single_post_keywords)
+        
+        # Check for explicit content_length in context
+        if "content_length" in context_lower:
+            if "single_post" in context_lower:
+                content_length = "single_post"
+            elif "short_thread" in context_lower or "long_thread" in context_lower:
+                content_length = "thread"
+        
+        # Routing decision: Default to Haiku fast path for speed unless thread is explicitly requested
+        use_haiku = False
+        if is_thread:
+            use_haiku = False  # Use SDK agent for threads
+        elif is_single_post:
+            use_haiku = True  # Use Haiku for single posts
+        elif content_length == "single_post":
+            use_haiku = True
+        elif content_length in ["short_thread", "long_thread"]:
+            use_haiku = False
+        else:
+            # Default: Use Haiku fast path for speed (single post assumed)
+            use_haiku = True
+        
+        if use_haiku:
+            # Use Haiku fast path for single posts
+            from agents.twitter_haiku_agent import create_twitter_post_workflow
+            result = await create_twitter_post_workflow(
+                topic=topic,
+                context=context,
+                style=style or 'tactical',
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                user_id=user_id,
+                publish_date=publish_date
+            )
+        else:
+            # Use SDK agent for threads
+            from agents.twitter_sdk_agent import create_twitter_thread_workflow
+            result = await create_twitter_thread_workflow(
+                topic=topic,
+                context=context,  # Strategic outline + optional strategy memory
+                style=style or 'tactical',
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                user_id=user_id,
+                publish_date=publish_date
+            )
 
     elif platform == "email":
         from agents.email_sdk_agent import create_email_workflow

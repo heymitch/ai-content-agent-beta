@@ -347,10 +347,50 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
             return result  # Already formatted with score and details
 
         elif platform.lower() in ['twitter', 'x']:
-            # Use the Twitter SDK Agent workflow
-            from agents.twitter_sdk_agent import create_twitter_thread_workflow
-            result = await create_twitter_thread_workflow(topic, context, style)
-            return result  # Already formatted with score
+            # Intelligent routing: Check if this should be a single post (Haiku fast path) or thread (SDK agent)
+            context_lower = context.lower() if context else ""
+            topic_lower = topic.lower() if topic else ""
+            
+            # Detect thread keywords
+            thread_keywords = ["thread", "thread of", "twitter thread", "long thread", "short thread"]
+            is_thread = any(keyword in context_lower or keyword in topic_lower for keyword in thread_keywords)
+            
+            # Detect single post keywords
+            single_post_keywords = ["single post", "one tweet", "twitter post", "single tweet"]
+            is_single_post = any(keyword in context_lower or keyword in topic_lower for keyword in single_post_keywords)
+            
+            # Check for explicit content_length in context
+            content_length = "auto"
+            if "content_length" in context_lower:
+                if "single_post" in context_lower:
+                    content_length = "single_post"
+                elif "short_thread" in context_lower or "long_thread" in context_lower:
+                    content_length = "thread"
+            
+            # Routing decision: Default to Haiku fast path for speed unless thread is explicitly requested
+            use_haiku = False
+            if is_thread:
+                use_haiku = False  # Use SDK agent for threads
+            elif is_single_post:
+                use_haiku = True  # Use Haiku for single posts
+            elif content_length == "single_post":
+                use_haiku = True
+            elif content_length in ["short_thread", "long_thread"]:
+                use_haiku = False
+            else:
+                # Default: Use Haiku fast path for speed (single post assumed)
+                use_haiku = True
+            
+            if use_haiku:
+                # Use Haiku fast path for single posts
+                from agents.twitter_haiku_agent import create_twitter_post_workflow
+                result = await create_twitter_post_workflow(topic, context, style)
+                return result  # Already formatted with score
+            else:
+                # Use SDK agent for threads
+                from agents.twitter_sdk_agent import create_twitter_thread_workflow
+                result = await create_twitter_thread_workflow(topic, context, style)
+                return result  # Already formatted with score
 
         elif platform.lower() == 'email':
             # Use the Email SDK Agent workflow
@@ -1185,12 +1225,23 @@ This is the DEFAULT for ALL content creation requests.
 
 **Examples (ALL use BATCH):**
 ✅ "Create 5 LinkedIn posts about AI" → BATCH
-✅ "Write a Twitter thread on this topic" → BATCH
+✅ "Write a Twitter thread on this topic" → BATCH (uses SDK agent for threads)
+✅ "Write a Twitter post about X" → BATCH (uses Haiku fast path for single posts)
 ✅ "Make 10 posts for next week" → BATCH
 ✅ "Write a post about marketing" → BATCH (single post still uses BATCH)
 ✅ "Generate content about startups" → BATCH
 ✅ "Draft 5 posts about AI" → BATCH (count >1 = BATCH, ignore "draft")
 ✅ "Help me create content" → BATCH (generic request = BATCH)
+
+**TWITTER ROUTING (INTELLIGENT):**
+- Twitter single posts (1-5 posts): Uses Haiku fast path for speed (~300ms per post)
+  - Keywords: "single post", "one tweet", "twitter post" → Haiku fast path
+  - Default behavior: Single posts use Haiku fast path
+  - Returns immediately to Slack, no Airtable auto-save
+  - User reacts with ✅ to save to Airtable, agent responds with 📅 when saved
+- Twitter threads: Uses existing SDK agent (multi-agent process)
+  - Keywords: "thread", "thread of", "twitter thread" → SDK agent
+  - Auto-saves to Airtable
 
 **How BATCH works:**
 - Works for ANY count (1, 5, 15, 50 posts)
