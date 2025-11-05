@@ -253,12 +253,12 @@ async def _execute_single_post(
         context_lower = context.lower() if context else ""
         topic_lower = topic.lower() if topic else ""
         
-        # Detect thread keywords
-        thread_keywords = ["thread", "thread of", "twitter thread", "long thread", "short thread"]
+        # Detect thread keywords (expanded list)
+        thread_keywords = ["thread", "thread of", "twitter thread", "long thread", "short thread", "a thread", "an x thread"]
         is_thread = any(keyword in context_lower or keyword in topic_lower for keyword in thread_keywords)
         
-        # Detect single post keywords
-        single_post_keywords = ["single post", "one tweet", "twitter post", "single tweet"]
+        # Detect single post keywords (expanded list)
+        single_post_keywords = ["single post", "one tweet", "twitter post", "single tweet", "a tweet", "an x post", "an x tweet", "one x post", "a twitter post"]
         is_single_post = any(keyword in context_lower or keyword in topic_lower for keyword in single_post_keywords)
         
         # Check for explicit content_length in context
@@ -623,53 +623,37 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     print(f"   Strategic context: {len(strategic_context)} chars", flush=True)
     print(f"   Slack context: channel={channel_id}, thread={thread_ts}, user={user_id}", flush=True)
 
-    # Send batch start notification for first post only (prevent duplicates)
+    # Send batch start notification for first post only
     if post_index == 0 and slack_client and channel_id and thread_ts:
-        # Check if we've already sent a batch start notification
-        if not slack_metadata.get('batch_started'):
-            try:
-                batch_start_message = (
-                    f"🚀 *Starting batch execution*\n"
-                    f"📋 Plan: `{plan_id}`\n"
-                    f"📝 {total_posts} post{'s' if total_posts > 1 else ''} queued\n"
-                    f"⏳ Creating posts sequentially..."
-                )
-                slack_client.chat_postMessage(
-                    channel=channel_id,
-                    thread_ts=thread_ts,
-                    text=batch_start_message
-                )
-                # Mark that we've sent the batch start notification
-                slack_metadata['batch_started'] = True
-                print(f"   ✅ Sent batch start notification to Slack", flush=True)
-            except Exception as e:
-                # Log but don't crash batch if Slack update fails
-                print(f"   ⚠️ Failed to send batch start notification: {e}", flush=True)
+        try:
+            batch_start_message = (
+                f"🚀 **Starting batch execution**\n"
+                f"📋 Plan: `{plan_id}`\n"
+                f"📝 {total_posts} post{'s' if total_posts > 1 else ''} queued\n"
+                f"⏳ Creating posts sequentially..."
+            )
+            slack_client.chat_postMessage(
+                channel=channel_id,
+                thread_ts=thread_ts,
+                text=batch_start_message
+            )
+            print(f"   ✅ Sent batch start notification to Slack", flush=True)
+        except Exception as e:
+            # Log but don't crash batch if Slack update fails
+            print(f"   ⚠️ Failed to send batch start notification: {e}", flush=True)
 
     # Helper function to send progress updates (non-blocking, no user tag)
     # Only sends updates for batches with more than 1 post
-    import time
-    _last_slack_message_time = slack_metadata.get('last_message_time', 0)
-
     def _send_progress_update(message: str):
         """Send progress update to Slack (non-blocking, no user tag) - only for batches > 1"""
-        nonlocal _last_slack_message_time
         if total_posts > 1 and slack_client and channel_id and thread_ts:
             try:
-                # Basic rate limiting: ensure at least 0.5s between messages
-                current_time = time.time()
-                time_since_last = current_time - _last_slack_message_time
-                if time_since_last < 0.5:
-                    time.sleep(0.5 - time_since_last)
-
                 # Send asynchronously without blocking
                 slack_client.chat_postMessage(
                     channel=channel_id,
                     thread_ts=thread_ts,
-                    text=message  # NO user tag - silent progress update (except final)
+                    text=message  # NO user tag - silent progress update
                 )
-                _last_slack_message_time = time.time()
-                slack_metadata['last_message_time'] = _last_slack_message_time
             except Exception as e:
                 # Log but don't crash batch if Slack update fails
                 print(f"   ⚠️ Failed to send progress update: {e}", flush=True)
@@ -738,20 +722,15 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
 
         print(f"   ✅ Success: Score {score}/25")
 
-        # Send "Post X complete" message AFTER success (non-blocking)
+        # Send "Post X complete" message AFTER success (non-blocking, no user tag)
         # Only for batches with more than 1 post
         if total_posts > 1:
             completion_message = (
                 f"✅ Post {post_num}/{total_posts} complete! "
-                f"Score: *{score}/25*"
+                f"Score: **{score}/25**"
             )
             if airtable_url:
                 completion_message += f" | <{airtable_url}|View>"
-
-            # Tag user only on the final post completion
-            if post_index == total_posts - 1 and user_id:
-                completion_message = f"<@{user_id}> " + completion_message
-
             _send_progress_update(completion_message)
 
         return {

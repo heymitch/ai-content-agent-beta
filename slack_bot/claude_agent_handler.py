@@ -350,15 +350,26 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
             # Intelligent routing: Check if this should be a single post (Haiku fast path) or thread (SDK agent)
             context_lower = context.lower() if context else ""
             topic_lower = topic.lower() if topic else ""
-            
-            # Detect thread keywords
-            thread_keywords = ["thread", "thread of", "twitter thread", "long thread", "short thread"]
+            combined_text = f"{topic_lower} {context_lower}"
+
+            # Check for numeric post counts (e.g., "5 tweets", "create 10 posts", "3 twitter posts")
+            import re
+            numeric_pattern = r'(\d+)\s*(tweets?|posts?|x posts?|twitter posts?)'
+            numeric_match = re.search(numeric_pattern, combined_text)
+
+            # Parse count from match or use provided count parameter
+            parsed_count = count
+            if numeric_match:
+                parsed_count = int(numeric_match.group(1))
+
+            # Detect thread keywords (expanded list)
+            thread_keywords = ["thread", "thread of", "twitter thread", "long thread", "short thread", "a thread", "an x thread"]
             is_thread = any(keyword in context_lower or keyword in topic_lower for keyword in thread_keywords)
-            
-            # Detect single post keywords
-            single_post_keywords = ["single post", "one tweet", "twitter post", "single tweet"]
+
+            # Detect single post keywords (expanded list)
+            single_post_keywords = ["single post", "one tweet", "twitter post", "single tweet", "a tweet", "an x post", "an x tweet", "one x post", "a twitter post"]
             is_single_post = any(keyword in context_lower or keyword in topic_lower for keyword in single_post_keywords)
-            
+
             # Check for explicit content_length in context
             content_length = "auto"
             if "content_length" in context_lower:
@@ -366,10 +377,17 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
                     content_length = "single_post"
                 elif "short_thread" in context_lower or "long_thread" in context_lower:
                     content_length = "thread"
-            
-            # Routing decision: Default to Haiku fast path for speed unless thread is explicitly requested
+
+            # Routing decision:
+            # - Multiple posts (>1) should use batch mode (not Haiku)
+            # - Threads always use SDK agent
+            # - Single posts use Haiku for speed
             use_haiku = False
-            if is_thread:
+            if parsed_count > 1:
+                # Multiple posts requested - should be handled by batch mode, not Haiku
+                # Return indicator that batch mode should be used
+                return f"⚠️ Multiple posts requested ({parsed_count} posts). Please use batch mode:\nUse plan_content_batch to create {parsed_count} Twitter posts"
+            elif is_thread:
                 use_haiku = False  # Use SDK agent for threads
             elif is_single_post:
                 use_haiku = True  # Use Haiku for single posts
@@ -1151,6 +1169,12 @@ When user explicitly requests ANY content creation (1 post or 100 posts), follow
 Only use if user EXPLICITLY says: "co-write", "collaborate with me", "iterate with me"
 If uncertain, ask: "Do you want me to create this now (batch) or co-write it with you?"
 
+**CRITICAL: TWITTER NEVER USES CO-WRITE MODE**
+- Twitter content ALWAYS uses batch mode (plan_content_batch + execute_post_from_plan)
+- NEVER use mcp__tools__generate_post_twitter or mcp__tools__quality_check_twitter
+- These co-write tools bypass the intelligent routing (Haiku fast path vs SDK agent)
+- Batch mode ensures proper routing: single posts → Haiku, threads → SDK agent
+
 **SPECIAL: Batch Content Requests (5+ posts)**
 When user requests 5+ posts, PROACTIVELY search company documents BEFORE asking questions:
 
@@ -1235,13 +1259,16 @@ This is the DEFAULT for ALL content creation requests.
 
 **TWITTER ROUTING (INTELLIGENT):**
 - Twitter single posts (1-5 posts): Uses Haiku fast path for speed (~300ms per post)
-  - Keywords: "single post", "one tweet", "twitter post" → Haiku fast path
+  - Keywords: "single post", "one tweet", "twitter post", "a tweet", "an x post", "an x tweet" → Haiku fast path
   - Default behavior: Single posts use Haiku fast path
   - Returns immediately to Slack, no Airtable auto-save
   - User reacts with ✅ to save to Airtable, agent responds with 📅 when saved
 - Twitter threads: Uses existing SDK agent (multi-agent process)
-  - Keywords: "thread", "thread of", "twitter thread" → SDK agent
+  - Keywords: "thread", "thread of", "twitter thread", "a thread", "an x thread" → SDK agent
   - Auto-saves to Airtable
+- CRITICAL: Twitter ALWAYS uses batch mode (plan_content_batch + execute_post_from_plan)
+  - NEVER use co-write tools for Twitter (mcp__tools__generate_post_twitter, etc.)
+  - Batch mode ensures proper routing to Haiku (single posts) or SDK agent (threads)
 
 **How BATCH works:**
 - Works for ANY count (1, 5, 15, 50 posts)
@@ -1564,6 +1591,15 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             return False
 
         message_lower = message.lower()
+
+        # CRITICAL: Twitter NEVER uses co-write mode
+        # Check for Twitter/X platform mentions
+        twitter_indicators = ["twitter", "x post", "x tweet", "tweet", "thread"]
+        is_twitter_request = any(indicator in message_lower for indicator in twitter_indicators)
+        
+        if is_twitter_request:
+            print(f"🔍 Twitter request detected - forcing batch mode (co-write disabled for Twitter)")
+            return False  # Force batch mode for Twitter
 
         # EXACT keywords that trigger co-write mode
         cowrite_keywords = [

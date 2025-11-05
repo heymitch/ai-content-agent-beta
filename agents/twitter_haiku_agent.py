@@ -5,10 +5,12 @@ Bypasses multi-agent process for speed while maintaining quality
 """
 import os
 import json
+import asyncio
 from typing import Dict, Any, Optional
 from pathlib import Path
-from anthropic import Anthropic
+from anthropic import Anthropic, RateLimitError
 from utils.anthropic_client import get_anthropic_client
+from utils.retry_decorator import async_retry_with_backoff
 
 # Load WRITE_LIKE_HUMAN_RULES and editor-in-chief rules
 from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
@@ -27,6 +29,14 @@ from tools.template_search import search_templates_agentic, get_template_by_name
 from tools.search_tools import search_content_examples
 
 
+@async_retry_with_backoff(
+    max_retries=3,
+    initial_delay=1.0,
+    max_delay=8.0,
+    backoff_factor=2.0,
+    exceptions=(ConnectionError, TimeoutError, OSError, RateLimitError),
+    context_provider=lambda: {"topic": topic if 'topic' in locals() else "N/A"}
+)
 async def create_single_post(
     topic: str,
     context: str = "",
@@ -37,7 +47,7 @@ async def create_single_post(
 ) -> Dict[str, Any]:
     """
     Create a single Twitter post using Haiku fast path
-    
+
     Args:
         topic: Post topic
         context: Additional context/requirements
@@ -45,7 +55,7 @@ async def create_single_post(
         thread_ts: Slack thread timestamp (for tracking)
         user_id: Slack user ID (for tracking)
         publish_date: Optional publish date
-        
+
     Returns:
         Dict with:
             - success: bool
@@ -55,16 +65,43 @@ async def create_single_post(
             - error: str (if failed)
     """
     try:
+        # Input validation
+        if not topic or not topic.strip():
+            return {
+                'success': False,
+                'error': 'Topic cannot be empty',
+                'post': '',
+                'hook': '',
+                'score': 0
+            }
+
+        topic = topic.strip()
         print(f"🚀 Twitter Haiku Fast Path: Creating post about '{topic}'")
         
-        # Step 1: Search templates
+        # Step 1: Search templates with timeout protection
         print("   📚 Searching templates...")
-        template_search_result = search_templates_agentic(user_intent=topic, max_results=3)
-        
-        # Extract template structure from search result with robust parsing
         template_context = ""
         template_names = []
 
+        try:
+            # Wrap synchronous search in asyncio with timeout
+            template_search_result = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    search_templates_agentic,
+                    topic,
+                    3  # max_results
+                ),
+                timeout=10.0  # 10 second timeout for template search
+            )
+        except asyncio.TimeoutError:
+            print("   ⚠️ Template search timed out after 10s, using defaults")
+            template_search_result = None
+        except Exception as e:
+            print(f"   ⚠️ Template search failed: {e}")
+            template_search_result = None
+
+        # Extract template structure from search result with robust parsing
         # Try multiple patterns to extract template names
         if template_search_result:
             lines = template_search_result.split('\n')
@@ -116,12 +153,33 @@ Structure: {json.dumps(template_data.get('structure', {}), indent=2)}
             else:
                 template_context = "No specific template found - use general Twitter best practices"
         
-        # Step 2: Search content examples
+        # Step 2: Search content examples with timeout protection
         print("   🔍 Searching content examples...")
-        examples_json = search_content_examples(query=topic, platform="Twitter", match_count=5)
-        examples_data = json.loads(examples_json)
-        
         examples_context = ""
+
+        try:
+            # Wrap synchronous search in asyncio with timeout
+            examples_json = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    search_content_examples,
+                    topic,  # query
+                    "Twitter",  # platform
+                    5  # match_count
+                ),
+                timeout=10.0  # 10 second timeout for content search
+            )
+            examples_data = json.loads(examples_json)
+        except asyncio.TimeoutError:
+            print("   ⚠️ Content examples search timed out after 10s, using defaults")
+            examples_data = {'success': False, 'matches': []}
+        except json.JSONDecodeError as e:
+            print(f"   ⚠️ Failed to parse content examples JSON: {e}")
+            examples_data = {'success': False, 'matches': []}
+        except Exception as e:
+            print(f"   ⚠️ Content examples search failed: {e}")
+            examples_data = {'success': False, 'matches': []}
+
         if examples_data.get('success') and examples_data.get('matches'):
             examples_context = "\nCONTENT EXAMPLES (90-100% human scores):\n"
             for i, match in enumerate(examples_data['matches'][:5], 1):
@@ -168,18 +226,47 @@ CRITICAL REQUIREMENTS:
 Return ONLY the tweet text (no numbering, no markdown, no emojis, no explanations).
 Just the clean post content."""
 
-        # Step 4: Call Haiku
+        # Step 4: Call Haiku with timeout protection (CRITICAL)
         print("   ⚡ Calling Haiku for generation...")
         client = get_anthropic_client()
-        
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=500,
-            temperature=0.7,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        
-        post_content = response.content[0].text.strip()
+
+        try:
+            # CRITICAL: Add 30-second timeout to prevent indefinite hanging
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: client.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=500,
+                        temperature=0.7,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                ),
+                timeout=30.0  # 30 second timeout for Haiku API
+            )
+
+            if not response or not response.content or not response.content[0].text:
+                raise ValueError("Empty response from Haiku API")
+
+            post_content = response.content[0].text.strip()
+        except asyncio.TimeoutError:
+            print("   ❌ Haiku API timed out after 30s")
+            return {
+                'success': False,
+                'error': 'Haiku API timed out after 30 seconds',
+                'post': '',
+                'hook': '',
+                'score': 0
+            }
+        except Exception as e:
+            print(f"   ❌ Haiku API call failed: {e}")
+            return {
+                'success': False,
+                'error': f'Haiku API error: {str(e)}',
+                'post': '',
+                'hook': '',
+                'score': 0
+            }
         
         # Clean up post content (remove any markdown, numbering, etc.)
         # Remove markdown formatting
