@@ -83,6 +83,11 @@ PHASE5-DEPLOYMENT-CHECKLIST.md
 AIRTABLE_SETUP.md
 logs.md
 ROADMAP.md
+ANALYSIS.md
+REPLIT_BOT_FILTER_FIX.md
+REPLIT_CRASH_FIXES.md
+ANALYTICS_PLAN.md
+ANALYTICS_TESTING.md
 
 # Test files in root (keep tests/ folder)
 /test_*.py
