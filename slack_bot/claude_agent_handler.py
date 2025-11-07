@@ -19,6 +19,8 @@ import uuid
 # Import our existing tool functions
 from tools.search_tools import web_search as _web_search_func
 from tools.search_tools import search_knowledge_base as _search_kb_func
+from tools.search_tools import search_content_examples as _search_content_examples_func
+from tools.search_tools import analyze_past_content as _analyze_past_content_func
 from tools.company_documents import search_company_documents as _search_company_docs_func
 from tools.template_search import search_templates_semantic as _search_templates_func
 from tools.template_search import get_template_by_name as _get_template_func
@@ -102,6 +104,54 @@ async def search_company_documents(args):
         query=query,
         match_count=match_count,
         document_type=document_type
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "search_content_examples",
+    "Search 700+ proven content examples from Cole/Dickie using semantic RAG. Find examples matching a style, topic, or content pattern for content principles and templates.",
+    {"query": str, "platform": str, "match_count": int}
+)
+async def search_content_examples(args):
+    """Search content examples semantically"""
+    query = args.get('query', '')
+    platform = args.get('platform')  # Optional: 'LinkedIn', 'Twitter', 'Email', 'Blog'
+    match_count = args.get('match_count', 5)
+
+    result = _search_content_examples_func(
+        query=query,
+        platform=platform,
+        match_count=match_count
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "analyze_past_content",
+    "Analyze high-performing example posts from Cole/Dickie to identify content patterns and best practices. Returns top posts ordered by engagement.",
+    {"platform": str, "limit": int}
+)
+async def analyze_past_content(args):
+    """Analyze past content patterns"""
+    platform = args.get('platform')  # Optional: 'LinkedIn', 'Twitter', etc.
+    limit = args.get('limit', 10)
+
+    result = _analyze_past_content_func(
+        platform=platform,
+        limit=limit
     )
 
     return {
@@ -1554,6 +1604,8 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             web_search,
             search_knowledge_base,
             search_company_documents,  # NEW in v2.5.0: User-uploaded docs for context enrichment
+            search_content_examples,  # NEW: Search 700+ Cole/Dickie examples via RAG
+            analyze_past_content,  # NEW: Analyze top-performing examples
             search_past_posts,
             get_content_calendar,
             get_thread_context,
