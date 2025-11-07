@@ -1159,12 +1159,16 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
 
         handler = get_slack_handler()
         if handler and handler.reaction_handler:
-            await handler.reaction_handler.handle_reaction(
-                reaction_emoji=reaction,
-                thread_ts=message_ts,
-                user_id=user_id,
-                channel_id=channel
-            )
+            try:
+                await handler.reaction_handler.handle_reaction(
+                    reaction_emoji=reaction,
+                    thread_ts=message_ts,
+                    user_id=user_id,
+                    channel_id=channel
+                )
+            except Exception as e:
+                print(f"⚠️ Reaction handler error (non-fatal): {e}")
+                # Don't crash - reaction handling is non-critical
 
         return {'status': 'reaction_handled'}
 
