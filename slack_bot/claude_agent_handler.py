@@ -1099,8 +1099,8 @@ class ClaudeAgentHandler:
         self._session_created_at = {}  # thread_ts -> timestamp
         
         # Resource management limits (Replit constraints)
-        self.MAX_CONCURRENT_SESSIONS = 10  # Max sessions before cleanup
-        self.SESSION_TTL = 3600  # 1 hour session lifetime
+        self.MAX_CONCURRENT_SESSIONS = 3  # Max sessions before cleanup (conservative for Replit RAM)
+        self.SESSION_TTL = 1800  # 30 min session lifetime (more aggressive cleanup)
         self.CLEANUP_INTERVAL = 300  # Clean up old sessions every 5 minutes
         self._last_cleanup = time.time()
 
@@ -1894,101 +1894,107 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             print(f"[{request_id}] 🚀 Using batch mode (default)")
 
         try:
-            # Get or create cached session for this thread
-            client = await self._get_or_create_session(thread_ts, request_id)
+            # Add 5-minute overall timeout to prevent infinite hangs
+            async with asyncio.timeout(300):
+                # Get or create cached session for this thread
+                client = await self._get_or_create_session(thread_ts, request_id)
 
-            # Only connect if this is a NEW session (not already connected)
-            if thread_ts not in self._connected_sessions:
-                print(f"[{request_id}] 🔌 Connecting NEW client session...")
-                await client.connect()
-                self._connected_sessions.add(thread_ts)
-                print(f"[{request_id}] ✅ Client connected successfully")
-            else:
-                print(f"[{request_id}] ♻️ Reusing connected client...")
+                # Only connect if this is a NEW session (not already connected)
+                if thread_ts not in self._connected_sessions:
+                    print(f"[{request_id}] 🔌 Connecting NEW client session...")
+                    await client.connect()
+                    self._connected_sessions.add(thread_ts)
+                    print(f"[{request_id}] ✅ Client connected successfully")
+                else:
+                    print(f"[{request_id}] ♻️ Reusing connected client...")
 
-            # Send the query
-            print(f"[{request_id}] 📨 Sending query to Claude SDK...")
-            await client.query(contextualized_message)
+                # Send the query
+                print(f"[{request_id}] 📨 Sending query to Claude SDK...")
+                await client.query(contextualized_message)
 
-            # Collect ONLY the latest response (memory stays intact in session)
-            latest_response = ""
-            print(f"[{request_id}] ⏳ Waiting for Claude SDK response...")
-            async for msg in client.receive_response():
-                # Each message REPLACES the previous (we only want the final response)
-                # The SDK maintains full conversation history internally
-                msg_type = type(msg).__name__
+                # Collect ONLY the latest response (memory stays intact in session)
+                latest_response = ""
+                print(f"[{request_id}] ⏳ Waiting for Claude SDK response...")
+                async for msg in client.receive_response():
+                    # Each message REPLACES the previous (we only want the final response)
+                    # The SDK maintains full conversation history internally
+                    msg_type = type(msg).__name__
 
-                # Extract text content and log tool calls
-                text_preview = None
-                if hasattr(msg, 'content'):
-                    if isinstance(msg.content, list):
-                        for block in msg.content:
-                            # Handle dict-style blocks (raw API format)
-                            if isinstance(block, dict):
-                                block_type = block.get('type')
-                                if block_type == 'text':
-                                    latest_response = block.get('text', '')
+                    # Extract text content and log tool calls
+                    text_preview = None
+                    if hasattr(msg, 'content'):
+                        if isinstance(msg.content, list):
+                            for block in msg.content:
+                                # Handle dict-style blocks (raw API format)
+                                if isinstance(block, dict):
+                                    block_type = block.get('type')
+                                    if block_type == 'text':
+                                        latest_response = block.get('text', '')
+                                        text_preview = latest_response[:150]
+                                    elif block_type == 'tool_use':
+                                        tool_name = block.get('name', 'unknown')
+                                        tool_input = block.get('input', {})
+                                        # Create brief preview of args
+                                        args_preview = str(tool_input)[:100]
+                                        print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
+                                    elif block_type == 'tool_result':
+                                        result_preview = str(block.get('content', ''))[:100]
+                                        print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
+                                # Handle object-style blocks (SDK format)
+                                elif hasattr(block, 'text'):
+                                    latest_response = block.text
                                     text_preview = latest_response[:150]
-                                elif block_type == 'tool_use':
-                                    tool_name = block.get('name', 'unknown')
-                                    tool_input = block.get('input', {})
-                                    # Create brief preview of args
+                                elif hasattr(block, 'name'):  # Likely a tool_use block
+                                    tool_name = block.name
+                                    tool_input = getattr(block, 'input', {})
                                     args_preview = str(tool_input)[:100]
                                     print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
-                                elif block_type == 'tool_result':
-                                    result_preview = str(block.get('content', ''))[:100]
-                                    print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
-                            # Handle object-style blocks (SDK format)
-                            elif hasattr(block, 'text'):
-                                latest_response = block.text
-                                text_preview = latest_response[:150]
-                            elif hasattr(block, 'name'):  # Likely a tool_use block
-                                tool_name = block.name
-                                tool_input = getattr(block, 'input', {})
-                                args_preview = str(tool_input)[:100]
-                                print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
-                    elif hasattr(msg.content, 'text'):
-                        latest_response = msg.content.text
+                        elif hasattr(msg.content, 'text'):
+                            latest_response = msg.content.text
+                            text_preview = latest_response[:150]
+                        else:
+                            latest_response = str(msg.content)
+                    elif hasattr(msg, 'text'):
+                        latest_response = msg.text
                         text_preview = latest_response[:150]
+
+                    # Log with content preview
+                    if text_preview:
+                        print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
                     else:
-                        latest_response = str(msg.content)
-                elif hasattr(msg, 'text'):
-                    latest_response = msg.text
-                    text_preview = latest_response[:150]
+                        print(f"[{request_id}] 📩 {msg_type} (no text content)")
 
-                # Log with content preview
-                if text_preview:
-                    print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
-                else:
-                    print(f"[{request_id}] 📩 {msg_type} (no text content)")
+                final_text = latest_response  # Only use the latest response
+                print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
 
-            final_text = latest_response  # Only use the latest response
-            print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
+                # Format for Slack
+                final_text = self._format_for_slack(final_text)
 
-            # Format for Slack
-            final_text = self._format_for_slack(final_text)
+                # Save to memory if available
+                if self.memory:
+                    try:
+                        self.memory.add_message(
+                            thread_ts=thread_ts,
+                            channel_id=channel_id,
+                            user_id=user_id,
+                            role="user",
+                            content=message
+                        )
+                        self.memory.add_message(
+                            thread_ts=thread_ts,
+                            channel_id=channel_id,
+                            user_id="bot",
+                            role="assistant",
+                            content=final_text
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Memory save failed: {e}")
 
-            # Save to memory if available
-            if self.memory:
-                try:
-                    self.memory.add_message(
-                        thread_ts=thread_ts,
-                        channel_id=channel_id,
-                        user_id=user_id,
-                        role="user",
-                        content=message
-                    )
-                    self.memory.add_message(
-                        thread_ts=thread_ts,
-                        channel_id=channel_id,
-                        user_id="bot",
-                        role="assistant",
-                        content=final_text
-                    )
-                except Exception as e:
-                    print(f"⚠️ Memory save failed: {e}")
+                return final_text
 
-            return final_text
+        except asyncio.TimeoutError:
+            print(f"⏱️ [{request_id}] Request timed out after 5 minutes")
+            return "⏱️ Request timed out (5 min limit). Try a simpler request or break into smaller tasks."
 
         except Exception as e:
             error_str = str(e)

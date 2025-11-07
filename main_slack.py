@@ -357,10 +357,17 @@ def format_for_slack(text: str) -> str:
 @app.get('/healthz')
 def health_check():
     """Basic health check - returns 200 if server is up"""
+    handler = get_slack_handler()
+    active_sessions = len(handler._thread_sessions) if handler else 0
+    max_sessions = handler.MAX_CONCURRENT_SESSIONS if handler else 3
+
     return {
         'status': 'ok',
         'timestamp': datetime.now().isoformat(),
-        'service': 'slack-content-agent'
+        'service': 'slack-content-agent',
+        'active_sessions': active_sessions,
+        'max_sessions': max_sessions,
+        'session_utilization': f'{active_sessions}/{max_sessions}'
     }
 
 
