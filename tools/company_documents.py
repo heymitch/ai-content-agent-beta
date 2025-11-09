@@ -81,11 +81,14 @@ def search_company_documents(
         query_embedding = response.data[0].embedding
 
         # Search company_documents table using RPC function
+        # Convert "all" to None for no filtering
+        filter_value = None if document_type == "all" else document_type
+
         result = supabase.rpc(
             'match_company_documents',
             {
                 'query_embedding': query_embedding,
-                'filter_type': document_type,
+                'filter_type': filter_value,
                 'match_threshold': 0.5,  # 50% similarity threshold (lowered for broader matches)
                 'match_count': match_count
             }
