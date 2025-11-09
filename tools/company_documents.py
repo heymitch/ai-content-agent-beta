@@ -86,7 +86,7 @@ def search_company_documents(
             {
                 'query_embedding': query_embedding,
                 'filter_type': document_type,
-                'match_threshold': 0.7,  # 70% similarity threshold
+                'match_threshold': 0.5,  # 50% similarity threshold (lowered for broader matches)
                 'match_count': match_count
             }
         ).execute()
