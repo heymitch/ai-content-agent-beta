@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-def test_agent_sdk_search():
+async def test_agent_sdk_search():
     """Test Agent SDK calling search_company_documents like the Slack bot does"""
 
     print("=" * 80)
@@ -92,14 +92,21 @@ def test_agent_sdk_search():
     print()
     print("-" * 80)
 
-    # Send message that should trigger search (synchronous in SDK)
-    response = client.chat(
-        "Search our company documents for case studies or testimonials about AI agents and automation. Tell me what you find."
-    )
+    # Send message that should trigger search
+    message = "Search our company documents for case studies or testimonials about AI agents and automation. Tell me what you find."
+
+    await client.query(message)
 
     print("\n5. Agent response:")
     print("-" * 80)
-    print(response)
+
+    # Collect response
+    full_response = ""
+    async for msg in client.receive_response():
+        print(msg, end="", flush=True)
+        full_response += str(msg)
+
+    print()
     print("-" * 80)
 
     print("\n6. Check the output above for:")
@@ -110,4 +117,4 @@ def test_agent_sdk_search():
     print("=" * 80)
 
 if __name__ == "__main__":
-    test_agent_sdk_search()
+    asyncio.run(test_agent_sdk_search())
