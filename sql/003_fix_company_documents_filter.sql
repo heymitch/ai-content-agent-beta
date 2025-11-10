@@ -9,7 +9,8 @@
 -- Applied: 2025-01-10
 
 -- Drop existing function (required before recreating with same signature)
-DROP FUNCTION IF EXISTS match_company_documents(vector, text, float, integer);
+-- Note: Must match exact signature including vector dimension
+DROP FUNCTION IF EXISTS match_company_documents(vector(1536), text, double precision, integer);
 
 -- Recreate with fixed filter logic
 CREATE OR REPLACE FUNCTION match_company_documents(
