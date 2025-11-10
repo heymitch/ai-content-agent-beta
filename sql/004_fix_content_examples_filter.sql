@@ -23,11 +23,11 @@ RETURNS TABLE (
   platform text,
   content text,
   human_score integer,
-  engagement_rate decimal,
+  engagement_rate numeric,
   content_type text,
   creator text,
   hook_line text,
-  tags text[],
+  tags jsonb,
   similarity float
 )
 LANGUAGE sql STABLE
