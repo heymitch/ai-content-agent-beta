@@ -22,12 +22,12 @@ RETURNS TABLE (
   platform text,
   content text,
   human_score integer,
-  engagement_rate decimal,
+  engagement_rate numeric,
   content_type text,
   creator text,
   hook_line text,
   tags text[],
-  similarity float
+  similarity double precision
 )
 LANGUAGE sql STABLE
 AS $$
