@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-async def test_agent_sdk_search():
+def test_agent_sdk_search():
     """Test Agent SDK calling search_company_documents like the Slack bot does"""
 
     print("=" * 80)
@@ -15,11 +15,10 @@ async def test_agent_sdk_search():
     print("(Simulating Slack bot behavior)")
     print("=" * 80)
 
-    from anthropic import Anthropic
-    from claude_agent_sdk import create_sdk_mcp_server, AgentSession
+    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, create_sdk_mcp_server
     from tools.company_documents import search_company_documents
 
-    # Create MCP server with search tool (like cowrite_handler does)
+    # Create MCP server with search tool (like claude_agent_handler does)
     print("\n1. Creating MCP server with search_company_documents tool...")
 
     mcp_server = create_sdk_mcp_server(
@@ -29,25 +28,25 @@ async def test_agent_sdk_search():
 
     print("   ✅ MCP server created")
 
-    # Create Agent SDK session (like Slack bot does)
-    client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+    # Create Agent SDK client (like Slack bot does)
+    print("\n2. Creating Claude SDK client...")
 
-    print("\n2. Creating Agent SDK session...")
-
-    session = AgentSession(
-        client=client,
+    options = ClaudeAgentOptions(
+        api_key=os.getenv('ANTHROPIC_API_KEY'),
         model="claude-sonnet-4-5-20250929",
         mcp_servers=[mcp_server]
     )
 
-    print("   ✅ Session created")
+    client = ClaudeSDKClient(options=options)
+
+    print("   ✅ Client created")
     print("\n3. Sending message to agent:")
     print("   'Search our company documents for case studies about AI agents automation'")
     print()
     print("-" * 80)
 
-    # Send message that should trigger search
-    response = await session.send(
+    # Send message that should trigger search (synchronous in SDK)
+    response = client.chat(
         "Search our company documents for case studies or testimonials about AI agents and automation. Tell me what you find."
     )
 
@@ -64,4 +63,4 @@ async def test_agent_sdk_search():
     print("=" * 80)
 
 if __name__ == "__main__":
-    asyncio.run(test_agent_sdk_search())
+    test_agent_sdk_search()
