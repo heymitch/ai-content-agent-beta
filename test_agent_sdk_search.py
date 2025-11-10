@@ -15,18 +15,53 @@ def test_agent_sdk_search():
     print("(Simulating Slack bot behavior)")
     print("=" * 80)
 
-    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, create_sdk_mcp_server
-    from tools.company_documents import search_company_documents
+    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, tool
+    from tools.company_documents import search_company_documents as _search_func
 
-    # Create MCP server with search tool (like claude_agent_handler does)
-    print("\n1. Creating MCP server with search_company_documents tool...")
+    # Create wrapped tool (like claude_agent_handler does)
+    print("\n1. Creating wrapped search_company_documents tool...")
 
-    mcp_server = create_sdk_mcp_server(
-        name="test_search_tools",
-        tools=[search_company_documents]
+    @tool(
+        "search_company_documents",
+        "Search user-uploaded company documents (case studies, testimonials, product docs)",
+        {"query": str, "match_count": int, "document_type": str}
     )
+    async def search_company_documents_tool(args):
+        """Search company documents wrapper"""
+        print(f"\n🔧 TOOL WRAPPER: search_company_documents called")
+        print(f"   Args received: {args}")
 
-    print("   ✅ MCP server created")
+        query = args.get('query', '')
+        match_count = args.get('match_count', 3)
+        document_type = args.get('document_type')
+
+        print(f"   Calling search function with:")
+        print(f"      query={query}")
+        print(f"      match_count={match_count}")
+        print(f"      document_type={document_type}")
+
+        # Run blocking I/O in thread pool
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: _search_func(
+                query=query,
+                match_count=match_count,
+                document_type=document_type
+            )
+        )
+
+        print(f"   Result length: {len(result) if result else 0}")
+        print(f"   Result preview: {result[:200] if result else 'NONE'}")
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": result
+            }]
+        }
+
+    print("   ✅ Tool wrapped")
 
     # Create Agent SDK client (like Slack bot does)
     print("\n2. Creating Claude SDK client...")
@@ -34,7 +69,7 @@ def test_agent_sdk_search():
     options = ClaudeAgentOptions(
         api_key=os.getenv('ANTHROPIC_API_KEY'),
         model="claude-sonnet-4-5-20250929",
-        mcp_servers=[mcp_server]
+        tools=[search_company_documents_tool]
     )
 
     client = ClaudeSDKClient(options=options)
