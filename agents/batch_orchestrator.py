@@ -28,7 +28,7 @@ async def execute_sequential_batch(
 ) -> Dict[str, Any]:
     """
     Orchestrates sequential execution of N-post plan with context building
-    Uses EXISTING SDK agent workflows (NO CHANGES to SDK agents required)
+    Uses direct API agent workflows (eliminates SDK hanging issues)
 
     Args:
         plan: {
@@ -84,7 +84,7 @@ async def execute_sequential_batch(
         print(f"   Platform: {post_spec['platform']}")
         print(f"   Strategic context: {len(strategic_context)} chars")
 
-        # Call EXISTING SDK agent workflow (NO learning injection)
+        # Call direct API agent workflow (NO learning injection)
         try:
             result = await _execute_single_post(
                 platform=post_spec['platform'],
@@ -213,29 +213,29 @@ async def _execute_single_post(
     publish_date: Optional[str] = None
 ) -> str:
     """
-    Execute one post using EXISTING SDK agent workflows
-    Passes learnings via context parameter (SDK agents already accept this)
+    Execute one post using direct API agent workflows
+    Eliminates SDK hanging issues (#288, #294)
 
     Args:
         platform: linkedin, twitter, email, youtube, instagram
         topic: Post topic
         context: Additional context
         style: Content style
-        learnings: Compacted learnings from previous posts
+        learnings: Compacted learnings from previous posts (deprecated)
         target_score: Target quality score
         channel_id: Slack channel ID (for Airtable/Supabase)
         thread_ts: Slack thread timestamp (for Airtable/Supabase)
         user_id: Slack user ID (for Airtable/Supabase)
 
     Returns:
-        Result string from SDK agent (contains post, score, Airtable URL)
+        Result string from direct API agent (contains post, score, Airtable URL)
     """
     # Context already contains strategic outline + optional strategy memory
     # NO learning injection - deprecated parameter ignored
 
-    # Call appropriate SDK agent workflow with Slack metadata
+    # Call appropriate direct API agent workflow with Slack metadata
     if platform == "linkedin":
-        from agents.linkedin_sdk_agent import create_linkedin_post_workflow
+        from agents.linkedin_direct_api_agent import create_linkedin_post_workflow
         result = await create_linkedin_post_workflow(
             topic=topic,
             context=context,  # Strategic outline + optional strategy memory
@@ -295,9 +295,9 @@ async def _execute_single_post(
                 publish_date=publish_date
             )
         else:
-            # Use SDK agent for threads
-            from agents.twitter_sdk_agent import create_twitter_thread_workflow
-            result = await create_twitter_thread_workflow(
+            # Use direct API agent for threads
+            from agents.twitter_direct_api_agent import create_twitter_post_workflow
+            result = await create_twitter_post_workflow(
                 topic=topic,
                 context=context,  # Strategic outline + optional strategy memory
                 style=style or 'tactical',
@@ -308,7 +308,7 @@ async def _execute_single_post(
             )
 
     elif platform == "email":
-        from agents.email_sdk_agent import create_email_workflow
+        from agents.email_direct_api_agent import create_email_workflow
         result = await create_email_workflow(
             topic=topic,
             context=context,  # Strategic outline + optional strategy memory
@@ -320,8 +320,8 @@ async def _execute_single_post(
         )
 
     elif platform == "youtube":
-        from agents.youtube_sdk_agent import create_youtube_workflow
-        result = await create_youtube_workflow(
+        from agents.youtube_direct_api_agent import create_youtube_script_workflow
+        result = await create_youtube_script_workflow(
             topic=topic,
             context=context,  # Strategic outline + optional strategy memory
             script_type=style or 'educational',
@@ -332,10 +332,10 @@ async def _execute_single_post(
         )
 
     elif platform == "instagram":
-        from agents.instagram_sdk_agent import create_instagram_post_workflow
-        result = await create_instagram_post_workflow(
+        from agents.instagram_direct_api_agent import create_instagram_workflow
+        result = await create_instagram_workflow(
             topic=topic,
-            context=enhanced_context,
+            context=context,  # Strategic outline + optional strategy memory
             style=style or 'inspirational',
             channel_id=channel_id,
             thread_ts=thread_ts,
