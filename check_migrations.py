@@ -9,11 +9,17 @@ try:
 except ImportError:
     print("Installing psycopg2-binary...")
     import subprocess
+    import sys
     try:
-        subprocess.check_call(['pip', 'install', 'psycopg2-binary', '--break-system-packages'])
+        # Try --user flag first (works in most environments including Nix)
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'psycopg2-binary', '--user'])
     except subprocess.CalledProcessError:
-        # Try without break-system-packages for non-Nix environments
-        subprocess.check_call(['pip', 'install', 'psycopg2-binary'])
+        try:
+            # Try --break-system-packages for some managed environments
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'psycopg2-binary', '--break-system-packages'])
+        except subprocess.CalledProcessError:
+            # Last resort: try without any flags
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'psycopg2-binary'])
     import psycopg2
 
 load_dotenv(override=True)
