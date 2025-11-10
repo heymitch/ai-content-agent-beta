@@ -277,8 +277,14 @@ class LinkedInDirectAPIAgent:
 
         self.client = Anthropic(api_key=api_key)
 
-        # LinkedIn-specific system prompt (same as SDK version)
-        self.system_prompt = """You are a LinkedIn content creation agent with a critical philosophy:
+        # LinkedIn-specific system prompt with FULL anti-slop rules
+        from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+
+        self.system_prompt = f"""{WRITE_LIKE_HUMAN_RULES}
+
+═══════════════════════════════════════════════════════════
+LINKEDIN CONTENT AGENT PHILOSOPHY
+═══════════════════════════════════════════════════════════
 
 **PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
 
@@ -316,7 +322,12 @@ CRITICAL PRINCIPLES:
 • Surgical fixes > complete rewrites
 • Preserve voice > enforce templates
 
-The user spent time thinking through their post. Your job is to make it BETTER, not to replace their thinking with generic AI output."""
+The user spent time thinking through their post. Your job is to make it BETTER, not to replace their thinking with generic AI output.
+
+**WHEN SYNTHESIZING TOOL RESULTS:**
+- Apply ALL the WRITE_LIKE_HUMAN_RULES above to ANY text you generate
+- Never add AI slop when combining tool outputs
+- Respect the human voice that tools preserve"""
 
         print("🎯 LinkedIn Direct API Agent initialized (no SDK, no hangs)")
 
