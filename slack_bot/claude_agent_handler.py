@@ -425,8 +425,8 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
     """Async workflow delegation"""
     try:
         if platform.lower() in ['linkedin', 'li']:
-            # Use the NEW LinkedIn SDK Agent (Tier 2)
-            from agents.linkedin_sdk_agent import create_linkedin_post_workflow
+            # Use the Direct API Agent (Tier 2 - no SDK hangs)
+            from agents.linkedin_direct_api_agent import create_linkedin_post_workflow
             result = await create_linkedin_post_workflow(topic, context, style)
             return result  # Already formatted with score and details
 
@@ -489,43 +489,43 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
                 result = await create_twitter_post_workflow(topic, context, style)
                 return result  # Already formatted with score
             else:
-                # Use SDK agent for threads
-                from agents.twitter_sdk_agent import create_twitter_thread_workflow
-                result = await create_twitter_thread_workflow(topic, context, style)
+                # Use Direct API agent for threads
+                from agents.twitter_direct_api_agent import create_twitter_post_workflow
+                result = await create_twitter_post_workflow(topic, context, style)
                 return result  # Already formatted with score
 
         elif platform.lower() == 'email':
-            # Use the Email SDK Agent workflow
-            from agents.email_sdk_agent import create_email_workflow
+            # Use the Direct API Agent workflow
+            from agents.email_direct_api_agent import create_email_workflow
             # Detect email type from style/context
-            email_type = "Email_Value"  # Default
+            email_style = "Email_Value"  # Default
             if "tuesday" in style.lower() or "update" in style.lower():
-                email_type = "Email_Tuesday"
+                email_style = "Email_Tuesday"
             elif "sales" in style.lower() or "offer" in style.lower():
-                email_type = "Email_Direct"
+                email_style = "Email_Direct"
             elif "story" in style.lower() or "indirect" in style.lower():
-                email_type = "Email_Indirect"
+                email_style = "Email_Indirect"
 
-            result = await create_email_workflow(topic, context, email_type)
+            result = await create_email_workflow(topic, context, email_style)
             return result  # Already formatted with subject and score
 
         elif platform.lower() in ['youtube', 'video']:
-            # Use the YouTube SDK Agent workflow
-            from agents.youtube_sdk_agent import create_youtube_workflow
+            # Use the Direct API Agent workflow
+            from agents.youtube_direct_api_agent import create_youtube_script_workflow
             # Detect script type from style/context
-            script_type = "short_form"  # Default (30-150 words, 12-60 sec)
+            youtube_style = "short_form"  # Default (30-150 words, 12-60 sec)
             if "medium" in style.lower() or "explainer" in style.lower():
-                script_type = "medium_form"  # 150-400 words, 1-3 min
+                youtube_style = "medium_form"  # 150-400 words, 1-3 min
             elif "long" in style.lower() or "deep" in style.lower():
-                script_type = "long_form"  # 400-1000 words, 3-10 min
+                youtube_style = "long_form"  # 400-1000 words, 3-10 min
 
-            result = await create_youtube_workflow(topic, context, script_type)
+            result = await create_youtube_script_workflow(topic, context, youtube_style)
             return result  # Already formatted with timing markers
 
         elif platform.lower() in ['instagram', 'ig', 'insta']:
-            # Use the Instagram SDK Agent workflow
-            from agents.instagram_sdk_agent import create_instagram_caption_workflow
-            result = await create_instagram_caption_workflow(topic, context, style)
+            # Use the Direct API Agent workflow
+            from agents.instagram_direct_api_agent import create_instagram_workflow
+            result = await create_instagram_workflow(topic, context, style)
             return result  # Already formatted with hook preview and character count
 
         else:
