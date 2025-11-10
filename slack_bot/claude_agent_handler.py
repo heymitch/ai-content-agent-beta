@@ -92,7 +92,15 @@ async def search_knowledge_base(args):
 @tool(
     "search_company_documents",
     "Search company documents using semantic RAG. Leave document_type=None to search ALL documents semantically (RECOMMENDED). Only filter by document_type if user explicitly requests case studies, testimonials, or product docs. Use BEFORE asking user for context.",
-    {"query": str, "match_count": int, "document_type": str}
+    {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Search query"},
+            "match_count": {"type": "integer", "description": "Number of results to return", "default": 3},
+            "document_type": {"type": "string", "description": "Optional filter: case_study, testimonial, or product_doc"}
+        },
+        "required": ["query"]
+    }
 )
 async def search_company_documents(args):
     """Search company documents for context enrichment"""
@@ -133,8 +141,16 @@ async def search_company_documents(args):
 
 @tool(
     "search_content_examples",
-    "Search 700+ proven content examples using semantic RAG across ALL platforms. Leave platform=None to search everything semantically (RECOMMENDED). Only specify platform if user explicitly requests LinkedIn, X, Email, or YouTube content. Returns examples matching style, topic, or content pattern.",
-    {"query": str, "platform": str, "match_count": int}
+    "Search 700+ content examples from the database using semantic search. Do NOT filter by platform unless user explicitly requests it - search ALL platforms by default. Use the user's exact search terms without adding qualifiers like 'high-performing' or 'proven'.",
+    {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "User's search query - use their exact words"},
+            "platform": {"type": ["string", "null"], "description": "Platform filter (LinkedIn, X, Email, YouTube) - omit to search all platforms"},
+            "match_count": {"type": "integer", "description": "Number of results", "default": 5}
+        },
+        "required": ["query"]
+    }
 )
 async def search_content_examples(args):
     """Search content examples semantically"""
@@ -175,8 +191,15 @@ async def search_content_examples(args):
 
 @tool(
     "analyze_past_content",
-    "Analyze high-performing example posts from Cole/Dickie to identify content patterns and best practices. Returns top posts ordered by engagement.",
-    {"platform": str, "limit": int}
+    "Get top-performing posts ordered by engagement rate. Use this to find best performers, NOT for semantic search (use search_content_examples for that).",
+    {
+        "type": "object",
+        "properties": {
+            "platform": {"type": ["string", "null"], "description": "Platform filter - omit for all platforms"},
+            "limit": {"type": "integer", "description": "Number of posts to return", "default": 10}
+        },
+        "required": []
+    }
 )
 async def analyze_past_content(args):
     """Analyze past content patterns"""
@@ -1214,10 +1237,12 @@ Do NOT tell users to "check websites" - YOU search for them.
 1. web_search - USE THIS FIRST for any news/events/updates (include year/date in query!)
 2. search_knowledge_base - Internal documentation and brand voice
 3. search_company_documents - User-uploaded docs (case studies, testimonials, product docs) - USE BEFORE asking for context
-4. search_past_posts - Past content you've created
-5. get_content_calendar - Scheduled posts
-6. get_thread_context - Thread history
-7. analyze_content_performance - Performance metrics
+4. search_content_examples - Semantic search across 700+ content examples (use user's EXACT query words)
+5. analyze_past_content - Get top posts by engagement (NOT for search - use search_content_examples instead)
+6. search_past_posts - Past content you've created
+7. get_content_calendar - Scheduled posts
+8. get_thread_context - Thread history
+9. analyze_content_performance - Performance metrics
 
 **CONTENT CREATION WORKFLOW:**
 

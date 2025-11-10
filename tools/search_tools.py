@@ -94,7 +94,7 @@ def search_knowledge_base(query: str, match_count: int = 5, document_type: str =
             {
                 'query_embedding': query_embedding,
                 'filter_type': document_type,
-                'match_threshold': 0.5,
+                'match_threshold': 0.3,
                 'match_count': match_count
             }
         ).execute()
@@ -228,7 +228,7 @@ def search_content_examples(query: str, platform: str = None, match_count: int =
             {
                 'query_embedding': query_embedding,
                 'filter_platform': platform,
-                'match_threshold': 0.5,
+                'match_threshold': 0.3,
                 'match_count': match_count
             }
         ).execute()
@@ -300,7 +300,7 @@ def search_research(query: str, min_credibility: int = 5, match_count: int = 5) 
             'match_research',
             {
                 'query_embedding': query_embedding,
-                'match_threshold': 0.5,
+                'match_threshold': 0.3,
                 'match_count': match_count,
                 'min_credibility': min_credibility
             }
