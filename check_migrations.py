@@ -3,7 +3,14 @@
 
 import os
 from dotenv import load_dotenv
-import psycopg2
+
+try:
+    import psycopg2
+except ImportError:
+    print("Installing psycopg2-binary...")
+    import subprocess
+    subprocess.check_call(['pip', 'install', 'psycopg2-binary'])
+    import psycopg2
 
 load_dotenv(override=True)
 
