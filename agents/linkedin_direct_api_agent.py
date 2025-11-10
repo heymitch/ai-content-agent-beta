@@ -277,14 +277,8 @@ class LinkedInDirectAPIAgent:
 
         self.client = Anthropic(api_key=api_key)
 
-        # LinkedIn-specific system prompt with FULL anti-slop rules
-        from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
-
-        self.system_prompt = f"""{WRITE_LIKE_HUMAN_RULES}
-
-═══════════════════════════════════════════════════════════
-LINKEDIN CONTENT AGENT PHILOSOPHY
-═══════════════════════════════════════════════════════════
+        # LinkedIn-specific system prompt (keep it small for fast initialization)
+        self.system_prompt = """You are a LinkedIn content creation agent with a critical philosophy:
 
 **PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
 
@@ -322,12 +316,7 @@ CRITICAL PRINCIPLES:
 • Surgical fixes > complete rewrites
 • Preserve voice > enforce templates
 
-The user spent time thinking through their post. Your job is to make it BETTER, not to replace their thinking with generic AI output.
-
-**WHEN SYNTHESIZING TOOL RESULTS:**
-- Apply ALL the WRITE_LIKE_HUMAN_RULES above to ANY text you generate
-- Never add AI slop when combining tool outputs
-- Respect the human voice that tools preserve"""
+The user spent time thinking through their post. Your job is to make it BETTER, not to replace their thinking with generic AI output."""
 
         print("🎯 LinkedIn Direct API Agent initialized (no SDK, no hangs)")
 
@@ -401,13 +390,24 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
                     logger.info("🔄 Circuit breaker entering HALF_OPEN", **log_context)
 
         try:
-            # Build creation prompt
-            creation_prompt = f"""Create a LinkedIn {post_type} post.
+            # Import WRITE_LIKE_HUMAN_RULES for comprehensive anti-slop guidance
+            from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+
+            # Build creation prompt with FULL writing rules (will be cached)
+            creation_prompt = f"""{WRITE_LIKE_HUMAN_RULES}
+
+═══════════════════════════════════════════════════════════
+LINKEDIN POST CREATION TASK
+═══════════════════════════════════════════════════════════
+
+Create a LinkedIn {post_type} post.
 
 Topic: {topic}
 
 Context/Outline:
 {context}
+
+**CRITICAL: Apply the WRITE_LIKE_HUMAN_RULES above to ALL content you generate or synthesize from tool results.**
 
 MANDATORY WORKFLOW (NO SHORTCUTS, NO SELF-ASSESSMENT):
 
@@ -503,8 +503,19 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
 
             print(f"📤 Sending creation prompt to Claude via direct API...")
 
-            # Initialize conversation messages
-            messages = [{"role": "user", "content": creation_prompt}]
+            # Initialize conversation messages with prompt caching on first message
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": creation_prompt,
+                            "cache_control": {"type": "ephemeral"}  # Cache WRITE_LIKE_HUMAN_RULES
+                        }
+                    ]
+                }
+            ]
 
             # Manual tool calling loop (replaces SDK's receive_response iterator)
             max_iterations = 20  # Prevent infinite loops
@@ -516,7 +527,9 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
                 print(f"   🔄 Iteration {iteration}: Calling Claude API...")
 
                 try:
-                    # Call Anthropic API with 60s timeout
+                    # First call gets 120s timeout (large cached prompt), subsequent calls get 60s
+                    timeout = 120.0 if iteration == 1 else 60.0
+
                     response = await asyncio.wait_for(
                         asyncio.to_thread(
                             self.client.messages.create,
@@ -526,7 +539,7 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
                             tools=TOOL_SCHEMAS,
                             messages=messages
                         ),
-                        timeout=60.0
+                        timeout=timeout
                     )
 
                     print(f"   ✅ API response received: stop_reason={response.stop_reason}")

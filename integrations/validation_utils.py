@@ -232,12 +232,12 @@ async def run_all_validators(content: str, platform: str) -> str:
     logger.info("🔍 RUNNING VALIDATORS")
     logger.info("=" * 60)
 
-    # Run validators in parallel for better performance (30-50% faster)
-    logger.info("📊 Running quality check and GPTZero in parallel...")
-    quality_task = run_quality_check(content, platform)
-    gptzero_task = run_gptzero_check(content)
+    # Run validators sequentially to avoid timeout issues (GPTZero can be slow)
+    logger.info("📊 Running quality check first...")
+    quality_result = await run_quality_check(content, platform)
 
-    quality_result, gptzero_result = await asyncio.gather(quality_task, gptzero_task)
+    logger.info("📊 Running GPTZero check...")
+    gptzero_result = await run_gptzero_check(content)
 
     logger.info(f"✅ Quality check complete: {quality_result.get('scores', {}).get('total', 0)}/25")
     if gptzero_result:
