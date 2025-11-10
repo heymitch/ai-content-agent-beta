@@ -1274,6 +1274,37 @@ async def slack_command_batch(request: Request):
         'text': f'🚀 Creating {count} {platform} posts about "{topic}"...'
     }
 
+@app.post('/slack/commands/cowrite')
+async def slack_command_cowrite(request: Request):
+    """Handle /cowrite [platform] [topic] slash command"""
+    form_data = await request.form()
+    command_text = form_data.get('text', '')
+    user_id = form_data.get('user_id')
+    channel_id = form_data.get('channel_id')
+
+    # Create thread for this co-write session
+    slack_client = get_slack_client()
+    response = slack_client.chat_postMessage(
+        channel=channel_id,
+        text=f"🎨 Starting co-write session...\n`/cowrite {command_text}`"
+    )
+    thread_ts = response['ts']
+
+    # Import handler
+    from slack_bot.commands import handle_cowrite_command
+
+    # Handle command (this starts async session)
+    result = await handle_cowrite_command(
+        command_text=command_text,
+        user_id=user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts,
+        slack_client=slack_client
+    )
+
+    return result
+
+
 @app.post('/slack/commands/plan')
 async def slack_command_plan(request: Request):
     """Handle /plan slash command for structured planning mode"""

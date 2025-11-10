@@ -1,9 +1,10 @@
 """
 Slash command handlers for Slack content agent
-/content, /calendar, /batch, /stats
+/content, /calendar, /batch, /stats, /cowrite
 """
 from typing import Dict, Any
 import asyncio
+from slack_sdk import WebClient
 
 
 async def handle_content_command(
@@ -197,4 +198,88 @@ async def handle_stats_command(
     return {
         'response_type': 'ephemeral',
         'text': '\n'.join(sections)
+    }
+
+
+async def handle_cowrite_command(
+    command_text: str,
+    user_id: str,
+    channel_id: str,
+    thread_ts: str,
+    slack_client: WebClient
+) -> Dict[str, Any]:
+    """
+    Handle /cowrite [platform] [topic/brief] command
+
+    Starts an interactive co-write session using Agent SDK with native tool access.
+    Results print to Slack only - no auto-save to Airtable unless user approves.
+
+    Examples:
+        /cowrite linkedin AI agents for solo operators
+        /cowrite twitter 5 lessons from building AI agents
+        /cowrite email weekly newsletter about AI automation
+        /cowrite youtube tutorial on getting started with AI agents
+        /cowrite instagram behind the scenes: building with AI
+
+    Args:
+        command_text: Text after /cowrite (e.g., "linkedin AI agents topic")
+        user_id: Slack user ID
+        channel_id: Channel ID
+        thread_ts: Thread timestamp (for session tracking)
+        slack_client: Slack WebClient instance
+
+    Returns:
+        Slack response dict (immediate acknowledgment)
+    """
+    from slack_bot.cowrite_handler import get_or_create_cowrite_session
+
+    # Parse platform and topic
+    parts = command_text.strip().split(maxsplit=1)
+
+    if len(parts) < 2:
+        return {
+            'response_type': 'ephemeral',
+            'text': '''❌ Usage: `/cowrite [platform] [topic/brief]`
+
+**Examples:**
+• `/cowrite linkedin AI agents are changing workflows`
+• `/cowrite twitter 5 lessons from automating content`
+• `/cowrite email weekly AI newsletter`
+
+**Supported platforms:** linkedin, twitter, email, youtube, instagram'''
+        }
+
+    platform = parts[0].lower()
+    topic = parts[1]
+
+    # Validate platform
+    valid_platforms = ['linkedin', 'twitter', 'email', 'youtube', 'instagram']
+    if platform not in valid_platforms:
+        return {
+            'response_type': 'ephemeral',
+            'text': f'❌ Invalid platform: `{platform}`\n\n**Supported:** {", ".join(valid_platforms)}'
+        }
+
+    # Get or create co-write session for this thread
+    session = get_or_create_cowrite_session(
+        thread_ts=thread_ts,
+        user_id=user_id,
+        channel_id=channel_id,
+        slack_client=slack_client
+    )
+
+    # Start session asynchronously (don't block slash command response)
+    asyncio.create_task(session.start_session(platform, topic))
+
+    # Return immediate acknowledgment
+    return {
+        'response_type': 'in_channel',
+        'text': f'''🎨 **Co-Write Session Started**
+
+**Platform:** {platform}
+**Topic:** {topic}
+
+⏳ Generating initial draft and quality analysis...
+
+*I'll iterate with you as many times as you want. When you're happy, say "approve" or "send to calendar" to save.*'''
     }
