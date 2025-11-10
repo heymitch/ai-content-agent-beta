@@ -464,7 +464,12 @@ WORKFLOW (DRAFT → VALIDATE → FIX → RE-VALIDATE):
    - Returns FINAL validation results for Airtable "Suggested Edits"
    - User sees what STILL needs manual fixing in the final post
 
-4. **CRITICAL:** Return the REVISED post with FINAL validation metadata:
+4. **STOP ITERATING** - Accept the current version:
+   - If final_score >= 17: ACCEPT IT (good enough)
+   - If final_score < 17: ONE MORE fix attempt, then STOP regardless
+   - DO NOT loop more than once - over-polishing destroys original voice
+
+5. **CRITICAL:** Return the REVISED post with FINAL validation metadata:
 
    Return JSON with REVISED content + FINAL validation:
    {{
