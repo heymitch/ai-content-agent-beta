@@ -14,14 +14,14 @@ from agents.linkedin_direct_api_agent import create_linkedin_post_workflow
 
 
 async def test_simple_post():
-    """Test creating a simple LinkedIn post"""
+    """Test creating a sophisticated LinkedIn post with contrarian philosophical angle"""
     print("\n" + "=" * 60)
-    print("TEST 1: Simple post creation")
+    print("TEST 1: Thermodynamic chip post (sophisticated contrarian)")
     print("=" * 60)
 
     result = await create_linkedin_post_workflow(
-        topic="Why direct API calls eliminate SDK hanging issues",
-        context="Focus on timeout control, debugging visibility, and reliability improvements",
+        topic="a linkedin post about the new thermodynamic computer chip",
+        context="I'm a kardashev scaler too, so I want to say what this means for garage builders as well as open source and business implications. My hopes are up as a garage builder, I like open source, and it makes me optimistic. Focus less on the news, assume my audience has heard of them, and focus on the contrarian philosophical hits",
         style="thought_leadership",
         user_id="test_user"
     )
