@@ -204,7 +204,7 @@ async def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
                 external_validation_native(
                     post=tool_input.get('post', '')
                 ),
-                timeout=30.0
+                timeout=120.0  # Quality check (60s) + GPTZero (45s) + buffer
             )
 
         elif tool_name == "apply_fixes":
@@ -226,7 +226,8 @@ async def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
         return result if result else json.dumps({"error": "Tool returned empty result"})
 
     except asyncio.TimeoutError:
-        logger.error(f"Tool timeout: {tool_name} exceeded 30s")
+        timeout_duration = "120s" if tool_name == "external_validation" else "30s"
+        logger.error(f"Tool timeout: {tool_name} exceeded {timeout_duration}")
         return json.dumps({"error": f"Tool timeout: {tool_name} exceeded 30s"})
     except Exception as e:
         logger.error(f"Tool error: {tool_name} - {e}")
