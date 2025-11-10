@@ -31,20 +31,20 @@ load_dotenv()
 logger = get_logger(__name__)
 
 
-# ================== TIER 3 TOOL IMPLEMENTATIONS (ALREADY NATIVE PYTHON) ==================
-# Import existing tool functions - they already use direct Anthropic API
+# ================== TIER 3 TOOL IMPLEMENTATIONS (NATIVE PYTHON) ==================
+# Import native tool implementations (unwrapped, directly callable)
 
-from agents.linkedin_sdk_agent import (
-    generate_5_hooks,
-    search_company_documents,
-    inject_proof_points,
-    create_human_draft,
-    validate_format,
-    search_viral_patterns,
-    score_and_iterate,
-    quality_check,
-    apply_fixes,
-    external_validation
+from tools.linkedin_native_tools import (
+    generate_5_hooks_native,
+    search_company_documents_native,
+    inject_proof_points_native,
+    create_human_draft_native,
+    validate_format_native,
+    search_viral_patterns_native,
+    score_and_iterate_native,
+    quality_check_native,
+    apply_fixes_native,
+    external_validation_native
 )
 
 # ================== TOOL SCHEMA DEFINITIONS FOR DIRECT API ==================
@@ -147,44 +147,91 @@ TOOL_SCHEMAS = [
 async def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
     """Execute a tool by name with timeout protection"""
 
-    # Map tool names to functions
-    tool_map = {
-        "search_company_documents": search_company_documents,
-        "generate_5_hooks": generate_5_hooks,
-        "create_human_draft": create_human_draft,
-        "inject_proof_points": inject_proof_points,
-        "quality_check": quality_check,
-        "external_validation": external_validation,
-        "apply_fixes": apply_fixes
-    }
-
-    if tool_name not in tool_map:
-        return json.dumps({"error": f"Unknown tool: {tool_name}"})
-
     try:
-        # Execute tool with 30s timeout
-        result = await asyncio.wait_for(
-            tool_map[tool_name](tool_input),
-            timeout=30.0
-        )
+        # Execute native tool functions with unpacked arguments (30s timeout)
+        result = None
 
-        # Extract text content from tool result
-        if isinstance(result, dict) and "content" in result:
-            # Tool returns {"content": [{"type": "text", "text": "..."}]}
-            content_blocks = result.get("content", [])
-            if content_blocks and isinstance(content_blocks, list):
-                for block in content_blocks:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        return block.get("text", "")
+        if tool_name == "search_company_documents":
+            result = await asyncio.wait_for(
+                search_company_documents_native(
+                    query=tool_input.get('query', ''),
+                    match_count=tool_input.get('match_count', 3),
+                    document_type=tool_input.get('document_type')
+                ),
+                timeout=30.0
+            )
 
-        # Fallback: return as JSON string
-        return json.dumps(result, ensure_ascii=False)
+        elif tool_name == "generate_5_hooks":
+            result = await asyncio.wait_for(
+                generate_5_hooks_native(
+                    topic=tool_input.get('topic', ''),
+                    context=tool_input.get('context', ''),
+                    target_audience=tool_input.get('target_audience', 'professionals')
+                ),
+                timeout=30.0
+            )
+
+        elif tool_name == "create_human_draft":
+            result = await asyncio.wait_for(
+                create_human_draft_native(
+                    topic=tool_input.get('topic', ''),
+                    hook=tool_input.get('hook', ''),
+                    context=tool_input.get('context', '')
+                ),
+                timeout=30.0
+            )
+
+        elif tool_name == "inject_proof_points":
+            result = await asyncio.wait_for(
+                inject_proof_points_native(
+                    draft=tool_input.get('draft', ''),
+                    topic=tool_input.get('topic', ''),
+                    industry=tool_input.get('industry', 'SaaS')
+                ),
+                timeout=30.0
+            )
+
+        elif tool_name == "quality_check":
+            result = await asyncio.wait_for(
+                quality_check_native(
+                    post=tool_input.get('post', '')
+                ),
+                timeout=30.0
+            )
+
+        elif tool_name == "external_validation":
+            result = await asyncio.wait_for(
+                external_validation_native(
+                    post=tool_input.get('post', '')
+                ),
+                timeout=30.0
+            )
+
+        elif tool_name == "apply_fixes":
+            result = await asyncio.wait_for(
+                apply_fixes_native(
+                    post=tool_input.get('post', ''),
+                    issues_json=tool_input.get('issues_json', '[]'),
+                    current_score=tool_input.get('current_score', 0),
+                    gptzero_ai_pct=tool_input.get('gptzero_ai_pct'),
+                    gptzero_flagged_sentences=tool_input.get('gptzero_flagged_sentences', [])
+                ),
+                timeout=30.0
+            )
+
+        else:
+            return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+        # Native tools return plain text/JSON strings (not wrapped in {"content": [...]} )
+        return result if result else json.dumps({"error": "Tool returned empty result"})
 
     except asyncio.TimeoutError:
         logger.error(f"Tool timeout: {tool_name} exceeded 30s")
         return json.dumps({"error": f"Tool timeout: {tool_name} exceeded 30s"})
     except Exception as e:
         logger.error(f"Tool error: {tool_name} - {e}")
+        import traceback
+        traceback.print_exc()
         return json.dumps({"error": f"Tool error: {str(e)}"})
 
 
