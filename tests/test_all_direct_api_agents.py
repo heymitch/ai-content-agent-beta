@@ -44,7 +44,7 @@ async def test_email():
     result = await create_email_workflow(
         topic="How AI agents are changing content strategy",
         context="Focus on practical tips for solo operators building AI-powered content systems",
-        email_type="Email_Value",
+        style="Email_Value",
         user_id="test_user"
     )
 
@@ -66,7 +66,7 @@ async def test_youtube():
     result = await create_youtube_script_workflow(
         topic="3 ways AI agents will transform content creation in 2025",
         context="Educational video for content creators, focus on actionable insights",
-        script_type="educational",
+        style="educational",
         user_id="test_user"
     )
 
