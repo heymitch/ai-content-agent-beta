@@ -66,10 +66,11 @@ def test_agent_sdk_search():
     # Create Agent SDK client (like Slack bot does)
     print("\n2. Creating Claude SDK client...")
 
+    # SDK uses ANTHROPIC_API_KEY from environment automatically
     options = ClaudeAgentOptions(
-        api_key=os.getenv('ANTHROPIC_API_KEY'),
         model="claude-sonnet-4-5-20250929",
-        tools=[search_company_documents_tool]
+        tools=[search_company_documents_tool],
+        permission_mode="bypassPermissions"
     )
 
     client = ClaudeSDKClient(options=options)
