@@ -84,6 +84,11 @@ def search_company_documents(
         # Convert "all" to None for no filtering
         filter_value = None if document_type == "all" else document_type
 
+        print(f"🔍 Searching company_documents:")
+        print(f"   Query: {query}")
+        print(f"   Filter: {filter_value}")
+        print(f"   Threshold: 0.5")
+
         result = supabase.rpc(
             'match_company_documents',
             {
@@ -93,6 +98,11 @@ def search_company_documents(
                 'match_count': match_count
             }
         ).execute()
+
+        print(f"   Results: {len(result.data)} matches")
+        if result.data:
+            for item in result.data:
+                print(f"   - {item.get('title')} (similarity: {item.get('similarity', 0):.2f})")
 
         # Format results
         matches = []
