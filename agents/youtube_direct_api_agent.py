@@ -826,7 +826,7 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
 
 # ================== INTEGRATION FUNCTION (SAME INTERFACE AS SDK VERSION) ==================
 
-async def create_youtube_workflow(
+async def create_youtube_script_workflow(
     topic: str,
     context: str = "",
     style: str = "thought_leadership",
@@ -836,11 +836,11 @@ async def create_youtube_workflow(
     publish_date: Optional[str] = None
 ) -> str:
     """
-    Main entry point for Email content creation using direct API
+    Main entry point for YouTube script creation using direct API
     Drop-in replacement for SDK version - same signature, same return format
 
     Args:
-        topic: Main topic for the post
+        topic: Main topic for the script
         context: Additional context
         style: Content style
         channel_id: Slack channel ID (for Airtable/Supabase saves)
