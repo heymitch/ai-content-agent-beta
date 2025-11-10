@@ -96,15 +96,27 @@ async def search_knowledge_base(args):
 )
 async def search_company_documents(args):
     """Search company documents for context enrichment"""
+    print(f"\n🔧 TOOL WRAPPER: search_company_documents called")
+    print(f"   Args received: {args}")
+
     query = args.get('query', '')
     match_count = args.get('match_count', 3)
     document_type = args.get('document_type')  # Optional: 'case_study', 'testimonial', 'product_doc'
+
+    print(f"   Calling _search_company_docs_func with:")
+    print(f"      query={query}")
+    print(f"      match_count={match_count}")
+    print(f"      document_type={document_type}")
 
     result = _search_company_docs_func(
         query=query,
         match_count=match_count,
         document_type=document_type
     )
+
+    print(f"   Result type: {type(result)}")
+    print(f"   Result length: {len(result) if result else 0}")
+    print(f"   Result preview: {result[:200] if result else 'NONE'}")
 
     return {
         "content": [{
@@ -121,15 +133,27 @@ async def search_company_documents(args):
 )
 async def search_content_examples(args):
     """Search content examples semantically"""
+    print(f"\n🔧 TOOL WRAPPER: search_content_examples called")
+    print(f"   Args received: {args}")
+
     query = args.get('query', '')
     platform = args.get('platform')  # Optional: 'LinkedIn', 'Twitter', 'Email', 'Blog'
     match_count = args.get('match_count', 5)
+
+    print(f"   Calling _search_content_examples_func with:")
+    print(f"      query={query}")
+    print(f"      platform={platform}")
+    print(f"      match_count={match_count}")
 
     result = _search_content_examples_func(
         query=query,
         platform=platform,
         match_count=match_count
     )
+
+    print(f"   Result type: {type(result)}")
+    print(f"   Result length: {len(result) if result else 0}")
+    print(f"   Result preview: {result[:200] if result else 'NONE'}")
 
     return {
         "content": [{
