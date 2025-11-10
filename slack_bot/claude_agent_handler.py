@@ -91,7 +91,7 @@ async def search_knowledge_base(args):
 
 @tool(
     "search_company_documents",
-    "Search user-uploaded company documents (case studies, testimonials, product docs). Use BEFORE asking user for context.",
+    "Search company documents using semantic RAG. Leave document_type=None to search ALL documents semantically (RECOMMENDED). Only filter by document_type if user explicitly requests case studies, testimonials, or product docs. Use BEFORE asking user for context.",
     {"query": str, "match_count": int, "document_type": str}
 )
 async def search_company_documents(args):
@@ -133,7 +133,7 @@ async def search_company_documents(args):
 
 @tool(
     "search_content_examples",
-    "Search 700+ proven content examples from Cole/Dickie using semantic RAG. Find examples matching a style, topic, or content pattern for content principles and templates.",
+    "Search 700+ proven content examples using semantic RAG across ALL platforms. Leave platform=None to search everything semantically (RECOMMENDED). Only specify platform if user explicitly requests LinkedIn, X, Email, or YouTube content. Returns examples matching style, topic, or content pattern.",
     {"query": str, "platform": str, "match_count": int}
 )
 async def search_content_examples(args):
