@@ -15,7 +15,7 @@ def test_agent_sdk_search():
     print("(Simulating Slack bot behavior)")
     print("=" * 80)
 
-    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, tool
+    from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, tool, create_sdk_mcp_server
     from tools.company_documents import search_company_documents as _search_func
 
     # Create wrapped tool (like claude_agent_handler does)
@@ -63,20 +63,31 @@ def test_agent_sdk_search():
 
     print("   ✅ Tool wrapped")
 
+    # Create MCP server with tool
+    print("\n2. Creating MCP server...")
+
+    mcp_server = create_sdk_mcp_server(
+        name="test_tools",
+        tools=[search_company_documents_tool]
+    )
+
+    print("   ✅ MCP server created")
+
     # Create Agent SDK client (like Slack bot does)
-    print("\n2. Creating Claude SDK client...")
+    print("\n3. Creating Claude SDK client...")
 
     # SDK uses ANTHROPIC_API_KEY from environment automatically
     options = ClaudeAgentOptions(
         model="claude-sonnet-4-5-20250929",
-        tools=[search_company_documents_tool],
+        mcp_servers={"test_tools": mcp_server},
+        allowed_tools=["mcp__test_tools__*"],
         permission_mode="bypassPermissions"
     )
 
     client = ClaudeSDKClient(options=options)
 
     print("   ✅ Client created")
-    print("\n3. Sending message to agent:")
+    print("\n4. Sending message to agent:")
     print("   'Search our company documents for case studies about AI agents automation'")
     print()
     print("-" * 80)
@@ -86,12 +97,12 @@ def test_agent_sdk_search():
         "Search our company documents for case studies or testimonials about AI agents and automation. Tell me what you find."
     )
 
-    print("\n4. Agent response:")
+    print("\n5. Agent response:")
     print("-" * 80)
     print(response)
     print("-" * 80)
 
-    print("\n5. Check the output above for:")
+    print("\n6. Check the output above for:")
     print("   - 🔗 Connecting to Supabase: [which URL?]")
     print("   - 🔍 Searching company_documents: [what query?]")
     print("   - ✅ RPC call completed: [how many results?]")
