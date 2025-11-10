@@ -7,10 +7,8 @@
 --
 -- Applied: 2025-01-10
 
--- Drop existing function
-DROP FUNCTION IF EXISTS match_content_examples(vector(1536), text, double precision, integer) CASCADE;
-
--- Recreate with case-insensitive platform filter
+-- Update function with case-insensitive platform filter
+-- Using CREATE OR REPLACE to handle any type differences
 CREATE OR REPLACE FUNCTION match_content_examples(
   query_embedding vector(1536),
   filter_platform text DEFAULT NULL,
