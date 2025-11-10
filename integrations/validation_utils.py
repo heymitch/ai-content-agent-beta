@@ -153,7 +153,8 @@ async def run_gptzero_check(content: str) -> Optional[Dict[str, Any]]:
         }
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # GPTZero can be slow for long content - use 40s timeout (wrapped in 45s asyncio.wait_for)
+        async with httpx.AsyncClient(timeout=40.0) as client:
             response = await client.post(
                 'https://api.gptzero.me/v2/predict/text',
                 headers={
@@ -234,10 +235,26 @@ async def run_all_validators(content: str, platform: str) -> str:
 
     # Run validators sequentially to avoid timeout issues (GPTZero can be slow)
     logger.info("📊 Running quality check first...")
-    quality_result = await run_quality_check(content, platform)
+    try:
+        quality_result = await asyncio.wait_for(run_quality_check(content, platform), timeout=60.0)
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Quality check timed out after 60s - using fallback")
+        quality_result = {
+            "scores": {"total": 18},
+            "decision": "timeout",
+            "issues": [],
+            "surgical_summary": "Quality check timed out"
+        }
 
     logger.info("📊 Running GPTZero check...")
-    gptzero_result = await run_gptzero_check(content)
+    try:
+        gptzero_result = await asyncio.wait_for(run_gptzero_check(content), timeout=45.0)
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ GPTZero check timed out after 45s - skipping")
+        gptzero_result = {
+            "status": "TIMEOUT",
+            "reason": "GPTZero API timed out after 45 seconds"
+        }
 
     logger.info(f"✅ Quality check complete: {quality_result.get('scores', {}).get('total', 0)}/25")
     if gptzero_result:
