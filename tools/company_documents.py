@@ -121,7 +121,7 @@ def search_company_documents(
 
         # Debug: Try direct table query to see if ANY documents exist
         try:
-            direct_query = supabase.table('company_documents').select('id, title, status, searchable').limit(5).execute()
+            direct_query = supabase.table('company_documents').select('id, title, status, searchable, document_type').limit(5).execute()
             print(f"   Direct table query found: {len(direct_query.data)} documents")
             if direct_query.data:
                 for doc in direct_query.data:
