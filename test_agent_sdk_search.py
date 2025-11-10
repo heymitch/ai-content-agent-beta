@@ -93,7 +93,7 @@ async def test_agent_sdk_search():
     print("   ✅ Client connected")
 
     print("\n5. Sending message to agent:")
-    print("   'Search our company documents for case studies about AI agents automation'")
+    print("   'Search our company documents and content examples for the most relevant structure about starting to write online'")
     print()
     print("-" * 80)
 
