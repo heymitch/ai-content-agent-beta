@@ -8,7 +8,7 @@
 -- Applied: 2025-01-10
 
 -- Drop existing function
-DROP FUNCTION IF EXISTS match_content_examples(vector(1536), text, double precision, integer);
+DROP FUNCTION IF EXISTS match_content_examples(vector(1536), text, double precision, integer) CASCADE;
 
 -- Recreate with case-insensitive platform filter
 CREATE OR REPLACE FUNCTION match_content_examples(
