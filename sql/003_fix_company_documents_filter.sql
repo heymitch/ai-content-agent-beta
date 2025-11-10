@@ -25,7 +25,7 @@ RETURNS TABLE (
   content text,
   document_type text,
   voice_description text,
-  signature_phrases text[],
+  signature_phrases jsonb,
   similarity float
 )
 LANGUAGE sql STABLE
