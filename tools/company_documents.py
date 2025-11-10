@@ -20,7 +20,9 @@ import os
 from typing import Optional
 from dotenv import load_dotenv
 
-load_dotenv()
+# Force override environment variables with .env file values
+# (VSCode/IDE may set stale SUPABASE vars from other projects)
+load_dotenv(override=True)
 
 
 def search_company_documents(
@@ -68,10 +70,15 @@ def search_company_documents(
 
         # Initialize clients
         openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-        supabase = create_client(
-            os.getenv('SUPABASE_URL'),
-            os.getenv('SUPABASE_KEY')
-        )
+
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_KEY')
+
+        # Debug: Log which Supabase project we're connecting to
+        print(f"🔗 Connecting to Supabase: {supabase_url}")
+        print(f"   Key prefix: {supabase_key[:20] if supabase_key else 'MISSING'}...")
+
+        supabase = create_client(supabase_url, supabase_key)
 
         # Generate embedding for query
         response = openai_client.embeddings.create(
@@ -79,6 +86,11 @@ def search_company_documents(
             input=query
         )
         query_embedding = response.data[0].embedding
+
+        # Convert to JSON string format to match how embeddings are stored in DB
+        # (DB stores embeddings as JSON strings, not native vectors)
+        import json as json_lib
+        query_embedding_str = json_lib.dumps(query_embedding)
 
         # Search company_documents table using RPC function
         # Convert "all" to None for no filtering
@@ -88,6 +100,8 @@ def search_company_documents(
         print(f"   Query: {query}")
         print(f"   Filter: {filter_value}")
         print(f"   Threshold: 0.5")
+        print(f"   Match count requested: {match_count}")
+        print(f"   Embedding dimensions: {len(query_embedding)}")
 
         result = supabase.rpc(
             'match_company_documents',
@@ -99,7 +113,10 @@ def search_company_documents(
             }
         ).execute()
 
+        print(f"   ✅ RPC call completed")
         print(f"   Results: {len(result.data)} matches")
+        if len(result.data) > 0:
+            print(f"   Top match: {result.data[0].get('title')} (similarity: {result.data[0].get('similarity', 0):.3f})")
         print(f"   Raw result.data: {result.data}")
 
         # Debug: Try direct table query to see if ANY documents exist
