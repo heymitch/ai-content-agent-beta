@@ -7,8 +7,11 @@
 --
 -- Applied: 2025-01-10
 
--- Update function with case-insensitive platform filter
--- Using CREATE OR REPLACE to handle any type differences
+-- Drop existing function with EXACT signature that exists in database
+-- The database has: float (not double precision), decimal (not numeric), similarity float (not double precision)
+DROP FUNCTION IF EXISTS match_content_examples(vector(1536), text, float, integer) CASCADE;
+
+-- Recreate with case-insensitive platform filter AND correct return types
 CREATE OR REPLACE FUNCTION match_content_examples(
   query_embedding vector(1536),
   filter_platform text DEFAULT NULL,
