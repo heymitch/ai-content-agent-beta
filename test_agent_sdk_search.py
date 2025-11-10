@@ -87,7 +87,12 @@ async def test_agent_sdk_search():
     client = ClaudeSDKClient(options=options)
 
     print("   ✅ Client created")
-    print("\n4. Sending message to agent:")
+
+    print("\n4. Connecting to client...")
+    await client.connect()
+    print("   ✅ Client connected")
+
+    print("\n5. Sending message to agent:")
     print("   'Search our company documents for case studies about AI agents automation'")
     print()
     print("-" * 80)
@@ -97,7 +102,7 @@ async def test_agent_sdk_search():
 
     await client.query(message)
 
-    print("\n5. Agent response:")
+    print("\n6. Agent response:")
     print("-" * 80)
 
     # Collect response
@@ -109,7 +114,7 @@ async def test_agent_sdk_search():
     print()
     print("-" * 80)
 
-    print("\n6. Check the output above for:")
+    print("\n7. Check the output above for:")
     print("   - 🔗 Connecting to Supabase: [which URL?]")
     print("   - 🔍 Searching company_documents: [what query?]")
     print("   - ✅ RPC call completed: [how many results?]")
