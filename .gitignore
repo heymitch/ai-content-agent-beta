@@ -91,7 +91,7 @@ ANALYTICS_PLAN.md
 ANALYTICS_TESTING.md
 
 # Test files in root (keep tests/ folder)
-/test_*.py
+/test_agent_sdk_*.py
 /*_test.py
 run_tests.sh
 test_multi_platform_*.py
