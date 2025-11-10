@@ -108,10 +108,15 @@ async def search_company_documents(args):
     print(f"      match_count={match_count}")
     print(f"      document_type={document_type}")
 
-    result = _search_company_docs_func(
-        query=query,
-        match_count=match_count,
-        document_type=document_type
+    # Run blocking I/O in thread pool to avoid blocking event loop
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: _search_company_docs_func(
+            query=query,
+            match_count=match_count,
+            document_type=document_type
+        )
     )
 
     print(f"   Result type: {type(result)}")
@@ -145,10 +150,15 @@ async def search_content_examples(args):
     print(f"      platform={platform}")
     print(f"      match_count={match_count}")
 
-    result = _search_content_examples_func(
-        query=query,
-        platform=platform,
-        match_count=match_count
+    # Run blocking I/O in thread pool to avoid blocking event loop
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: _search_content_examples_func(
+            query=query,
+            platform=platform,
+            match_count=match_count
+        )
     )
 
     print(f"   Result type: {type(result)}")

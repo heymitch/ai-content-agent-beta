@@ -1,0 +1,399 @@
+{
+    "name": "*Auto-Publish Template",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 13
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          0
+        ],
+        "id": "1eb0e93a-b153-4177-8f67-ff4317c5b864",
+        "name": "Schedule Trigger"
+      },
+      {
+        "parameters": {
+          "operation": "search",
+          "base": {
+            "__rl": true,
+            "value": "<YOUR_AIRTABLE_BASE_ID>",
+            "mode": "list",
+            "cachedResultName": "Content Calendar",
+            "cachedResultUrl": "https://airtable.com/<YOUR_AIRTABLE_BASE_ID>"
+          },
+          "table": {
+            "__rl": true,
+            "value": "<YOUR_AIRTABLE_TABLE_ID>",
+            "mode": "list",
+            "cachedResultName": "Content Calendar",
+            "cachedResultUrl": "https://airtable.com/<YOUR_AIRTABLE_BASE_ID>/<YOUR_AIRTABLE_TABLE_ID>"
+          },
+          "filterByFormula": "=AND(   {Status} = 'Publish It!',   IS_BEFORE({Publish Date}, NOW()) )",
+          "options": {
+            "downloadFields": [
+              "Media/Thumbnail"
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.airtable",
+        "typeVersion": 2.1,
+        "position": [
+          208,
+          0
+        ],
+        "id": "a002eafc-a10a-47b9-be9c-afa7ae605223",
+        "name": "Search records",
+        "credentials": {
+          "airtableTokenApi": {
+            "id": "<YOUR_AIRTABLE_CREDENTIAL_ID>",
+            "name": "<YOUR_AIRTABLE_CREDENTIAL_NAME>"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.ayrshare.com/api/post",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBearerAuth",
+          "sendBody": true,
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "=post",
+                "value": "={{ $json['Body Content'] }}"
+              },
+              {
+                "name": "platforms",
+                "value": "={{ $json.Platform[0] }}"
+              },
+              {
+                "name": "mediaUrls",
+                "value": "={{ $json['Media/Thumbnail'] }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          400,
+          0
+        ],
+        "id": "ed6fa428-0023-4b97-9594-808def1eb5f5",
+        "name": "HTTP Request",
+        "credentials": {
+          "httpBearerAuth": {
+            "id": "<YOUR_AYRSHARE_BEARER_ID>",
+            "name": "<YOUR_AYRSHARE_BEARER_NAME>"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "base": {
+            "__rl": true,
+            "value": "<YOUR_AIRTABLE_BASE_ID>",
+            "mode": "list",
+            "cachedResultName": "Content Calendar",
+            "cachedResultUrl": "https://airtable.com/<YOUR_AIRTABLE_BASE_ID>"
+          },
+          "table": {
+            "__rl": true,
+            "value": "<YOUR_AIRTABLE_TABLE_ID>",
+            "mode": "list",
+            "cachedResultName": "Content Calendar",
+            "cachedResultUrl": "https://airtable.com/<YOUR_AIRTABLE_BASE_ID>/<YOUR_AIRTABLE_TABLE_ID>"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "Status": "Published"
+            },
+            "matchingColumns": [
+              "id"
+            ],
+            "schema": [
+              {
+                "id": "id",
+                "displayName": "id",
+                "required": false,
+                "defaultMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": true,
+                "removed": false
+              },
+              {
+                "id": "Post Hook",
+                "displayName": "Post Hook",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Body Content",
+                "displayName": "Body Content",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Media/Thumbnail",
+                "displayName": "Media/Thumbnail",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Status",
+                "displayName": "Status",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Backlog",
+                    "value": "Backlog"
+                  },
+                  {
+                    "name": "Draft",
+                    "value": "Draft"
+                  },
+                  {
+                    "name": "Edit with AI",
+                    "value": "Edit with AI"
+                  },
+                  {
+                    "name": "Needs Review",
+                    "value": "Needs Review"
+                  },
+                  {
+                    "name": "Ready",
+                    "value": "Ready"
+                  },
+                  {
+                    "name": "Publish It!",
+                    "value": "Publish It!"
+                  },
+                  {
+                    "name": "Published",
+                    "value": "Published"
+                  },
+                  {
+                    "name": "Declined",
+                    "value": "Declined"
+                  },
+                  {
+                    "name": "Disqualified",
+                    "value": "Disqualified"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Client",
+                "displayName": "Client",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "options",
+                "options": [
+                  {
+                    "name": "Heymitch",
+                    "value": "Heymitch"
+                  },
+                  {
+                    "name": "DiscipleAI",
+                    "value": "DiscipleAI"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Platform",
+                "displayName": "Platform",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "array",
+                "options": [
+                  {
+                    "name": "X",
+                    "value": "X"
+                  },
+                  {
+                    "name": "Substack",
+                    "value": "Substack"
+                  },
+                  {
+                    "name": "Linkedin",
+                    "value": "Linkedin"
+                  },
+                  {
+                    "name": "Kit/Email",
+                    "value": "Kit/Email"
+                  },
+                  {
+                    "name": "Youtube",
+                    "value": "Youtube"
+                  }
+                ],
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Publish Date",
+                "displayName": "Publish Date",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "dateTime",
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Suggested Edits",
+                "displayName": "Suggested Edits",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "% Score",
+                "displayName": "% Score",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "number",
+                "readOnly": false,
+                "removed": false
+              },
+              {
+                "id": "Edited Time",
+                "displayName": "Edited Time",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": true,
+                "removed": true
+              },
+              {
+                "id": "Created",
+                "displayName": "Created",
+                "required": false,
+                "defaultMatch": false,
+                "canBeUsedToMatch": true,
+                "display": true,
+                "type": "string",
+                "readOnly": true,
+                "removed": true
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.airtable",
+        "typeVersion": 2.1,
+        "position": [
+          608,
+          0
+        ],
+        "id": "8dec1c3a-1da5-4081-b47e-9b5cf4c79147",
+        "name": "Update record",
+        "credentials": {
+          "airtableTokenApi": {
+            "id": "<YOUR_AIRTABLE_CREDENTIAL_ID>",
+            "name": "<YOUR_AIRTABLE_CREDENTIAL_NAME>"
+          }
+        }
+      }
+    ],
+    "pinData": {},
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Search records",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Search records": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP Request": {
+        "main": [
+          [
+            {
+              "node": "Update record",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "versionId": "TEMPLATE_VERSION_ID",
+    "meta": {
+      "templateCredsSetupCompleted": false,
+      "instanceId": "TEMPLATE_INSTANCE_ID"
+    },
+    "id": "TEMPLATE_WORKFLOW_ID",
+    "tags": []
+  }

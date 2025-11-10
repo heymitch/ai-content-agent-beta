@@ -100,6 +100,17 @@ def search_company_documents(
         ).execute()
 
         print(f"   Results: {len(result.data)} matches")
+        print(f"   Raw result.data: {result.data}")
+
+        # Debug: Try direct table query to see if ANY documents exist
+        try:
+            direct_query = supabase.table('company_documents').select('id, title, status, searchable').limit(5).execute()
+            print(f"   Direct table query found: {len(direct_query.data)} documents")
+            if direct_query.data:
+                for doc in direct_query.data:
+                    print(f"      - {doc}")
+        except Exception as direct_err:
+            print(f"   Direct query error: {direct_err}")
         if result.data:
             for item in result.data:
                 print(f"   - {item.get('title')} (similarity: {item.get('similarity', 0):.2f})")
