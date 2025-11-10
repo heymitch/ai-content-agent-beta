@@ -11,15 +11,16 @@ async def test_agent_sdk_search():
     """Test Agent SDK calling search_company_documents like the Slack bot does"""
 
     print("=" * 80)
-    print("TESTING CLAUDE AGENT SDK COMPANY DOCUMENTS SEARCH")
-    print("(Simulating Slack bot behavior)")
+    print("TESTING CLAUDE AGENT SDK RAG SEARCH")
+    print("(Company Documents + Content Examples)")
     print("=" * 80)
 
     from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, tool, create_sdk_mcp_server
-    from tools.company_documents import search_company_documents as _search_func
+    from tools.company_documents import search_company_documents as _search_company_docs
+    from tools.search_tools import search_content_examples as _search_content_examples
 
-    # Create wrapped tool (like claude_agent_handler does)
-    print("\n1. Creating wrapped search_company_documents tool...")
+    # Create wrapped tools (like claude_agent_handler does)
+    print("\n1. Creating wrapped search tools...")
 
     @tool(
         "search_company_documents",
@@ -44,7 +45,7 @@ async def test_agent_sdk_search():
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
-            lambda: _search_func(
+            lambda: _search_company_docs(
                 query=query,
                 match_count=match_count,
                 document_type=document_type
@@ -61,14 +62,54 @@ async def test_agent_sdk_search():
             }]
         }
 
-    print("   ✅ Tool wrapped")
+    @tool(
+        "search_content_examples",
+        "Search proven content examples (90-100% human score posts) for writing patterns",
+        {"query": str, "platform": str, "match_count": int}
+    )
+    async def search_content_examples_tool(args):
+        """Search content examples wrapper"""
+        print(f"\n🔧 TOOL WRAPPER: search_content_examples called")
+        print(f"   Args received: {args}")
 
-    # Create MCP server with tool
+        query = args.get('query', '')
+        platform = args.get('platform')
+        match_count = args.get('match_count', 5)
+
+        print(f"   Calling search function with:")
+        print(f"      query={query}")
+        print(f"      platform={platform}")
+        print(f"      match_count={match_count}")
+
+        # Run blocking I/O in thread pool
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: _search_content_examples(
+                query=query,
+                platform=platform,
+                match_count=match_count
+            )
+        )
+
+        print(f"   Result length: {len(result) if result else 0}")
+        print(f"   Result preview: {result[:200] if result else 'NONE'}")
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": result
+            }]
+        }
+
+    print("   ✅ Tools wrapped")
+
+    # Create MCP server with both tools
     print("\n2. Creating MCP server...")
 
     mcp_server = create_sdk_mcp_server(
         name="test_tools",
-        tools=[search_company_documents_tool]
+        tools=[search_company_documents_tool, search_content_examples_tool]
     )
 
     print("   ✅ MCP server created")
@@ -97,8 +138,8 @@ async def test_agent_sdk_search():
     print()
     print("-" * 80)
 
-    # Send message that should trigger search
-    message = "Search our company documents for case studies or testimonials about AI agents and automation. Tell me what you find."
+    # Send message that should trigger both searches
+    message = "Search our company documents and content examples for the most relevant structure about starting to write online. I want to see proven examples and any brand guidelines."
 
     await client.query(message)
 
