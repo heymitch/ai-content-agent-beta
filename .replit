@@ -1,4 +1,4 @@
-run = "npm start"
+run = "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && find . -type f -name '*.pyc' -delete 2>/dev/null || true && npm start"
 language = "python3"
 modules = ["python-3.11", "nodejs-20"]
 
@@ -10,7 +10,7 @@ PATH = "/home/runner/.npm-global/bin:${PATH}"
 channel = "stable-24_05"
 
 [deployment]
-build = ["sh", "-c", "pip install -r requirements.txt && npm install && npm install -g @anthropic-ai/claude-code"]
+build = ["sh", "-c", "find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && find . -type f -name '*.pyc' -delete 2>/dev/null || true && pip install -r requirements.txt && npm install && npm install -g @anthropic-ai/claude-code"]
 run = ["sh", "-c", "npm start"]
 deploymentTarget = "vm"
 
