@@ -2237,12 +2237,19 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 # Send the query (with files if present)
                 print(f"[{request_id}] 📨 Sending query to Claude SDK...")
                 if file_blocks:
-                    # Multimodal message with text + files
-                    multimodal_message = [
-                        {"type": "text", "text": contextualized_message}
-                    ] + file_blocks
-                    print(f"[{request_id}] 🖼️  Sending multimodal message: 1 text block + {len(file_blocks)} file block(s)")
-                    await client.query(multimodal_message)
+                    # Embed file content in text message (SDK query() only accepts strings)
+                    # Extract text from file blocks and append to message
+                    file_content_parts = []
+                    for block in file_blocks:
+                        if block.get("type") == "text":
+                            file_content_parts.append(block["text"])
+                        elif block.get("type") in ["image", "document"]:
+                            # For images/PDFs, add a note (can't embed in text-only SDK)
+                            file_content_parts.append(f"\n[Note: {block['type'].title()} file attached but cannot be processed in text-only mode]\n")
+
+                    combined_message = contextualized_message + "\n\n" + "\n\n".join(file_content_parts)
+                    print(f"[{request_id}] 📎 Including {len(file_blocks)} file(s) in message")
+                    await client.query(combined_message)
                 else:
                     # Text-only message
                     await client.query(contextualized_message)
