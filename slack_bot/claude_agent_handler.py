@@ -2386,8 +2386,18 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             print(f"[{request_id}] 🚀 Using batch mode (default)")
 
         try:
-            # Add 5-minute overall timeout to prevent infinite hangs
-            async with asyncio.timeout(300):
+            # Conditional timeout based on mode:
+            # - Batch mode: NO timeout (batch orchestrator handles per-post timeouts & failures)
+            # - Regular mode: 5 minutes to prevent infinite hangs
+            # This allows batch mode to handle 50+ posts without hitting SDK timeout
+            timeout_context = asyncio.timeout(None if self._batch_mode_enabled else 300)
+
+            if self._batch_mode_enabled:
+                print(f"[{request_id}] ⏱️ No SDK timeout (batch orchestrator handles individual post failures)")
+            else:
+                print(f"[{request_id}] ⏱️ 5-minute timeout enabled (conversational mode)")
+
+            async with timeout_context:
                 # Get or create cached session for this thread
                 client = await self._get_or_create_session(thread_ts, request_id)
 

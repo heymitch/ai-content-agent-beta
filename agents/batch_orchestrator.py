@@ -704,7 +704,7 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
                 thread_ts=thread_ts,
                 user_id=user_id
             ),
-            timeout=300  # 5 minutes max per post (normal: 2-4 min, complex: 4-5 min)
+            timeout=360  # 6 minutes max per post (allows for validation-heavy posts with GPTZero)
         )
 
         # CRITICAL: Force cleanup to prevent connection exhaustion
@@ -773,14 +773,14 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
         }
 
     except asyncio.TimeoutError:
-        # Hard timeout hit - post took >5 minutes (likely connection hang)
-        print(f"   ⏱️ TIMEOUT: Post {post_num} exceeded 5-minute limit")
-        print(f"   This usually means SDK connection hung - check Replit connection limits")
+        # Hard timeout hit - post took >6 minutes (likely connection hang or validation loop)
+        print(f"   ⏱️ TIMEOUT: Post {post_num} exceeded 6-minute limit")
+        print(f"   This usually means validation took too long (GPTZero + multiple iterations)")
 
         # Send timeout progress update (non-blocking, no user tag) - only for batches > 1
         if total_posts > 1:
             timeout_message = (
-                f"⚠️ Post {post_num}/{total_posts} timed out. Continuing..."
+                f"⚠️ Post {post_num}/{total_posts} timed out (6 min limit). Continuing..."
             )
             _send_progress_update(timeout_message)
 
