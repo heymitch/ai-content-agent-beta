@@ -1,0 +1,68 @@
+# Roadmap - November 11, 2025
+
+## Action Items
+
+### High Priority
+- [ ] **Fix newsletter slop** (Valentina)
+  - Issue: Newsletter content quality issues
+  - Owner: Valentina
+  - Status: Pending
+
+- [ ] **Aivars' tweets not working - fix Airtable integration for Twitter**
+  - Issue: Twitter integration broken for Aivars' account
+  - Root cause: Airtable integration issues
+  - Status: Pending investigation
+
+### Feature Additions
+- [ ] **Add Perplexity tool to the agent**
+  - Tool: Perplexity API for enhanced research/search
+  - Location: Add to `slack_bot/claude_agent_handler.py`
+  - Reference: `agent-builder-reference/tool-creation-guide.md`
+
+- [ ] **File reading ability**
+  - Add tool to Slack bot for reading uploaded files
+  - Add to agent tools list
+  - Use cases: Read PDFs, docs, images uploaded to Slack
+  - Reference: Claude SDK docs for file handling
+
+### Infrastructure
+- [ ] **Investigate Claude memory integration**
+  - Research: Claude's built-in memory capabilities
+  - Goal: Improve conversation continuity across sessions
+  - Docs: https://docs.anthropic.com/en/docs/build-with-claude/memory
+
+- [ ] **n8n templates completed first**
+  - Priority: Complete before other workflow automations
+  - Status: In progress
+
+---
+
+## Notes
+- Items are listed in priority order within each section
+- Reference `agent-builder-reference/` for implementation patterns
+- Test all integrations in dev before deploying to production
+
+---
+
+## Completed Items
+
+### ✅ Fixed newsletter slop (Valentina)
+- Added email_type parameter handling (Value/Direct/Indirect/Weekly Update)
+- Word count guidance per type (400-500 for Value, 100-200 for Direct, etc.)
+- Two-pass validation already implemented in prompts
+- Renamed Email_Tuesday → Weekly Update (not restricted to Tuesday)
+- **Branch**: `fix/direct-api-linkedin-agent` (commits 1a9417b, c685e35)
+
+### ✅ Fixed Aivars' Twitter/Airtable integration
+- Fixed `platform='email'` bug in twitter_direct_api_agent (was tagging Twitter posts as email)
+- Fixed 6 copy-paste errors (instagram/email references)
+- Added Airtable + Supabase saves to twitter_haiku_agent (was missing entirely)
+- Added 'X' as Twitter platform alias
+- Improved single/thread detection keywords
+- **Branch**: `fix/direct-api-linkedin-agent` (commits e955989, 1a9417b)
+
+### ✅ Fixed Airtable status mapping
+- Adjusted thresholds: >= 24/25 → Ready, >= 18/25 → Draft, < 18/25 → Needs Review
+- Applied to all direct API agents (email, twitter, linkedin)
+- **Branch**: `fix/direct-api-linkedin-agent` (commits 26673b5, 53e6131, c685e35)
+
