@@ -88,3 +88,25 @@
   - Redeploy application to pick up latest changes
 - **Branch**: `fix/direct-api-linkedin-agent` (commits 0f31cbd, c0ceb38, 8cf147f)
 
+### ✅ Fixed Airtable URL + Slack Formatting
+- **Fixed Airtable URL bug**: Changed from `table_name` to `table.id` for proper URL construction
+- **Fixed Slack markdown**: Added `mrkdwn=True` to all batch orchestrator messages (7 locations)
+- **Impact**: Real clickable Airtable URLs, proper bold text rendering (no asterisks)
+- **Branch**: `fix/direct-api-linkedin-agent` (commits 4ba7e04, 405880b)
+
+### ✅ Added Calendar Reaction Handler
+- React with ✅, 📅, or 🗓️ on Haiku-generated posts to save to Airtable
+- **✅ = Draft** (save for review)
+- **📅/🗓️ = Scheduled** (ready to publish)
+- Returns confirmation with clickable Airtable URL
+- Works on Twitter posts generated via Haiku fast path
+- **Branch**: `fix/direct-api-linkedin-agent` (commit f79438f)
+
+### ✅ Added Bidirectional Airtable Access
+- **search_airtable_posts**: Search content calendar by platform, status, or date
+- **get_airtable_post**: Retrieve specific post by record ID for rewriting
+- **Workflow enabled**: Client edits in Airtable (via Google Docs) → Agent retrieves → Strategizes → Rewrites → Saves back
+- Returns full metadata: content, status, suggested edits, timestamps, clickable URLs
+- Added to agent capabilities and system prompt
+- **Branch**: `fix/direct-api-linkedin-agent` (commit d013b1b)
+
