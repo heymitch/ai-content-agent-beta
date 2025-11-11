@@ -442,12 +442,15 @@ async def create_twitter_post_workflow(
     
     if result['success']:
         # Return clean format for Slack (no emoji indicators in post)
+        airtable_url = result.get('airtable_url', '[Not Available]')
         return f"""✅ Twitter Post Generated
 
 {result['post']}
 
 Hook: {result['hook']}
-Score: {result['score']}/5 (Haiku fast path)"""
+Score: {result['score']}/5 (Haiku fast path)
+
+📊 Airtable: {airtable_url}"""
     else:
         return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
 

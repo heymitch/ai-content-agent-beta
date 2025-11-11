@@ -73,7 +73,7 @@ async def execute_sequential_batch(
             channel=channel,
             thread_ts=thread_ts,
             text=f"⏳ Creating post {post_num}/{len(plan['posts'])}...\n"
-                 f"Platform: **{post_spec['platform'].capitalize()}**\n"
+                 f"Platform: *{post_spec['platform'].capitalize()}*\n"
                  f"Topic: {post_spec['topic'][:100]}",
             mrkdwn=True
         )
@@ -118,7 +118,7 @@ async def execute_sequential_batch(
                 thread_ts=thread_ts,
                 text=f"✅ Post {post_num}/{len(plan['posts'])} complete!\n"
                      f"📊 <{airtable_url}|View in Airtable>\n"
-                     f"🎯 Quality Score: **{score}/25**",
+                     f"🎯 Quality Score: *{score}/25*",
                 mrkdwn=True
             )
 
@@ -147,13 +147,13 @@ async def execute_sequential_batch(
             stats = context_mgr.get_stats()
 
             checkpoint_msg = (
-                f"✅ **Checkpoint: Posts {post_num-9}-{post_num} complete!**\n\n"
+                f"✅ *Checkpoint: Posts {post_num-9}-{post_num} complete!*\n\n"
                 f"📊 Stats:\n"
-                f"- Average score: **{stats['avg_score']:.1f}/25**\n"
-                f"- Quality trend: **{stats['quality_trend']}**\n"
+                f"- Average score: *{stats['avg_score']:.1f}/25*\n"
+                f"- Quality trend: *{stats['quality_trend']}*\n"
                 f"- Score range: {stats['lowest_score']}-{stats['highest_score']}\n"
                 f"- Recent scores: {stats['recent_scores']}\n\n"
-                f"⏳ **{len(plan['posts']) - post_num} posts remaining.** Continuing..."
+                f"⏳ *{len(plan['posts']) - post_num} posts remaining.* Continuing..."
             )
 
             slack_client.chat_postMessage(
@@ -172,15 +172,15 @@ async def execute_sequential_batch(
     final_stats = context_mgr.get_stats()
 
     final_msg = (
-        f"🎉 **Batch complete! All {len(plan['posts'])} posts created.**\n\n"
-        f"📊 **Final Stats:**\n"
-        f"- ✅ Completed: **{completed}/{len(plan['posts'])}**\n"
-        f"- ❌ Failed: **{failed}**\n"
-        f"- ⏱️ Total time: **{elapsed} minutes**\n"
-        f"- 📈 Average score: **{final_stats['avg_score']:.1f}/25**\n"
-        f"- 📊 Quality trend: **{final_stats['quality_trend']}**\n"
+        f"🎉 *Batch complete! All {len(plan['posts'])} posts created.*\n\n"
+        f"📊 *Final Stats:*\n"
+        f"- ✅ Completed: *{completed}/{len(plan['posts'])}*\n"
+        f"- ❌ Failed: *{failed}*\n"
+        f"- ⏱️ Total time: *{elapsed} minutes*\n"
+        f"- 📈 Average score: *{final_stats['avg_score']:.1f}/25*\n"
+        f"- 📊 Quality trend: *{final_stats['quality_trend']}*\n"
         f"- 🎯 Score range: {final_stats['lowest_score']}-{final_stats['highest_score']}\n\n"
-        f"📅 **View all posts in Airtable** (filter by Created Today)\n\n"
+        f"📅 *View all posts in Airtable* (filter by Created Today)\n\n"
         f"🚀 Your content is ready to schedule!"
     )
 
@@ -264,7 +264,7 @@ async def _execute_single_post(
         content_length = "auto"
         context_lower = context.lower() if context else ""
         topic_lower = topic.lower() if topic else ""
-        
+
         # Detect thread keywords (expanded list, includes X/Twitter aliases)
         thread_keywords = ["thread", "thread of", "twitter thread", "x thread", "long thread", "short thread", "a thread", "an x thread", "an twitter thread"]
         is_thread = any(keyword in context_lower or keyword in topic_lower for keyword in thread_keywords)
@@ -272,15 +272,24 @@ async def _execute_single_post(
         # Detect single post keywords (expanded list, includes X/Twitter aliases)
         single_post_keywords = ["single post", "one tweet", "twitter post", "x post", "single tweet", "a tweet", "an x post", "an x tweet", "one x post", "a twitter post", "standalone post", "one post"]
         is_single_post = any(keyword in context_lower or keyword in topic_lower for keyword in single_post_keywords)
-        
+
         # Check for explicit content_length in context
         if "content_length" in context_lower:
             if "single_post" in context_lower:
                 content_length = "single_post"
             elif "short_thread" in context_lower or "long_thread" in context_lower:
                 content_length = "thread"
-        
-        # Routing decision: Default to Haiku fast path for speed unless thread is explicitly requested
+
+        # IMPROVED ROUTING LOGIC: Use context length and complexity heuristics
+        # Context > 500 chars suggests detailed outline → likely needs thread/complex handling → use Direct API
+        context_length = len(context) if context else 0
+        topic_length = len(topic) if topic else 0
+
+        # Detect narrative/outline indicators (bullet points, numbered lists, multiple paragraphs)
+        has_outline = any(indicator in context for indicator in ['\n-', '\n*', '\n1.', '\n2.', '\n•']) if context else False
+        has_multiple_paragraphs = context.count('\n\n') >= 2 if context else False
+
+        # Routing decision with smarter defaults
         use_haiku = False
         if is_thread:
             use_haiku = False  # Use SDK agent for threads
@@ -290,9 +299,16 @@ async def _execute_single_post(
             use_haiku = True
         elif content_length in ["short_thread", "long_thread"]:
             use_haiku = False
-        else:
-            # Default: Use Haiku fast path for speed (single post assumed)
+        elif context_length > 500 or has_outline or has_multiple_paragraphs:
+            # Complex context suggests need for Direct API agent (better research, validation)
+            use_haiku = False
+        elif context_length < 100 and topic_length < 100:
+            # Very short/vague context → simple post → use Haiku fast path
             use_haiku = True
+        else:
+            # Default: Use Direct API agent for batch workflows (better quality control)
+            # Haiku is reserved for truly simple, short single posts
+            use_haiku = False
         
         if use_haiku:
             # Use Haiku fast path for single posts
@@ -639,7 +655,7 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     if post_index == 0 and slack_client and channel_id and thread_ts:
         try:
             batch_start_message = (
-                f"🚀 **Starting batch execution**\n"
+                f"🚀 *Starting batch execution*\n"
                 f"📋 Plan: `{plan_id}`\n"
                 f"📝 {total_posts} post{'s' if total_posts > 1 else ''} queued\n"
                 f"⏳ Creating posts sequentially..."
@@ -741,7 +757,7 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
         if total_posts > 1:
             completion_message = (
                 f"✅ Post {post_num}/{total_posts} complete! "
-                f"Score: **{score}/25**"
+                f"Score: *{score}/25*"
             )
             if airtable_url:
                 completion_message += f" | <{airtable_url}|View>"

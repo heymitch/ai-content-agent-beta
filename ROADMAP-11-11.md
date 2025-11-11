@@ -110,3 +110,17 @@
 - Added to agent capabilities and system prompt
 - **Branch**: `fix/direct-api-linkedin-agent` (commit d013b1b)
 
+### ✅ Fixed Twitter Batch Workflow Issues
+- **Fixed Haiku agent Airtable URL**: Added `📊 Airtable: {url}` to Haiku return string so batch orchestrator can extract it
+- **Fixed Slack markdown formatting**: Replaced all `**text**` with `*text*` (Slack's mrkdwn format uses single asterisks)
+  - Updated 7 locations in batch orchestrator messages
+  - Bold text now renders properly in Slack (no more literal asterisks)
+- **Improved batch routing logic**: Smarter heuristics for Haiku vs Direct API agent
+  - Context >500 chars OR has outline/bullets → use Direct API agent (better validation)
+  - Context <100 chars AND topic <100 chars → use Haiku fast path (simpler validation)
+  - Default changed: Batch workflows now use Direct API agent for better quality control
+  - Haiku reserved for truly simple, short single posts
+  - Thread/single post keywords still respected
+- **Result**: Single posts get simpler validation (Haiku), threads get full validation (Direct API)
+- **Branch**: `fix/direct-api-linkedin-agent`
+
