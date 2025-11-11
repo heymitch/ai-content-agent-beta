@@ -734,13 +734,12 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
             from integrations.airtable_client import get_airtable_client
             airtable = get_airtable_client()
 
-            # Convert 0-25 scale to percentage for status determination
-            percentage = (validation_score / 25) * 100
-            if percentage >= 80:
+            # Status determination based on 0-25 scale
+            if validation_score >= 20:  # 80%+
                 airtable_status = "Ready"
-            elif percentage >= 60:
+            elif validation_score >= 15:  # 60-80%
                 airtable_status = "Draft"
-            else:
+            else:  # <60%
                 airtable_status = "Needs Review"
 
             result = airtable.create_content_record(
