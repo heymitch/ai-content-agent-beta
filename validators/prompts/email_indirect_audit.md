@@ -369,7 +369,7 @@ Most ghostwriters are optimizing the wrong metric.
 
 As a reminder: If you'd like us to personally help you build a $10K+/month ghostwriting business without burning out, check out Premium Ghostwriting Academy: `{{app_cta}}`
 
-Colin
+{{author_first_name}}
 ```
 
 **Grading**:

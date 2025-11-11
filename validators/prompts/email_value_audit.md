@@ -457,7 +457,7 @@ It's better than Trello because everything lives in one view—you don't need to
 Hope this helps you plan content faster.
 If you'd like us to personally help you build a $10K+/month ghostwriting business, check out Premium Ghostwriting Academy: `{{app_cta}}`
 
-Cole
+{{author_first_name}}
 ```
 
 **Grading**:

@@ -451,6 +451,10 @@ His investors approved because costs decreased significantly. (7 words)
 Six months later the product quality declined considerably. (8 words)"
 (All 7-8 words = uniform = 100% AI detection)
 
+**SIGNATURE:**
+End the email with ONLY the author's first name: "Mitch"
+DO NOT use any other signature like "Cole", "Colin", or full names.
+
 Output JSON:
 {{
   "subject_line": "...",
@@ -638,6 +642,7 @@ GPTZero Flagged Sentences (rewrite these like a human):
    - Strategic narrative arc (problem → insight → action)
    - Author's unique voice and perspective
    - Conversational tone and contractions
+   - Signature: MUST be "Mitch" (NOT "Cole", "Colin", or any other name)
 
 3. **WHAT TO FIX:**
    - ALL issues in issues_json list above
