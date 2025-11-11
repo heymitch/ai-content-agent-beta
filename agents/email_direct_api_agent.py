@@ -870,6 +870,7 @@ async def create_email_workflow(
     topic: str,
     context: str = "",
     style: str = "thought_leadership",
+    email_type: str = "Email_Value",
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
     user_id: Optional[str] = None,
@@ -883,6 +884,7 @@ async def create_email_workflow(
         topic: Main topic for the post
         context: Additional context
         style: Content style
+        email_type: Email type (Email_Value, Email_Direct, Email_Indirect, Weekly Update)
         channel_id: Slack channel ID (for Airtable/Supabase saves)
         thread_ts: Slack thread timestamp (for Airtable/Supabase saves)
         user_id: Slack user ID (for Airtable/Supabase saves)
@@ -892,6 +894,9 @@ async def create_email_workflow(
         Formatted string with post content, score, and links
     """
 
+    # Append email_type to context for agent to use
+    context_with_type = f"{context}\n\nEmail Type: {email_type}" if context else f"Email Type: {email_type}"
+
     agent = EmailDirectAPIAgent(
         user_id=user_id,
         channel_id=channel_id,
@@ -900,12 +905,10 @@ async def create_email_workflow(
     )
 
     try:
-        email_type = "carousel" if "visual" in style.lower() else "standard"
-
         result = await agent.create_post(
             topic=topic,
-            context=f"{context} | Style: {style}",
-            email_type=email_type,
+            context=f"{context_with_type} | Style: {style}",
+            email_type=email_type,  # Pass through the email_type parameter from caller
             target_score=85,
             publish_date=publish_date
         )
