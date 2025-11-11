@@ -1064,8 +1064,9 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
 
         print(f"👍 Reaction {reaction} added to message {message_ts}")
 
-        # Handle ✅ (white_check_mark) reaction for Haiku-generated Twitter posts
-        if reaction == 'white_check_mark':
+        # Handle ✅ (white_check_mark) reaction for saving as Draft
+        # Handle 📅 🗓️ (calendar emojis) for scheduling to calendar
+        if reaction in ['white_check_mark', 'calendar', 'spiral_calendar_pad']:
             try:
                 # Get the message that was reacted to
                 message_response = slack_client.conversations_history(
@@ -1128,14 +1129,21 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                                 try:
                                     airtable = get_airtable_client()
 
-                                    # Try to extract publish_date from context if available
-                                    # (This would need to be stored in message metadata, but for now we'll skip it)
+                                    # Determine status based on reaction emoji
+                                    # ✅ = Draft (save for review)
+                                    # 📅 🗓️ = Scheduled (ready to go)
+                                    if reaction in ['calendar', 'spiral_calendar_pad']:
+                                        status = 'Scheduled'
+                                        confirmation_emoji = '📅'
+                                    else:  # white_check_mark
+                                        status = 'Draft'
+                                        confirmation_emoji = '📅'
 
                                     result = airtable.create_content_record(
                                         content=post_content,
                                         platform='twitter',
                                         post_hook=hook_preview if hook_preview else post_content[:100],
-                                        status='Draft',
+                                        status=status,
                                         publish_date=publish_date
                                     )
 
@@ -1154,15 +1162,22 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                                         result = {'success': False, 'error': str(e)}
 
                             if result and result.get('success'):
-                                # Send confirmation with 📅 emoji
+                                # Send confirmation message based on status
                                 # Use original thread if the message was in a thread
                                 thread_ts = message.get('thread_ts', message_ts)
+
+                                if status == 'Scheduled':
+                                    confirmation_text = f"{confirmation_emoji} Scheduled to calendar!\n\n📊 <{result.get('url')}|View in Airtable>"
+                                else:
+                                    confirmation_text = f"{confirmation_emoji} Saved to Airtable as Draft\n\n📊 <{result.get('url')}|View>"
+
                                 slack_client.chat_postMessage(
                                     channel=channel,
                                     thread_ts=thread_ts,
-                                    text="📅 Saved to Airtable"
+                                    text=confirmation_text,
+                                    mrkdwn=True
                                 )
-                                print(f"✅ Saved Haiku Twitter post to Airtable")
+                                print(f"✅ Saved Haiku Twitter post to Airtable (status: {status})")
                             else:
                                 print(f"❌ Failed to save to Airtable: {result.get('error')}")
                                 # Use original thread if the message was in a thread
