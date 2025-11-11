@@ -71,13 +71,15 @@
 - Text files displayed inline with syntax highlighting
 - Files downloaded securely using Slack API with bearer token
 - Multimodal messages sent to Claude SDK with file content
+- **Supported formats:** Images, PDFs, JSON, Python, JavaScript, YAML, XML, HTML, CSS, Markdown, CSV, TXT
 - **Implementation:**
   - Modified main_slack.py to extract files from Slack events
   - Added _process_slack_files() method to claude_agent_handler.py
   - Files converted to base64 for images/PDFs
-  - Text files decoded and included inline
+  - Text files decoded and included inline with language-specific syntax highlighting
+  - Smart file type detection (mimetype, Slack filetype, extension)
 - **Requirements:**
   - Add `files:read` scope to Slack app (in Slack app settings)
   - File size limit: 32MB (Claude API limit)
-- **Branch**: `fix/direct-api-linkedin-agent` (ready to commit)
+- **Branch**: `fix/direct-api-linkedin-agent` (commits 0f31cbd, c0ceb38)
 
