@@ -14,11 +14,6 @@
   - Status: Pending investigation
 
 ### Feature Additions
-- [ ] **Add Perplexity tool to the agent**
-  - Tool: Perplexity API for enhanced research/search
-  - Location: Add to `slack_bot/claude_agent_handler.py`
-  - Reference: `agent-builder-reference/tool-creation-guide.md`
-
 - [ ] **File reading ability**
   - Add tool to Slack bot for reading uploaded files
   - Add to agent tools list
@@ -65,4 +60,12 @@
 - Adjusted thresholds: >= 24/25 → Ready, >= 18/25 → Draft, < 18/25 → Needs Review
 - Applied to all direct API agents (email, twitter, linkedin)
 - **Branch**: `fix/direct-api-linkedin-agent` (commits 26673b5, 53e6131, c685e35)
+
+### ✅ Added Perplexity tool
+- Integrated Perplexity API for deep research with citations
+- Best for: fact-checking, recent stats/data, academic research, complex topics
+- Uses sonar-pro model for academic queries, sonar for general queries
+- Support for focused searches: internet, news, academic, youtube, reddit
+- Added to tools/search_tools.py and registered in claude_agent_handler.py
+- **Branch**: `fix/direct-api-linkedin-agent` (ready to commit)
 

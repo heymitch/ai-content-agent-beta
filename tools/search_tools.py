@@ -56,6 +56,75 @@ def web_search(query: str, max_results: int = 5) -> str:
         })
 
 
+def perplexity_search(query: str, search_focus: str = "internet") -> str:
+    """
+    Enhanced research using Perplexity API with citations
+
+    Best for: Deep research questions, fact-checking, finding recent data with sources
+
+    Args:
+        query: Research query (be specific for best results)
+        search_focus: Focus area - "internet" (default), "news", "academic", "writing", "wolfram", "youtube", "reddit"
+
+    Returns:
+        JSON string with researched answer and citations
+    """
+    try:
+        from openai import OpenAI
+
+        # Initialize Perplexity client (OpenAI-compatible API)
+        perplexity = OpenAI(
+            api_key=os.getenv('PERPLEXITY_API_KEY'),
+            base_url="https://api.perplexity.ai"
+        )
+
+        # Map search focus to model
+        # sonar-pro: Most capable, best for complex queries
+        # sonar: Balanced performance and cost
+        model = "sonar-pro" if search_focus in ["academic", "research", "wolfram"] else "sonar"
+
+        # Make request with search domain routing
+        messages = [
+            {
+                "role": "system",
+                "content": f"You are a research assistant. Focus on {search_focus} sources. Provide detailed, well-cited answers with specific data points and dates."
+            },
+            {
+                "role": "user",
+                "content": query
+            }
+        ]
+
+        response = perplexity.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=1000,
+            temperature=0.2,  # Lower temp for factual accuracy
+            return_citations=True,
+            return_images=False
+        )
+
+        # Extract answer and citations
+        answer = response.choices[0].message.content
+        citations = getattr(response, 'citations', [])
+
+        return json.dumps({
+            'success': True,
+            'query': query,
+            'answer': answer,
+            'citations': citations,
+            'model': model,
+            'search_focus': search_focus
+        }, indent=2)
+
+    except Exception as e:
+        return json.dumps({
+            'error': str(e),
+            'query': query,
+            'note': 'Perplexity API requires PERPLEXITY_API_KEY environment variable'
+        })
+
+
 def search_knowledge_base(query: str, match_count: int = 5, document_type: str = None) -> str:
     """
     Search company documents using RAG (vector similarity)

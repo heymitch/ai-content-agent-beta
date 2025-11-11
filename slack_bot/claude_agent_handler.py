@@ -18,6 +18,7 @@ import uuid
 
 # Import our existing tool functions
 from tools.search_tools import web_search as _web_search_func
+from tools.search_tools import perplexity_search as _perplexity_search_func
 from tools.search_tools import search_knowledge_base as _search_kb_func
 from tools.search_tools import search_content_examples as _search_content_examples_func
 from tools.search_tools import analyze_past_content as _analyze_past_content_func
@@ -60,6 +61,42 @@ async def web_search(args):
     max_results = args.get('max_results', 5)
 
     result = _web_search_func(query=query, max_results=max_results)
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "perplexity_search",
+    "Deep research with citations using Perplexity AI. Best for: fact-checking, finding recent stats/data, researching complex topics. Returns synthesized answer with source citations. Use when you need authoritative, cited information.",
+    {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Research query - be specific for best results"},
+            "search_focus": {
+                "type": "string",
+                "description": "Search focus area: 'internet' (default), 'news', 'academic', 'youtube', 'reddit'",
+                "default": "internet"
+            }
+        },
+        "required": ["query"]
+    }
+)
+async def perplexity_search(args):
+    """Perplexity research tool with citations"""
+    query = args.get('query', '')
+    search_focus = args.get('search_focus', 'internet')
+
+    # Run blocking I/O in thread pool
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: _perplexity_search_func(query=query, search_focus=search_focus)
+    )
 
     return {
         "content": [{
@@ -1249,14 +1286,15 @@ Do NOT tell users to "check websites" - YOU search for them.
 
 **YOUR CAPABILITIES:**
 1. web_search - USE THIS FIRST for any news/events/updates (include year/date in query!)
-2. search_knowledge_base - Internal documentation and brand voice
-3. search_company_documents - User-uploaded docs (case studies, testimonials, product docs) - USE BEFORE asking for context
-4. search_content_examples - Semantic search across 700+ content examples (use user's EXACT query words)
-5. analyze_past_content - Get top posts by engagement (NOT for search - use search_content_examples instead)
-6. search_past_posts - Past content you've created
-7. get_content_calendar - Scheduled posts
-8. get_thread_context - Thread history
-9. analyze_content_performance - Performance metrics
+2. perplexity_search - Deep research with citations (best for: stats, fact-checking, academic research, complex topics)
+3. search_knowledge_base - Internal documentation and brand voice
+4. search_company_documents - User-uploaded docs (case studies, testimonials, product docs) - USE BEFORE asking for context
+5. search_content_examples - Semantic search across 700+ content examples (use user's EXACT query words)
+6. analyze_past_content - Get top posts by engagement (NOT for search - use search_content_examples instead)
+7. search_past_posts - Past content you've created
+8. get_content_calendar - Scheduled posts
+9. get_thread_context - Thread history
+10. analyze_content_performance - Performance metrics
 
 **CONTENT CREATION WORKFLOW:**
 
@@ -1675,6 +1713,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         self.base_tools = [
             # Core tools - always available
             web_search,
+            perplexity_search,  # NEW: Deep research with citations
             search_knowledge_base,
             search_company_documents,  # NEW in v2.5.0: User-uploaded docs for context enrichment
             search_content_examples,  # NEW: Search 700+ Cole/Dickie examples via RAG
