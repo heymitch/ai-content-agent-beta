@@ -1761,10 +1761,24 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             try:
                 file_name = file_obj.get('name', 'unknown')
                 file_type = file_obj.get('mimetype', '')
+                slack_filetype = file_obj.get('filetype', '')  # Slack's filetype field (e.g., "json")
                 file_url = file_obj.get('url_private', '')
                 file_size = file_obj.get('size', 0)
 
-                print(f"[{request_id}] 📎 Processing file: {file_name} ({file_type}, {file_size} bytes)")
+                # If no mimetype, infer from Slack filetype or extension
+                if not file_type:
+                    if slack_filetype == 'json' or file_name.endswith('.json'):
+                        file_type = 'application/json'
+                    elif slack_filetype in ['javascript', 'js'] or file_name.endswith('.js'):
+                        file_type = 'text/javascript'
+                    elif slack_filetype == 'python' or file_name.endswith('.py'):
+                        file_type = 'text/x-python'
+                    elif slack_filetype == 'markdown' or file_name.endswith('.md'):
+                        file_type = 'text/markdown'
+                    elif slack_filetype == 'text' or file_name.endswith('.txt'):
+                        file_type = 'text/plain'
+
+                print(f"[{request_id}] 📎 Processing file: {file_name} ({file_type or slack_filetype}, {file_size} bytes)")
 
                 # Skip files that are too large (> 32MB for Claude)
                 if file_size > 32 * 1024 * 1024:
@@ -1830,15 +1844,31 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                     })
                     print(f"[{request_id}] 📄 Added PDF: {file_name}")
 
-                elif file_type.startswith('text/') or file_name.endswith(('.txt', '.md', '.py', '.js', '.json', '.csv')):
+                elif (file_type.startswith('text/') or
+                      file_type == 'application/json' or
+                      file_name.endswith(('.txt', '.md', '.py', '.js', '.json', '.csv', '.yaml', '.yml', '.xml', '.html', '.css'))):
                     # Text file - extract text content
                     try:
                         text_content = file_data.decode('utf-8')
+
+                        # Detect language for syntax highlighting
+                        lang = ''
+                        if file_name.endswith('.json'):
+                            lang = 'json'
+                        elif file_name.endswith('.py'):
+                            lang = 'python'
+                        elif file_name.endswith('.js'):
+                            lang = 'javascript'
+                        elif file_name.endswith('.md'):
+                            lang = 'markdown'
+                        elif file_name.endswith(('.yaml', '.yml')):
+                            lang = 'yaml'
+
                         file_blocks.append({
                             "type": "text",
-                            "text": f"[File: {file_name}]\n```\n{text_content}\n```"
+                            "text": f"[File: {file_name}]\n```{lang}\n{text_content}\n```"
                         })
-                        print(f"[{request_id}] 📝 Added text file: {file_name}")
+                        print(f"[{request_id}] 📝 Added text file: {file_name} ({len(text_content)} chars)")
                     except UnicodeDecodeError:
                         print(f"[{request_id}] ⚠️  Could not decode text file: {file_name}")
                         file_blocks.append({

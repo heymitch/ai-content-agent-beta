@@ -824,6 +824,12 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
         files = event.get('files', [])
         has_files = len(files) > 0
 
+        # Debug: Log file detection
+        if has_files:
+            print(f"📎 Detected {len(files)} file(s):")
+            for f in files:
+                print(f"   - {f.get('name', 'unknown')} ({f.get('mimetype', 'unknown type')}, {f.get('size', 0)} bytes)")
+
         # Skip empty messages UNLESS there are files attached
         if (not message_text or not message_text.strip()) and not has_files:
             print("⏭️ Skipping empty message with no files")
