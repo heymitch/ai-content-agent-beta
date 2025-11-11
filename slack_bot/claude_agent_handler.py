@@ -111,6 +111,10 @@ async def search_company_documents(args):
     match_count = args.get('match_count', 3)
     document_type = args.get('document_type')  # Optional: 'case_study', 'testimonial', 'product_doc'
 
+    # Convert string "None" to actual None
+    if document_type in ("None", "null", ""):
+        document_type = None
+
     print(f"   Calling _search_company_docs_func with:")
     print(f"      query={query}")
     print(f"      match_count={match_count}")
@@ -159,6 +163,11 @@ async def search_content_examples(args):
 
     query = args.get('query', '')
     platform = args.get('platform')  # Optional: 'LinkedIn', 'Twitter', 'Email', 'Blog'
+
+    # Convert string "None" to actual None
+    if platform in ("None", "null", ""):
+        platform = None
+
     match_count = args.get('match_count', 5)
 
     print(f"   Calling _search_content_examples_func with:")
@@ -204,6 +213,11 @@ async def search_content_examples(args):
 async def analyze_past_content(args):
     """Analyze past content patterns"""
     platform = args.get('platform')  # Optional: 'LinkedIn', 'Twitter', etc.
+
+    # Convert string "None" to actual None
+    if platform in ("None", "null", ""):
+        platform = None
+
     limit = args.get('limit', 10)
 
     result = _analyze_past_content_func(
