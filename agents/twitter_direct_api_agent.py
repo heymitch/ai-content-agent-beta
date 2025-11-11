@@ -84,16 +84,7 @@ TOOL_SCHEMAS = [
                 "context": {"type": "string", "description": "Additional context"},
                 "target_length": {"type": "integer", "description": "Target character limit (default 2200)"}
             },
-            "required": ["post"]
-        }
-    }
-            },
             "required": ["topic", "hook", "context"]
-        }
-    },
-                "industry": {"type": "string", "description": "Industry context"}
-            },
-            "required": ["draft", "topic", "industry"]
         }
     },
     {
