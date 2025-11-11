@@ -14,11 +14,6 @@
   - Status: Pending investigation
 
 ### Feature Additions
-- [ ] **File reading ability**
-  - Add tool to Slack bot for reading uploaded files
-  - Add to agent tools list
-  - Use cases: Read PDFs, docs, images uploaded to Slack
-  - Reference: Claude SDK docs for file handling
 
 ### Infrastructure
 - [ ] **Investigate Claude memory integration**
@@ -67,5 +62,22 @@
 - Uses sonar-pro model for academic queries, sonar for general queries
 - Support for focused searches: internet, news, academic, youtube, reddit
 - Added to tools/search_tools.py and registered in claude_agent_handler.py
+- **Branch**: `fix/direct-api-linkedin-agent` (commit 9f42b0a)
+
+### ✅ Added file reading capability
+- Slack bot can now read uploaded files (images, PDFs, text files)
+- Supports Claude's vision API for images (PNG, JPG, etc.)
+- Supports Claude's PDF processing for documents
+- Text files displayed inline with syntax highlighting
+- Files downloaded securely using Slack API with bearer token
+- Multimodal messages sent to Claude SDK with file content
+- **Implementation:**
+  - Modified main_slack.py to extract files from Slack events
+  - Added _process_slack_files() method to claude_agent_handler.py
+  - Files converted to base64 for images/PDFs
+  - Text files decoded and included inline
+- **Requirements:**
+  - Add `files:read` scope to Slack app (in Slack app settings)
+  - File size limit: 32MB (Claude API limit)
 - **Branch**: `fix/direct-api-linkedin-agent` (ready to commit)
 

@@ -820,10 +820,19 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
             print("✏️ Skipping message edit")
             return {'status': 'skipped_edit'}
 
-        # Skip empty messages (reactions, file uploads, etc.)
-        if not message_text or not message_text.strip():
-            print("⏭️ Skipping empty message")
+        # Check for file uploads
+        files = event.get('files', [])
+        has_files = len(files) > 0
+
+        # Skip empty messages UNLESS there are files attached
+        if (not message_text or not message_text.strip()) and not has_files:
+            print("⏭️ Skipping empty message with no files")
             return {'status': 'skipped_empty_message'}
+
+        # If there are files but no message text, use placeholder
+        if has_files and (not message_text or not message_text.strip()):
+            message_text = "[User uploaded file(s)]"
+            print(f"📎 {len(files)} file(s) attached to message")
 
         # bot_user_id already retrieved above
         is_bot_mentioned = bot_user_id and f'<@{bot_user_id}>' in message_text
@@ -969,7 +978,8 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                         message=message_text,
                         user_id=user_id,
                         thread_ts=thread_ts,  # Use thread_ts for session continuity
-                        channel_id=channel
+                        channel_id=channel,
+                        slack_files=files if has_files else None  # Pass Slack file objects
                     )
                 except RuntimeError as e:
                     # SDK client creation failure - provide helpful error

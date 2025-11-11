@@ -1741,6 +1741,128 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         print(f"✅ Handler [{self.handler_id}] ready with batch tools (default mode)")
 
+    async def _process_slack_files(self, slack_files: list, request_id: str) -> list:
+        """
+        Process Slack file uploads and convert to Claude-compatible format
+
+        Args:
+            slack_files: List of Slack file objects from event
+            request_id: Request ID for logging
+
+        Returns:
+            List of Claude content blocks (image/document)
+        """
+        import base64
+        import httpx
+
+        file_blocks = []
+
+        for file_obj in slack_files:
+            try:
+                file_name = file_obj.get('name', 'unknown')
+                file_type = file_obj.get('mimetype', '')
+                file_url = file_obj.get('url_private', '')
+                file_size = file_obj.get('size', 0)
+
+                print(f"[{request_id}] 📎 Processing file: {file_name} ({file_type}, {file_size} bytes)")
+
+                # Skip files that are too large (> 32MB for Claude)
+                if file_size > 32 * 1024 * 1024:
+                    print(f"[{request_id}] ⚠️  File too large, skipping: {file_name}")
+                    file_blocks.append({
+                        "type": "text",
+                        "text": f"[File '{file_name}' too large to process (max 32MB)]"
+                    })
+                    continue
+
+                # Download file using Slack API
+                if not file_url:
+                    print(f"[{request_id}] ⚠️  No URL for file: {file_name}")
+                    continue
+
+                # Get Slack bot token from environment or slack_client
+                slack_token = os.getenv('SLACK_BOT_TOKEN')
+                if self.slack_client:
+                    slack_token = self.slack_client.token
+
+                if not slack_token:
+                    print(f"[{request_id}] ❌ No Slack token available for file download")
+                    continue
+
+                # Download file with bearer token auth
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(
+                        file_url,
+                        headers={'Authorization': f'Bearer {slack_token}'}
+                    )
+                    response.raise_for_status()
+                    file_data = response.content
+
+                print(f"[{request_id}] ✅ Downloaded {len(file_data)} bytes")
+
+                # Convert to Claude format based on file type
+                if file_type.startswith('image/'):
+                    # Image file - send as base64
+                    media_type = file_type  # e.g., "image/jpeg", "image/png"
+                    base64_data = base64.standard_b64encode(file_data).decode('utf-8')
+
+                    file_blocks.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": base64_data
+                        }
+                    })
+                    print(f"[{request_id}] 🖼️  Added image: {file_name}")
+
+                elif file_type == 'application/pdf':
+                    # PDF file - send as base64
+                    base64_data = base64.standard_b64encode(file_data).decode('utf-8')
+
+                    file_blocks.append({
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": base64_data
+                        }
+                    })
+                    print(f"[{request_id}] 📄 Added PDF: {file_name}")
+
+                elif file_type.startswith('text/') or file_name.endswith(('.txt', '.md', '.py', '.js', '.json', '.csv')):
+                    # Text file - extract text content
+                    try:
+                        text_content = file_data.decode('utf-8')
+                        file_blocks.append({
+                            "type": "text",
+                            "text": f"[File: {file_name}]\n```\n{text_content}\n```"
+                        })
+                        print(f"[{request_id}] 📝 Added text file: {file_name}")
+                    except UnicodeDecodeError:
+                        print(f"[{request_id}] ⚠️  Could not decode text file: {file_name}")
+                        file_blocks.append({
+                            "type": "text",
+                            "text": f"[File '{file_name}' could not be decoded as text]"
+                        })
+
+                else:
+                    # Unsupported file type
+                    print(f"[{request_id}] ⚠️  Unsupported file type: {file_type}")
+                    file_blocks.append({
+                        "type": "text",
+                        "text": f"[File '{file_name}' type '{file_type}' not supported]"
+                    })
+
+            except Exception as e:
+                print(f"[{request_id}] ❌ Error processing file {file_obj.get('name', 'unknown')}: {e}")
+                file_blocks.append({
+                    "type": "text",
+                    "text": f"[Error processing file: {str(e)}]"
+                })
+
+        return file_blocks
+
     def _detect_cowrite_mode(self, message: str) -> bool:
         """
         Detect if user explicitly wants co-write mode
@@ -1978,7 +2100,8 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         message: str,
         user_id: str,
         thread_ts: str,
-        channel_id: str
+        channel_id: str,
+        slack_files: list = None
     ) -> str:
         """
         Handle conversation using REAL Claude Agent SDK
@@ -1988,6 +2111,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             user_id: Slack user ID
             thread_ts: Thread timestamp
             channel_id: Slack channel
+            slack_files: List of Slack file objects (optional)
 
         Returns:
             Agent's response
@@ -1999,6 +2123,8 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         print(f"\n{'='*70}")
         print(f"[{request_id}] 🎯 NEW REQUEST - Thread: {thread_ts[:8]}")
         print(f"[{request_id}] 💬 Message: {message[:100]}{'...' if len(message) > 100 else ''}")
+        if slack_files:
+            print(f"[{request_id}] 📎 Files: {len(slack_files)} attached")
         print(f"{'='*70}")
 
         # NEW: Store conversation context for tools to access
@@ -2025,6 +2151,11 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         # Simple message with date context - instructions are already in system prompt
         contextualized_message = f"[Today is {today}] {message}"
+
+        # Process Slack files if present
+        file_blocks = []
+        if slack_files:
+            file_blocks = await self._process_slack_files(slack_files, request_id)
 
         # Check if this message requires co-write mode
         message_needs_cowrite = self._detect_cowrite_mode(message)
@@ -2072,9 +2203,17 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                 else:
                     print(f"[{request_id}] ♻️ Reusing connected client...")
 
-                # Send the query
+                # Send the query (with files if present)
                 print(f"[{request_id}] 📨 Sending query to Claude SDK...")
-                await client.query(contextualized_message)
+                if file_blocks:
+                    # Multimodal message with text + files
+                    multimodal_message = [
+                        {"type": "text", "text": contextualized_message}
+                    ] + file_blocks
+                    await client.query(multimodal_message)
+                else:
+                    # Text-only message
+                    await client.query(contextualized_message)
 
                 # Collect ONLY the latest response (memory stays intact in session)
                 latest_response = ""
