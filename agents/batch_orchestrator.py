@@ -74,7 +74,8 @@ async def execute_sequential_batch(
             thread_ts=thread_ts,
             text=f"⏳ Creating post {post_num}/{len(plan['posts'])}...\n"
                  f"Platform: **{post_spec['platform'].capitalize()}**\n"
-                 f"Topic: {post_spec['topic'][:100]}"
+                 f"Topic: {post_spec['topic'][:100]}",
+            mrkdwn=True
         )
 
         # Get context from strategic outline (NO learning accumulation)
@@ -117,7 +118,8 @@ async def execute_sequential_batch(
                 thread_ts=thread_ts,
                 text=f"✅ Post {post_num}/{len(plan['posts'])} complete!\n"
                      f"📊 <{airtable_url}|View in Airtable>\n"
-                     f"🎯 Quality Score: **{score}/25**"
+                     f"🎯 Quality Score: **{score}/25**",
+                mrkdwn=True
             )
 
             completed += 1
@@ -133,7 +135,8 @@ async def execute_sequential_batch(
                 channel=channel,
                 thread_ts=thread_ts,
                 text=f"⚠️ Post {post_num} failed: {str(e)[:200]}\n\n"
-                     f"Continuing with remaining posts..."
+                     f"Continuing with remaining posts...",
+                mrkdwn=True
             )
 
             failed += 1
@@ -156,7 +159,8 @@ async def execute_sequential_batch(
             slack_client.chat_postMessage(
                 channel=channel,
                 thread_ts=thread_ts,
-                text=checkpoint_msg
+                text=checkpoint_msg,
+                mrkdwn=True
             )
 
             print(f"\n📊 Checkpoint {post_num}")
@@ -183,7 +187,8 @@ async def execute_sequential_batch(
     slack_client.chat_postMessage(
         channel=channel,
         thread_ts=thread_ts,
-        text=final_msg
+        text=final_msg,
+        mrkdwn=True
     )
 
     print(f"\n🎉 Batch execution complete!")
@@ -642,7 +647,8 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
             slack_client.chat_postMessage(
                 channel=channel_id,
                 thread_ts=thread_ts,
-                text=batch_start_message
+                text=batch_start_message,
+                mrkdwn=True
             )
             print(f"   ✅ Sent batch start notification to Slack", flush=True)
         except Exception as e:
@@ -659,7 +665,8 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
                 slack_client.chat_postMessage(
                     channel=channel_id,
                     thread_ts=thread_ts,
-                    text=message  # NO user tag - silent progress update
+                    text=message,  # NO user tag - silent progress update
+                    mrkdwn=True
                 )
             except Exception as e:
                 # Log but don't crash batch if Slack update fails

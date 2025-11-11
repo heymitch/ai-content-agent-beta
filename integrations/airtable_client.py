@@ -138,7 +138,7 @@ class AirtableContentCalendar:
                 'success': True,
                 'record_id': record['id'],
                 'fields': record['fields'],
-                'url': f"https://airtable.com/{self.base_id}/{self.table_name}/{record['id']}"
+                'url': f"https://airtable.com/{self.base_id}/{self.table.id}/{record['id']}"
             }
         except Exception as e:
             error_str = str(e).lower()
