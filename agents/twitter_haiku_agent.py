@@ -314,6 +314,11 @@ Just the clean post content."""
         airtable_url = None
         airtable_record_id = None
         try:
+            print(f"   🔄 Attempting Airtable save...")
+            print(f"   📝 Post length: {len(post_content)} chars")
+            print(f"   🏷️  Platform: twitter")
+            print(f"   📅 Publish date: {publish_date}")
+
             from integrations.airtable_client import get_airtable_client
             airtable = get_airtable_client()
 
@@ -325,6 +330,8 @@ Just the clean post content."""
             else:
                 airtable_status = "Needs Review"
 
+            print(f"   ✏️  Status: {airtable_status} (score: {score}/5)")
+
             airtable_result = airtable.create_content_record(
                 content=post_content,
                 platform='twitter',
@@ -334,14 +341,20 @@ Just the clean post content."""
                 publish_date=publish_date
             )
 
+            print(f"   📊 Airtable result: success={airtable_result.get('success')}, keys={list(airtable_result.keys())}")
+
             if airtable_result.get('success'):
                 airtable_url = airtable_result.get('url')
-                airtable_record_id = airtable_result.get('id')
+                airtable_record_id = airtable_result.get('record_id')  # Fixed: was 'id', should be 'record_id'
                 print(f"   ✅ Saved to Airtable: {airtable_url}")
+                print(f"   📋 Airtable record ID: {airtable_record_id}")
             else:
                 print(f"   ⚠️ Airtable save failed: {airtable_result.get('error', 'Unknown error')}")
+                print(f"   🔍 Full Airtable result: {airtable_result}")
         except Exception as e:
             print(f"   ⚠️ Airtable save failed: {e}")
+            import traceback
+            traceback.print_exc()
 
         # Save to Supabase
         supabase_id = None
