@@ -314,6 +314,168 @@ async def get_content_calendar(args):
 
 
 @tool(
+    "search_airtable_posts",
+    "Search Airtable content calendar for posts. Useful for finding posts clients have edited or reviewing scheduled content. Returns post content, status, and edit history.",
+    {
+        "type": "object",
+        "properties": {
+            "platform": {
+                "type": "string",
+                "description": "Filter by platform: linkedin, twitter, email, youtube, instagram"
+            },
+            "status": {
+                "type": "string",
+                "description": "Filter by status: Draft, Scheduled, Ready, Needs Review, Published"
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of results (default 10)",
+                "default": 10
+            }
+        }
+    }
+)
+async def search_airtable_posts(args):
+    """Search Airtable content calendar"""
+    from integrations.airtable_client import get_airtable_client
+    import json
+
+    platform = args.get('platform')
+    status = args.get('status')
+    max_results = args.get('max_results', 10)
+
+    try:
+        airtable = get_airtable_client()
+        result = airtable.list_content_records(
+            platform=platform,
+            status=status,
+            max_records=max_results
+        )
+
+        if result.get('success'):
+            records = result.get('records', [])
+            formatted_posts = []
+
+            for record in records:
+                fields = record.get('fields', {})
+                formatted_posts.append({
+                    'record_id': record.get('id'),
+                    'platform': fields.get('Platform', []),
+                    'status': fields.get('Status'),
+                    'hook': fields.get('Post Hook', '')[:100],
+                    'content': fields.get('Body Content', '')[:300],  # Preview
+                    'publish_date': fields.get('Publish Date'),
+                    'suggested_edits': fields.get('Suggested Edits', ''),
+                    'url': f"https://airtable.com/{airtable.base_id}/{airtable.table.id}/{record.get('id')}"
+                })
+
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        'success': True,
+                        'count': len(formatted_posts),
+                        'posts': formatted_posts
+                    }, indent=2)
+                }]
+            }
+        else:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        'success': False,
+                        'error': result.get('error')
+                    })
+                }]
+            }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    'success': False,
+                    'error': str(e)
+                })
+            }]
+        }
+
+
+@tool(
+    "get_airtable_post",
+    "Get a specific post from Airtable by record ID. Returns full post content, metadata, and edit history. Use this after searching to get complete post details for rewriting.",
+    {
+        "type": "object",
+        "properties": {
+            "record_id": {
+                "type": "string",
+                "description": "Airtable record ID (starts with 'rec')"
+            }
+        },
+        "required": ["record_id"]
+    }
+)
+async def get_airtable_post(args):
+    """Get specific Airtable post by ID"""
+    from integrations.airtable_client import get_airtable_client
+    import json
+
+    record_id = args.get('record_id')
+
+    try:
+        airtable = get_airtable_client()
+        result = airtable.get_content_record(record_id)
+
+        if result.get('success'):
+            record = result.get('record', {})
+            fields = record.get('fields', {})
+
+            formatted_post = {
+                'record_id': record.get('id'),
+                'platform': fields.get('Platform', []),
+                'status': fields.get('Status'),
+                'hook': fields.get('Post Hook', ''),
+                'content': fields.get('Body Content', ''),  # Full content
+                'publish_date': fields.get('Publish Date'),
+                'suggested_edits': fields.get('Suggested Edits', ''),
+                'media_url': fields.get('Media/Thumbnail'),
+                'created': fields.get('Created'),
+                'edited_time': fields.get('Edited Time'),
+                'url': f"https://airtable.com/{airtable.base_id}/{airtable.table.id}/{record.get('id')}"
+            }
+
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        'success': True,
+                        'post': formatted_post
+                    }, indent=2)
+                }]
+            }
+        else:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        'success': False,
+                        'error': result.get('error')
+                    })
+                }]
+            }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    'success': False,
+                    'error': str(e)
+                })
+            }]
+        }
+
+
+@tool(
     "get_thread_context",
     "Get complete context from current Slack thread.",
     {"thread_ts": str, "include_content": bool}
@@ -1293,8 +1455,10 @@ Do NOT tell users to "check websites" - YOU search for them.
 6. analyze_past_content - Get top posts by engagement (NOT for search - use search_content_examples instead)
 7. search_past_posts - Past content you've created
 8. get_content_calendar - Scheduled posts
-9. get_thread_context - Thread history
-10. analyze_content_performance - Performance metrics
+9. search_airtable_posts - Search Airtable content calendar (find posts clients edited, review scheduled content)
+10. get_airtable_post - Get specific Airtable post by ID (retrieve full content for rewriting)
+11. get_thread_context - Thread history
+12. analyze_content_performance - Performance metrics
 
 **CONTENT CREATION WORKFLOW:**
 
@@ -1720,6 +1884,8 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             analyze_past_content,  # NEW: Analyze top-performing examples
             search_past_posts,
             get_content_calendar,
+            search_airtable_posts,  # NEW: Search Airtable content calendar
+            get_airtable_post,  # NEW: Get specific Airtable post by ID
             get_thread_context,
             analyze_content_performance,
             send_to_calendar,  # Save approved drafts to calendar
