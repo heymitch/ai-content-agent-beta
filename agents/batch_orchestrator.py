@@ -233,6 +233,13 @@ async def _execute_single_post(
     # Context already contains strategic outline + optional strategy memory
     # NO learning injection - deprecated parameter ignored
 
+    # Normalize platform aliases
+    platform_lower = platform.lower()
+    if platform_lower in ['x', 'x/twitter']:
+        platform = 'twitter'
+    else:
+        platform = platform_lower
+
     # Call appropriate direct API agent workflow with Slack metadata
     if platform == "linkedin":
         from agents.linkedin_direct_api_agent import create_linkedin_post_workflow
@@ -253,12 +260,12 @@ async def _execute_single_post(
         context_lower = context.lower() if context else ""
         topic_lower = topic.lower() if topic else ""
         
-        # Detect thread keywords (expanded list)
-        thread_keywords = ["thread", "thread of", "twitter thread", "long thread", "short thread", "a thread", "an x thread"]
+        # Detect thread keywords (expanded list, includes X/Twitter aliases)
+        thread_keywords = ["thread", "thread of", "twitter thread", "x thread", "long thread", "short thread", "a thread", "an x thread", "an twitter thread"]
         is_thread = any(keyword in context_lower or keyword in topic_lower for keyword in thread_keywords)
-        
-        # Detect single post keywords (expanded list)
-        single_post_keywords = ["single post", "one tweet", "twitter post", "single tweet", "a tweet", "an x post", "an x tweet", "one x post", "a twitter post"]
+
+        # Detect single post keywords (expanded list, includes X/Twitter aliases)
+        single_post_keywords = ["single post", "one tweet", "twitter post", "x post", "single tweet", "a tweet", "an x post", "an x tweet", "one x post", "a twitter post", "standalone post", "one post"]
         is_single_post = any(keyword in context_lower or keyword in topic_lower for keyword in single_post_keywords)
         
         # Check for explicit content_length in context

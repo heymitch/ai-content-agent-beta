@@ -345,6 +345,30 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
         # Store publish_date for Airtable save
         self.publish_date = publish_date
 
+        # Normalize email_type input
+        email_type_map = {
+            "Email_Value": "value",
+            "Email_Tuesday": "weekly_update",
+            "Email_Direct": "direct",
+            "Email_Indirect": "indirect",
+            "value": "value",
+            "weekly_update": "weekly_update",
+            "tuesday": "weekly_update",  # Legacy support
+            "direct": "direct",
+            "indirect": "indirect",
+            "standard": "value"  # Default to value
+        }
+        normalized_email_type = email_type_map.get(email_type, "value")
+
+        # Define word count guidance for each type
+        word_count_map = {
+            "value": "Target: 400-500 words (educational format with tactical advice)",
+            "indirect": "Target: 400-600 words (faulty belief framework with case study)",
+            "direct": "Target: 100-200 words (warm audience, immediate CTA)",
+            "weekly_update": "Target: 300-400 words (update style newsletter - not restricted to Tuesday)"
+        }
+        word_count_guidance = word_count_map.get(normalized_email_type, "Target: 400-500 words")
+
         # Track operation timing
         operation_start_time = asyncio.get_event_loop().time()
 
@@ -398,7 +422,8 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
 EMAIL NEWSLETTER CREATION TASK
 ═══════════════════════════════════════════════════════════
 
-Create an email newsletter ({email_type} format).
+Create an email newsletter ({normalized_email_type} format).
+{word_count_guidance}
 
 Topic: {topic}
 
