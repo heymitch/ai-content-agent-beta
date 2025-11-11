@@ -2186,6 +2186,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         file_blocks = []
         if slack_files:
             file_blocks = await self._process_slack_files(slack_files, request_id)
+            print(f"[{request_id}] 📎 Processed {len(file_blocks)} file block(s) for Claude")
 
         # Check if this message requires co-write mode
         message_needs_cowrite = self._detect_cowrite_mode(message)
@@ -2240,6 +2241,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
                     multimodal_message = [
                         {"type": "text", "text": contextualized_message}
                     ] + file_blocks
+                    print(f"[{request_id}] 🖼️  Sending multimodal message: 1 text block + {len(file_blocks)} file block(s)")
                     await client.query(multimodal_message)
                 else:
                     # Text-only message
