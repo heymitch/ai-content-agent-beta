@@ -735,11 +735,11 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
             airtable = get_airtable_client()
 
             # Status determination based on 0-25 scale
-            if validation_score >= 20:  # 80%+
+            if validation_score >= 24:  # 24-25
                 airtable_status = "Ready"
-            elif validation_score >= 15:  # 60-80%
+            elif validation_score >= 18:  # 18-23
                 airtable_status = "Draft"
-            else:  # <60%
+            else:  # <18
                 airtable_status = "Needs Review"
 
             result = airtable.create_content_record(
