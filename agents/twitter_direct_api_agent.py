@@ -350,13 +350,13 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
             user_id=self.user_id,
             thread_ts=self.thread_ts,
             channel_id=self.channel_id,
-            platform="instagram",
+            platform="twitter",
             session_id=session_id or "direct_api"
         )
 
         log_operation_start(
             logger,
-            "create_instagram_caption_direct_api",
+            "create_twitter_post_direct_api",
             context=log_context,
             topic=topic[:100],
             thread_type=thread_type
@@ -386,16 +386,16 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
 
         try:
             # Import WRITE_LIKE_HUMAN_RULES for comprehensive anti-slop guidance
-            from prompts.instagram_tools import WRITE_LIKE_HUMAN_RULES
+            from prompts.twitter_tools import WRITE_LIKE_HUMAN_RULES
 
             # Build creation prompt with FULL writing rules (will be cached)
             creation_prompt = f"""{WRITE_LIKE_HUMAN_RULES}
 
 ═══════════════════════════════════════════════════════════
-INSTAGRAM CAPTION CREATION TASK
+TWITTER POST CREATION TASK
 ═══════════════════════════════════════════════════════════
 
-Create an Twitter thread ({thread_type} format).
+Create a Twitter thread ({thread_type} format).
 
 Topic: {topic}
 
@@ -633,7 +633,7 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
             log_error(logger, "Twitter Direct API Agent error", error=e, context=log_context)
             log_operation_end(
                 logger,
-                "create_instagram_caption_direct_api",
+                "create_twitter_post_direct_api",
                 duration=operation_duration,
                 success=False,
                 context=log_context,
@@ -757,7 +757,7 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
             embedding = generate_embedding(clean_output)
 
             supabase_result = supabase.table('generated_posts').insert({
-                'platform': 'email',
+                'platform': 'twitter',
                 'post_hook': hook_preview,
                 'body_content': clean_output,
                 'content_type': self._detect_content_type(clean_output),
@@ -783,7 +783,7 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
         operation_duration = asyncio.get_event_loop().time() - operation_start_time
         log_operation_end(
             logger,
-            "create_instagram_caption_direct_api",
+            "create_twitter_post_direct_api",
             duration=operation_duration,
             success=True,
             context=log_context,

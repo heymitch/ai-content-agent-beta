@@ -307,9 +307,74 @@ Just the clean post content."""
             score += 1
         if char_count < 150:
             score -= 1
-        
+
         print(f"   ✅ Generated post ({len(post_content)} chars, score: {score}/5)")
-        
+
+        # Save to Airtable
+        airtable_url = None
+        airtable_record_id = None
+        try:
+            from integrations.airtable_client import get_airtable_client
+            airtable = get_airtable_client()
+
+            # Determine status based on score
+            if score >= 4:
+                airtable_status = "Ready"
+            elif score >= 3:
+                airtable_status = "Draft"
+            else:
+                airtable_status = "Needs Review"
+
+            airtable_result = airtable.create_content_record(
+                content=post_content,
+                platform='twitter',
+                post_hook=hook_preview,
+                status=airtable_status,
+                suggested_edits=f"Score: {score}/5 (Haiku fast path)",
+                publish_date=publish_date
+            )
+
+            if airtable_result.get('success'):
+                airtable_url = airtable_result.get('url')
+                airtable_record_id = airtable_result.get('id')
+                print(f"   ✅ Saved to Airtable: {airtable_url}")
+            else:
+                print(f"   ⚠️ Airtable save failed: {airtable_result.get('error', 'Unknown error')}")
+        except Exception as e:
+            print(f"   ⚠️ Airtable save failed: {e}")
+
+        # Save to Supabase
+        supabase_id = None
+        try:
+            from integrations.supabase_client import get_supabase_client
+            from tools.research_tools import generate_embedding
+
+            supabase = get_supabase_client()
+            embedding = generate_embedding(post_content)
+
+            supabase_result = supabase.table('generated_posts').insert({
+                'platform': 'twitter',
+                'post_hook': hook_preview,
+                'body_content': post_content,
+                'content_type': 'twitter_single',
+                'airtable_record_id': airtable_record_id,
+                'airtable_url': airtable_url,
+                'status': 'draft',
+                'quality_score': (score / 5) * 100,  # Convert to 0-100 scale
+                'iterations': 1,
+                'slack_thread_ts': thread_ts,
+                'slack_channel_id': channel_id,
+                'user_id': user_id,
+                'created_by_agent': 'twitter_haiku_agent',
+                'embedding': embedding
+            }).execute()
+
+            if supabase_result.data:
+                supabase_id = supabase_result.data[0]['id']
+                print(f"   ✅ Saved to Supabase: {supabase_id}")
+        except Exception as e:
+            print(f"   ⚠️ Supabase save failed: {e}")
+
         return {
             'success': True,
             'post': post_content,
@@ -319,7 +384,9 @@ Just the clean post content."""
             'publish_date': publish_date,
             'channel_id': channel_id,
             'thread_ts': thread_ts,
-            'user_id': user_id
+            'user_id': user_id,
+            'airtable_url': airtable_url,
+            'supabase_id': supabase_id
         }
         
     except Exception as e:
