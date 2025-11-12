@@ -648,13 +648,13 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     print(f"   Strategic context: {len(strategic_context)} chars", flush=True)
     print(f"   Slack context: channel={channel_id}, thread={thread_ts}, user={user_id}", flush=True)
 
-    # Send batch start notification for first post only
-    if post_index == 0 and slack_client and channel_id and thread_ts:
+    # Send batch start notification for first post only (skip for single posts)
+    if post_index == 0 and total_posts > 1 and slack_client and channel_id and thread_ts:
         try:
             batch_start_message = (
                 f"🚀 *Starting batch execution*\n"
                 f"📋 Plan: `{plan_id}`\n"
-                f"📝 {total_posts} post{'s' if total_posts > 1 else ''} queued\n"
+                f"📝 {total_posts} posts queued\n"
                 f"⏳ Creating posts sequentially..."
             )
             slack_client.chat_postMessage(
