@@ -31,6 +31,11 @@ from slack_bot.agent_tools import (
     get_thread_context as _get_context_func,
     analyze_content_performance as _analyze_perf_func
 )
+from slack_bot.analytics_tools import (
+    get_post_analytics as _get_analytics_func,
+    show_top_performers as _show_top_func,
+    analyze_content_patterns as _analyze_patterns_func
+)
 from agents.batch_orchestrator import (
     execute_sequential_batch,
     create_batch_plan,
@@ -1339,6 +1344,79 @@ The content is now scheduled in your Airtable calendar. You can edit the posting
         }
 
 
+# ============= ANALYTICS TOOLS =============
+
+@tool(
+    "get_post_analytics",
+    "Analyze post performance and identify patterns. Shows top/worst performers, pattern detection (hooks, timing, platforms), and actionable recommendations. Use when asked 'how are posts performing', 'show me analytics', 'what's working', etc.",
+    {"days_back": int, "platform": str, "min_engagement": float}
+)
+async def get_post_analytics(args):
+    """
+    Analyze post performance with Claude insights.
+
+    Automatically syncs latest data before analysis to ensure accuracy.
+    """
+    result = _get_analytics_func(
+        days_back=args.get('days_back', 7),
+        platform=args.get('platform'),
+        min_engagement=args.get('min_engagement', 0.0)
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "show_top_performers",
+    "Show top performing posts by engagement rate. Returns formatted list with hooks, scores, and metrics. Use when asked 'show me best posts', 'what performed well', 'top content', etc.",
+    {"count": int, "platform": str, "days_back": int}
+)
+async def show_top_performers(args):
+    """Show top performing posts"""
+    result = _show_top_func(
+        count=args.get('count', 5),
+        platform=args.get('platform'),
+        days_back=args.get('days_back', 30)
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "analyze_content_patterns",
+    "Deep semantic analysis of top-performing posts. Identifies themes, hook styles, content structures, and awareness levels using vector embeddings. Use when asked 'what patterns work', 'why is this content successful', 'what should I create more of', etc.",
+    {"days_back": int, "min_engagement": float, "top_percent": int}
+)
+async def analyze_content_patterns(args):
+    """
+    Semantic pattern analysis using embeddings.
+
+    Clusters similar high-performers and identifies what makes them work.
+    """
+    result = _analyze_patterns_func(
+        days_back=args.get('days_back', 30),
+        min_engagement=args.get('min_engagement', 5.0),
+        top_percent=args.get('top_percent', 20)
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
 async def _delegate_bulk_workflow(
     platform: str,
     topics: list,
@@ -1458,7 +1536,10 @@ Do NOT tell users to "check websites" - YOU search for them.
 9. search_airtable_posts - Search Airtable content calendar (find posts clients edited, review scheduled content)
 10. get_airtable_post - Get specific Airtable post by ID (retrieve full content for rewriting)
 11. get_thread_context - Thread history
-12. analyze_content_performance - Performance metrics
+12. analyze_content_performance - Performance metrics (legacy)
+13. get_post_analytics - NEW: Analyze post performance with Claude insights (top/worst performers, patterns, recommendations)
+14. show_top_performers - NEW: Show best posts by engagement rate with detailed metrics
+15. analyze_content_patterns - NEW: Deep semantic analysis using embeddings (identifies themes, hook styles, structures)
 
 **CONTENT CREATION WORKFLOW:**
 
@@ -1863,6 +1944,88 @@ User says "direct to calendar" → BATCH MODE (any count, automated)
 - You iterate on content until it reaches high quality (85+ score)
 - You remember conversations within each Slack thread (and when asked about other conversations)
 - You provide strategic insights before and after content creation
+
+**ANALYTICS & PERFORMANCE:**
+
+When users ask about content performance, use the NEW analytics tools (Phase 2 complete!):
+
+**3 Analytics Tools Available:**
+
+1. **get_post_analytics(days_back, platform, min_engagement)**
+   - Full performance analysis with Claude insights
+   - Shows: top/worst performers, patterns (hooks, timing, platforms), recommendations
+   - Automatically syncs latest data before analysis
+   - Use for: "how are posts performing", "show me analytics", "what's working"
+
+2. **show_top_performers(count, platform, days_back)**
+   - Quick list of best posts by engagement rate
+   - Shows: hooks, scores, impressions, likes, comments, shares, URLs
+   - Use for: "show me best posts", "what performed well", "top 10 posts"
+
+3. **analyze_content_patterns(days_back, min_engagement, top_percent)**
+   - Deep semantic analysis using vector embeddings
+   - Identifies: themes, hook styles, content structures, awareness levels
+   - Clusters similar high-performers to find what makes them work
+   - Use for: "what patterns work", "why is content successful", "what should I create more of"
+
+**Analytics Workflow Examples:**
+
+```
+User: "Show me my top posts this week"
+CMO: *calls show_top_performers(count=5, days_back=7)*
+CMO: "🏆 TOP 5 PERFORMERS (last 7 days)
+1. [LINKEDIN] I replaced 3 workflows...
+   📊 Engagement: 9.2% | Impressions: 15,000
+   💚 1,230 likes | 💬 89 comments | 🔄 45 shares"
+```
+
+```
+User: "What's working in my content?"
+CMO: *calls get_post_analytics(days_back=30)*
+CMO: "📊 ANALYTICS REPORT (30 days)
+Total posts analyzed: 15
+
+📈 TOP PERFORMERS:
+1. 'I automated 40 hours of work...' - 8.5% engagement
+   Why: Specific numbers + concrete outcome + relatable problem
+
+📉 NEEDS IMPROVEMENT:
+1. '5 tips for better meetings' - 2.1% engagement
+   Issue: Generic hook, no unique angle
+
+💡 RECOMMENDATIONS:
+1. Your automation case studies perform 3x better than tips
+2. Posts with specific numbers ('40 hours', '3 workflows') get 40% more engagement
+3. LinkedIn posts outperform Twitter by 25%"
+```
+
+```
+User: "What themes should I focus on?"
+CMO: *calls analyze_content_patterns(days_back=60, top_percent=20)*
+CMO: "🎯 CONTENT PATTERN ANALYSIS (top 20% of 30 posts)
+
+📌 COMMON THEMES:
+• Automation case studies (9.2% avg engagement)
+• Workflow optimization (8.1%)
+• AI tool comparisons (7.5%)
+
+🎣 EFFECTIVE HOOK STYLES:
+• Specific Numbers ('I saved 15 hours') - 85% of top posts
+• Contrarian Takes ('Most people use X wrong') - 10.2% engagement
+• Bold Outcomes ('This replaced my entire team') - 9.8%
+
+💡 RECOMMENDATIONS:
+1. Focus on automation case studies with specific number hooks
+2. Solution-aware content (how-to) performs 40% better than problem-aware
+3. Numbered lists get 2x more engagement than story format"
+```
+
+**When to Use Each:**
+- Quick wins → show_top_performers
+- Strategic insights → get_post_analytics
+- Content strategy → analyze_content_patterns
+
+**Note:** Analytics require published posts with Ayrshare metrics synced. If no data found, suggest running sync endpoints or publishing more content.
 
 If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (November 6, 2023). Search with FULL context."""
 
