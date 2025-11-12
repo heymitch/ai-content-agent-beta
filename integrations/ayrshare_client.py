@@ -42,16 +42,38 @@ class AyrshareClient:
         if not self.enabled:
             logger.info("Ayrshare integration disabled (no API key)")
 
-    def get_post_analytics(self, post_id: str, platforms: Optional[List[str]] = None) -> Dict[str, Any]:
+    def get_post_analytics(
+        self,
+        post_id: str,
+        platforms: Optional[List[str]] = None,
+        search_platform_id: bool = False
+    ) -> Dict[str, Any]:
         """
         Get analytics for a specific post.
 
         Args:
-            post_id: Ayrshare post ID from /post endpoint
+            post_id: Either:
+                - Ayrshare post ID (from /post endpoint) if search_platform_id=False
+                - Social platform's native post ID (e.g., Twitter post ID) if search_platform_id=True
             platforms: Optional list of platforms to filter (e.g., ['twitter', 'linkedin'])
+                NOTE: If search_platform_id=True, only ONE platform allowed
+            search_platform_id: If True, searches by native platform post ID instead of Ayrshare ID.
+                This allows you to get analytics for manually posted content (not via Ayrshare).
+                Requires: post_id must be the social platform's ID, platforms must have exactly 1 platform.
 
         Returns:
             Dict with normalized analytics + platform-specific data
+
+        Examples:
+            # Get analytics for Ayrshare-posted content
+            analytics = client.get_post_analytics('ayrshare_post_id_123')
+
+            # Get analytics for manually posted tweet
+            analytics = client.get_post_analytics(
+                '1234567890123456789',  # Twitter's native post ID
+                platforms=['twitter'],
+                search_platform_id=True
+            )
         """
         if not self.enabled:
             return self._mock_analytics(post_id)
@@ -61,6 +83,16 @@ class AyrshareClient:
             body = {"id": post_id}
             if platforms:
                 body["platforms"] = platforms
+
+            # Add searchPlatformId for manually posted content
+            if search_platform_id:
+                body["searchPlatformId"] = True
+                # Validate: only one platform allowed when searching by platform ID
+                if platforms and len(platforms) != 1:
+                    raise ValueError(
+                        "When search_platform_id=True, exactly ONE platform must be specified. "
+                        f"Got {len(platforms)}: {platforms}"
+                    )
 
             # POST request (not GET) to /analytics/post endpoint
             response = requests.post(
