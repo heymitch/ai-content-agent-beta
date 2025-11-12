@@ -438,13 +438,21 @@ def extract_airtable_url_from_result(result) -> str:
         return result.get('airtable_url')
 
     # Handle string result - try to find Airtable URL
-    url_match = re.search(r'https://airtable\.com/[^\s\)]+', str(result))
+    # Pattern 1: Direct URL (https://airtable.com/...)
+    url_match = re.search(r'https://airtable\.com/[^\s\)\]]+', str(result))
 
     if url_match:
         return url_match.group(0)
 
+    # Pattern 2: "Airtable: URL" format (handles emoji prefix like 📊 Airtable:)
+    airtable_prefix_match = re.search(r'Airtable:\s*(https://airtable\.com/[^\s\)\]]+)', str(result))
+
+    if airtable_prefix_match:
+        return airtable_prefix_match.group(1)
+
     # Fallback: Return placeholder
     print(f"⚠️ Could not extract Airtable URL from result")
+    print(f"   Result preview: {str(result)[:300]}")
     return "https://airtable.com/[record_not_found]"
 
 

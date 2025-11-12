@@ -373,7 +373,7 @@ Just the clean post content."""
                 'airtable_record_id': airtable_record_id,
                 'airtable_url': airtable_url,
                 'status': 'draft',
-                'quality_score': (score / 5) * 100,  # Convert to 0-100 scale
+                'quality_score': int((score / 5) * 25),  # Convert 0-5 scale to 0-25 scale (integer)
                 'iterations': 1,
                 'slack_thread_ts': thread_ts,
                 'slack_channel_id': channel_id,
