@@ -27,7 +27,7 @@ RETURNS TABLE (
   content_type text,
   creator text,
   hook_line text,
-  tags jsonb,
+  tags text[],
   similarity float
 )
 LANGUAGE sql STABLE
