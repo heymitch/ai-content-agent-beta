@@ -25,7 +25,7 @@ RETURNS TABLE (
   content_type text,
   creator text,
   hook_line text,
-  tags jsonb,
+  tags text[],
   similarity float
 )
 LANGUAGE sql STABLE
@@ -66,7 +66,7 @@ RETURNS TABLE (
   content text,
   document_type text,
   voice_description text,
-  signature_phrases jsonb,
+  signature_phrases text[],
   similarity float
 )
 LANGUAGE sql STABLE
