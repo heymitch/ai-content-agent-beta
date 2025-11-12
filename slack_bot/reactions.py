@@ -94,7 +94,7 @@ class ReactionHandler:
         channel_id: str
     ) -> Dict[str, Any]:
         """
-        Schedule content to Airtable calendar
+        Save content to Airtable calendar as Draft
 
         Args:
             thread: Thread record
@@ -113,35 +113,35 @@ class ReactionHandler:
             return {
                 'success': False,
                 'action': 'schedule_rejected',
-                'message': f'⚠️ Quality score too low ({score}/100). Minimum 70 required for scheduling.\n\nReact with ✏️ to revise first.'
+                'message': f'⚠️ Quality score too low ({score}/100). Minimum 70 required to save as Draft.\n\nReact with ✏️ to revise first.'
             }
 
         try:
-            # Send to Airtable
+            # Send to Airtable as Draft
             record = self.airtable.create_record({
                 'Content': draft,
                 'Platform': platform.capitalize(),
                 'Quality Score': score,
-                'Status': 'Scheduled',
+                'Status': 'Draft',  # Save as Draft, not Scheduled
                 'Source': 'Slack Bot',
                 'User ID': user_id,
                 'Created At': thread.get('created_at', '')
             })
 
             # Update thread status
-            self.memory.update_status(thread['thread_ts'], 'scheduled')
+            self.memory.update_status(thread['thread_ts'], 'draft_saved')
 
             return {
                 'success': True,
-                'action': 'scheduled',
-                'message': f'✅ Scheduled to {platform.capitalize()} calendar!\n\n📅 Record ID: {record["id"]}\n📊 Quality Score: {score}/100'
+                'action': 'draft_saved',
+                'message': f'✅ Saved to {platform.capitalize()} calendar as Draft!\n\n📅 Record ID: {record["id"]}\n📊 Quality Score: {score}/100'
             }
         except Exception as e:
-            print(f"❌ Airtable scheduling error: {e}")
+            print(f"❌ Airtable save error: {e}")
             return {
                 'success': False,
-                'action': 'schedule_failed',
-                'message': f'❌ Failed to schedule: {str(e)}\n\nTry again or contact support.'
+                'action': 'save_failed',
+                'message': f'❌ Failed to save draft: {str(e)}\n\nTry again or contact support.'
             }
 
     async def handle_revise(
