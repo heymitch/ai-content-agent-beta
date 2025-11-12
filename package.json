@@ -9,6 +9,7 @@
     "start": "python3 -m uvicorn main_slack:app --host 0.0.0.0 --port 5000 --reload",
     "restart": "pkill -f uvicorn && npm start",
     "bootstrap": "node scripts/bootstrap_database.js",
+    "diagnose": "node scripts/diagnose_supabase.js",
     "export-db": "./scripts/export_database.sh",
     "test": "python -m pytest",
     "lint": "python -m pylint agents/ tools/ integrations/"
