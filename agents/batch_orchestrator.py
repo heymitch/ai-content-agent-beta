@@ -302,13 +302,10 @@ async def _execute_single_post(
         elif context_length > 500 or has_outline or has_multiple_paragraphs:
             # Complex context suggests need for Direct API agent (better research, validation)
             use_haiku = False
-        elif context_length < 100 and topic_length < 100:
-            # Very short/vague context → simple post → use Haiku fast path
-            use_haiku = True
         else:
-            # Default: Use Direct API agent for batch workflows (better quality control)
-            # Haiku is reserved for truly simple, short single posts
-            use_haiku = False
+            # Default: Use Haiku fast path for single posts (speed)
+            # Only use Direct API agent if explicitly a thread or has complex context
+            use_haiku = True
         
         if use_haiku:
             # Use Haiku fast path for single posts
