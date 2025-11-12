@@ -1604,6 +1604,317 @@ async def n8n_weekly_briefing(request: Request):
             "message": "Failed to generate briefing"
         }
 
+
+# ============= ANALYTICS SYNC ENDPOINTS =============
+
+@app.post('/api/sync/airtable-content')
+async def sync_airtable_content_endpoint(request: Request):
+    """
+    Sync edited content from Airtable back to generated_posts.
+
+    Updates body_content and regenerates embeddings for posts that were edited in Airtable.
+    Run before analytics analysis to ensure data accuracy.
+
+    Request body (optional):
+    {
+        "limit": 50,  # Max posts to sync (default: all)
+        "only_recent": true,  # Only sync last 30 days (default: true)
+        "post_ids": ["uuid1", "uuid2"]  # Sync specific posts (optional)
+    }
+
+    Returns:
+    {
+        "success": true,
+        "total": 25,
+        "synced": 12,
+        "skipped": 10,
+        "errors": 3,
+        "results": [...]
+    }
+    """
+    try:
+        data = await request.json() if request.headers.get('content-type') == 'application/json' else {}
+
+        from integrations.airtable_sync import sync_airtable_to_generated_posts, sync_specific_posts
+
+        # If specific post IDs provided, sync those
+        if data.get('post_ids'):
+            logger.info(f"Syncing {len(data['post_ids'])} specific posts from Airtable")
+            result = await sync_specific_posts(data['post_ids'])
+        else:
+            # Sync all or recent posts
+            limit = data.get('limit')
+            only_recent = data.get('only_recent', True)
+
+            logger.info(f"Syncing Airtable content (limit={limit}, only_recent={only_recent})")
+            result = await sync_airtable_to_generated_posts(limit=limit, only_recent=only_recent)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/sync/airtable-content: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/api/sync/ayrshare-metrics')
+async def sync_ayrshare_metrics_endpoint(request: Request):
+    """
+    Sync engagement metrics from Ayrshare to generated_posts.
+
+    Updates impressions, likes, shares, engagement_rate for published posts.
+    Run daily or before analytics analysis.
+
+    Request body (optional):
+    {
+        "days_back": 7,  # Sync posts from last N days (default: 7)
+        "limit": 50,  # Max posts to sync (default: all)
+        "force_resync": false  # Resync recently synced posts (default: false)
+    }
+
+    Returns:
+    {
+        "success": true,
+        "total": 15,
+        "synced": 15,
+        "errors": 0,
+        "total_impressions": 45000,
+        "total_engagements": 3200
+    }
+    """
+    try:
+        data = await request.json() if request.headers.get('content-type') == 'application/json' else {}
+
+        from integrations.ayrshare_sync import sync_ayrshare_metrics
+
+        days_back = data.get('days_back', 7)
+        limit = data.get('limit')
+        force_resync = data.get('force_resync', False)
+
+        logger.info(f"Syncing Ayrshare metrics (days_back={days_back}, force_resync={force_resync})")
+
+        result = await sync_ayrshare_metrics(
+            days_back=days_back,
+            limit=limit,
+            force_resync=force_resync
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/sync/ayrshare-metrics: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.get('/api/sync/status')
+async def get_sync_status_endpoint():
+    """
+    Get status of metrics sync.
+
+    Returns:
+    {
+        "success": true,
+        "total_posts": 50,
+        "synced_posts": 45,
+        "unsynced_posts": 5,
+        "needs_sync": 3,
+        "last_sync": "2025-01-20T10:30:00",
+        "avg_engagement_rate": 7.5
+    }
+    """
+    try:
+        from integrations.ayrshare_sync import get_sync_status
+
+        status = await get_sync_status()
+        return status
+
+    except Exception as e:
+        logger.error(f"Error in /api/sync/status: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# ============= PUBLISHING STATE TRACKING =============
+
+@app.post('/api/publishing/mark-published')
+async def mark_published_endpoint(request: Request):
+    """
+    Mark a post as published (called by n8n after publishing to Ayrshare).
+
+    Request body:
+    {
+        "airtable_record_id": "recABC123",  # OR post_id
+        "ayrshare_post_id": "xyz789",
+        "published_url": "https://linkedin.com/posts/...",
+        "published_at": "2025-01-20T14:30:00Z",  # Optional, defaults to now
+        "platform_ids": {  # Optional platform-specific IDs
+            "linkedin": "urn:123",
+            "twitter": "1234567890"
+        }
+    }
+
+    Returns:
+    {
+        "success": true,
+        "post_id": "uuid",
+        "ayrshare_post_id": "xyz789",
+        "published_url": "...",
+        "message": "Post successfully marked as published"
+    }
+    """
+    try:
+        data = await request.json()
+
+        from api.publishing_endpoints import mark_post_published
+
+        result = await mark_post_published(
+            airtable_record_id=data.get('airtable_record_id'),
+            post_id=data.get('post_id'),
+            ayrshare_post_id=data.get('ayrshare_post_id'),
+            published_url=data.get('published_url'),
+            published_at=data.get('published_at'),
+            platform_ids=data.get('platform_ids')
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/publishing/mark-published: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/api/publishing/mark-scheduled')
+async def mark_scheduled_endpoint(request: Request):
+    """
+    Mark a post as scheduled (called by n8n after scheduling in Ayrshare).
+
+    Request body:
+    {
+        "airtable_record_id": "recABC123",  # OR post_id
+        "scheduled_for": "2025-01-22T09:00:00Z",
+        "ayrshare_post_id": "xyz789"  # Optional
+    }
+
+    Returns:
+    {
+        "success": true,
+        "post_id": "uuid",
+        "scheduled_for": "2025-01-22T09:00:00Z",
+        "message": "Post successfully marked as scheduled"
+    }
+    """
+    try:
+        data = await request.json()
+
+        from api.publishing_endpoints import mark_post_scheduled
+
+        result = await mark_post_scheduled(
+            airtable_record_id=data.get('airtable_record_id'),
+            post_id=data.get('post_id'),
+            scheduled_for=data.get('scheduled_for'),
+            ayrshare_post_id=data.get('ayrshare_post_id')
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/publishing/mark-scheduled: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.get('/api/publishing/status')
+async def get_publishing_status_endpoint(request: Request):
+    """
+    Get publishing status for a post.
+
+    Query params:
+    - airtable_record_id: Airtable record ID
+    - OR post_id: UUID of generated_posts record
+
+    Returns:
+    {
+        "success": true,
+        "post_id": "uuid",
+        "status": "published",
+        "ayrshare_post_id": "xyz789",
+        "published_at": "2025-01-20T14:30:00Z",
+        "impressions": 1500,
+        "engagement_rate": 8.5
+    }
+    """
+    try:
+        from api.publishing_endpoints import get_publishing_status
+
+        airtable_record_id = request.query_params.get('airtable_record_id')
+        post_id = request.query_params.get('post_id')
+
+        result = await get_publishing_status(
+            airtable_record_id=airtable_record_id,
+            post_id=post_id
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/publishing/status: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/api/publishing/mark-failed')
+async def mark_failed_endpoint(request: Request):
+    """
+    Mark a post publish as failed (called by n8n if Ayrshare publishing fails).
+
+    Request body:
+    {
+        "airtable_record_id": "recABC123",  # OR post_id
+        "error_message": "API rate limit exceeded"
+    }
+
+    Returns:
+    {
+        "success": true,
+        "post_id": "uuid",
+        "message": "Post marked as failed"
+    }
+    """
+    try:
+        data = await request.json()
+
+        from api.publishing_endpoints import mark_publish_failed
+
+        result = await mark_publish_failed(
+            airtable_record_id=data.get('airtable_record_id'),
+            post_id=data.get('post_id'),
+            error_message=data.get('error_message')
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/publishing/mark-failed: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
 # ============= MAIN STARTUP =============
 
 if __name__ == "__main__":
