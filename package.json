@@ -15,7 +15,8 @@
     "lint": "python -m pylint agents/ tools/ integrations/"
   },
   "dependencies": {
-    "pg": "^8.12.0"
+    "pg": "^8.12.0",
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {},
   "engines": {
