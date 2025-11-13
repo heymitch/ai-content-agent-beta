@@ -284,6 +284,7 @@ RETURNS TABLE (
   document_type text,
   voice_description text,
   signature_phrases text[],
+  created_at timestamp,
   similarity float
 )
 LANGUAGE sql STABLE
@@ -295,6 +296,7 @@ AS $$
     company_documents.document_type,
     company_documents.voice_description,
     company_documents.signature_phrases,
+    company_documents.created_at,
     1 - (company_documents.embedding <=> query_embedding) as similarity
   FROM company_documents
   WHERE company_documents.embedding IS NOT NULL

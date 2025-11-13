@@ -133,13 +133,14 @@ async def search_knowledge_base(args):
 
 @tool(
     "search_company_documents",
-    "Search company documents using semantic RAG. Leave document_type=None to search ALL documents semantically (RECOMMENDED). Only filter by document_type if user explicitly requests case studies, testimonials, or product docs. Use BEFORE asking user for context.",
+    "Search company documents using semantic RAG. For MEETING TRANSCRIPTS: use document_type='transcript' and sort_by_date=True. Leave document_type=None to search ALL documents semantically. Only filter by document_type if user explicitly requests case studies, testimonials, product docs, or transcripts. Use BEFORE asking user for context.",
     {
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "Search query"},
             "match_count": {"type": "integer", "description": "Number of results to return", "default": 3},
-            "document_type": {"type": "string", "description": "Optional filter: case_study, testimonial, or product_doc"}
+            "document_type": {"type": "string", "description": "Optional filter: case_study, testimonial, product_doc, transcript, or internal_doc"},
+            "sort_by_date": {"type": "boolean", "description": "If true, sort by created_at DESC (most recent first). Use for finding 'last meeting'.", "default": False}
         },
         "required": ["query"]
     }
@@ -151,7 +152,8 @@ async def search_company_documents(args):
 
     query = args.get('query', '')
     match_count = args.get('match_count', 3)
-    document_type = args.get('document_type')  # Optional: 'case_study', 'testimonial', 'product_doc'
+    document_type = args.get('document_type')  # Optional: 'case_study', 'testimonial', 'product_doc', 'transcript'
+    sort_by_date = args.get('sort_by_date', False)
 
     # Convert string "None" to actual None
     if document_type in ("None", "null", ""):
@@ -161,6 +163,7 @@ async def search_company_documents(args):
     print(f"      query={query}")
     print(f"      match_count={match_count}")
     print(f"      document_type={document_type}")
+    print(f"      sort_by_date={sort_by_date}")
 
     # Run blocking I/O in thread pool to avoid blocking event loop
     loop = asyncio.get_event_loop()
@@ -169,7 +172,8 @@ async def search_company_documents(args):
         lambda: _search_company_docs_func(
             query=query,
             match_count=match_count,
-            document_type=document_type
+            document_type=document_type,
+            sort_by_date=sort_by_date
         )
     )
 
@@ -1528,7 +1532,7 @@ Do NOT tell users to "check websites" - YOU search for them.
 1. web_search - USE THIS FIRST for any news/events/updates (include year/date in query!)
 2. perplexity_search - Deep research with citations (best for: stats, fact-checking, academic research, complex topics)
 3. search_knowledge_base - Internal documentation and brand voice
-4. search_company_documents - User-uploaded docs (case studies, testimonials, product docs) - USE BEFORE asking for context
+4. search_company_documents - User-uploaded docs (case studies, testimonials, product docs, MEETING TRANSCRIPTS) - USE BEFORE asking for context
 5. search_content_examples - Semantic search across 700+ content examples (use user's EXACT query words)
 6. analyze_past_content - Get top posts by engagement (NOT for search - use search_content_examples instead)
 7. search_past_posts - Past content you've created
@@ -1540,6 +1544,14 @@ Do NOT tell users to "check websites" - YOU search for them.
 13. get_post_analytics - NEW: Analyze post performance with Claude insights (top/worst performers, patterns, recommendations)
 14. show_top_performers - NEW: Show best posts by engagement rate with detailed metrics
 15. analyze_content_patterns - NEW: Deep semantic analysis using embeddings (identifies themes, hook styles, structures)
+
+**CRITICAL: MEETING REFERENCES**
+When user asks about "meetings" or "last meeting", they mean MEETING TRANSCRIPTS stored in company_documents, NOT calendar events:
+- DO NOT call calendar/scheduling tools
+- USE search_company_documents with document_type filter for transcripts
+- The created_at field = meeting date (when transcript was uploaded)
+- Sort by created_at DESC to find "last meeting"
+- Example: "what was discussed in my last meeting?" → search_company_documents(query="meeting transcript", document_type="transcript", sort by created_at DESC)
 
 **CONTENT CREATION WORKFLOW:**
 

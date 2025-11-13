@@ -8,6 +8,7 @@ Use for:
 - Testimonials and reviews
 - Internal documentation
 - Project reports
+- Meeting transcripts (created_at = meeting date)
 
 NOT for:
 - Brand voice/guidelines (use .claude/CLAUDE.md)
@@ -28,7 +29,8 @@ load_dotenv(override=True)
 def search_company_documents(
     query: str,
     match_count: int = 3,
-    document_type: Optional[str] = None
+    document_type: Optional[str] = None,
+    sort_by_date: bool = False
 ) -> str:
     """
     Search user-uploaded company documents using HYBRID search (keyword + semantic)
@@ -36,7 +38,8 @@ def search_company_documents(
     Args:
         query: Search query (e.g., "Joel", "AI agents case studies", "product ROI metrics")
         match_count: Number of results to return (default 3)
-        document_type: Filter by type ('case_study', 'testimonial', 'product_doc', 'internal_doc', etc.)
+        document_type: Filter by type ('case_study', 'testimonial', 'product_doc', 'internal_doc', 'transcript', etc.)
+        sort_by_date: If True, sort by created_at DESC (most recent first) - useful for finding "last meeting"
 
     Returns:
         JSON string with matched documents:
@@ -48,6 +51,7 @@ def search_company_documents(
                     "title": "...",
                     "content": "...",
                     "document_type": "case_study",
+                    "created_at": "2025-01-27T10:30:00",
                     "similarity": 0.85,
                     "match_type": "keyword" or "semantic"
                 }
@@ -60,6 +64,7 @@ def search_company_documents(
         2. Try keyword matching on title first (fast, exact)
         3. Fall back to semantic search on content (slower, fuzzy)
         4. Combine and dedupe results
+        5. If sort_by_date=True, sort by created_at DESC
 
     Example:
         # Simple name search
@@ -67,6 +72,9 @@ def search_company_documents(
 
         # Topic search
         results = search_company_documents("AI agents customer success", match_count=5)
+
+        # Find last meeting transcript
+        results = search_company_documents("", document_type="transcript", match_count=1, sort_by_date=True)
     """
     try:
         from openai import OpenAI
@@ -106,14 +114,19 @@ def search_company_documents(
             try:
                 # Use ilike for case-insensitive partial match
                 kw_query = supabase.table('company_documents')\
-                    .select('id, title, content, document_type, voice_description, signature_phrases')\
+                    .select('id, title, content, document_type, voice_description, signature_phrases, created_at')\
                     .eq('status', 'active')\
                     .eq('searchable', True)\
-                    .ilike('title', f'%{keyword}%')\
-                    .limit(match_count)
+                    .ilike('title', f'%{keyword}%')
 
                 if document_type and document_type != "all":
                     kw_query = kw_query.eq('document_type', document_type)
+
+                # Sort by date if requested (for finding "last meeting")
+                if sort_by_date:
+                    kw_query = kw_query.order('created_at', desc=True)
+
+                kw_query = kw_query.limit(match_count)
 
                 kw_result = kw_query.execute()
 
@@ -183,6 +196,10 @@ def search_company_documents(
         else:
             print(f"   ⚠️ No matches found for query: '{query}'")
 
+        # Sort by date if requested (after combining keyword + semantic results)
+        if sort_by_date:
+            all_matches.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+
         # Format results from combined matches
         matches = []
         for item in all_matches:
@@ -190,6 +207,7 @@ def search_company_documents(
                 'title': item.get('title', 'Untitled Document'),
                 'content': item.get('content', ''),
                 'document_type': item.get('document_type', 'unknown'),
+                'created_at': item.get('created_at'),  # Include meeting date
                 'similarity': round(item.get('similarity', 0), 2),
                 'match_type': item.get('match_type', 'unknown')
             }
