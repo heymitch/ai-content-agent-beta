@@ -1741,6 +1741,62 @@ async def get_sync_status_endpoint():
         }
 
 
+@app.post('/api/sync/analytics-to-airtable')
+async def sync_analytics_to_airtable_endpoint(request: Request):
+    """
+    Trigger Supabase → Airtable analytics sync.
+
+    Syncs engagement metrics from Supabase generated_posts table
+    back to Airtable content calendar records.
+
+    Request body:
+    {
+        "days_back": 7,  # Number of days to look back (default: 7)
+        "force_resync": false  # If true, resync even if recently synced
+    }
+
+    Returns:
+    {
+        "success": true,
+        "synced": 45,
+        "errors": 2,
+        "total_posts": 47,
+        "total_impressions": 150000,
+        "total_engagements": 12500
+    }
+    """
+    try:
+        from integrations.supabase_to_airtable_sync import bulk_sync_analytics_to_airtable
+
+        body = await request.json()
+        days_back = body.get('days_back', 7)
+        force_resync = body.get('force_resync', False)
+
+        logger.info(f"📊 Starting analytics sync: days_back={days_back}, force_resync={force_resync}")
+
+        result = await bulk_sync_analytics_to_airtable(
+            days_back=days_back,
+            force_resync=force_resync
+        )
+
+        if result.get("success"):
+            logger.info(f"✅ Sync complete: {result.get('synced')} posts synced")
+        else:
+            logger.error(f"❌ Sync failed: {result.get('error')}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/sync/analytics-to-airtable: {e}", exc_info=True)
+        return {
+            "success": False,
+            "synced": 0,
+            "errors": 0,
+            "total_posts": 0,
+            "error": str(e)
+        }
+
+
 # ============= PUBLISHING STATE TRACKING =============
 
 @app.post('/api/publishing/mark-published')

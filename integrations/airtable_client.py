@@ -450,6 +450,88 @@ class AirtableContentCalendar:
             first_content = '\n'.join(non_empty_lines) if non_empty_lines else text
             return first_content[:200].strip()
 
+    def update_analytics(
+        self,
+        record_id: str,
+        metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Update analytics fields for an Airtable record.
+
+        Args:
+            record_id: Airtable record ID
+            metrics: Dictionary with analytics data:
+                - impressions (int)
+                - engagements (int)
+                - clicks (int)
+                - likes (int)
+                - comments (int)
+                - shares (int)
+                - engagement_rate (float)
+                - last_analytics_sync (datetime or ISO string)
+
+        Returns:
+            {
+                "success": bool,
+                "record_id": str,
+                "fields": {...}  (if success)
+                "error": str  (if failure)
+            }
+        """
+        try:
+            # Build Airtable fields for analytics
+            fields = {}
+
+            # Add numeric metrics if present
+            if 'impressions' in metrics:
+                fields['Impressions'] = int(metrics['impressions'] or 0)
+
+            if 'engagements' in metrics:
+                fields['Engagements'] = int(metrics['engagements'] or 0)
+
+            if 'clicks' in metrics:
+                fields['Clicks'] = int(metrics['clicks'] or 0)
+
+            if 'likes' in metrics:
+                fields['Likes'] = int(metrics['likes'] or 0)
+
+            if 'comments' in metrics:
+                fields['Comments'] = int(metrics['comments'] or 0)
+
+            if 'shares' in metrics:
+                fields['Shares'] = int(metrics['shares'] or 0)
+
+            # Engagement rate as percentage (Airtable percent field expects 0-1, we store as 0-100)
+            if 'engagement_rate' in metrics:
+                rate = float(metrics['engagement_rate'] or 0)
+                # If rate > 1, assume it's already in percentage (0-100), convert to 0-1
+                fields['Engagement Rate'] = rate / 100 if rate > 1 else rate
+
+            # Last synced timestamp
+            if 'last_analytics_sync' in metrics:
+                sync_time = metrics['last_analytics_sync']
+                # Convert to ISO string if datetime object
+                if hasattr(sync_time, 'isoformat'):
+                    fields['Last Synced'] = sync_time.isoformat()
+                else:
+                    fields['Last Synced'] = sync_time
+
+            # Update the record
+            record = self.table.update(record_id, fields)
+
+            return {
+                'success': True,
+                'record_id': record['id'],
+                'fields': record['fields']
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'record_id': record_id,
+                'error': str(e)
+            }
+
 
 def get_airtable_client() -> AirtableContentCalendar:
     """
