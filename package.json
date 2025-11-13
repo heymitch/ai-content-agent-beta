@@ -13,7 +13,8 @@
     "diagnose": "node scripts/diagnose_supabase.js",
     "export-db": "./scripts/export_database.sh",
     "test": "python -m pytest",
-    "lint": "python -m pylint agents/ tools/ integrations/"
+    "lint": "python -m pylint agents/ tools/ integrations/",
+    "postinstall": "npm list pg dotenv || npm install pg dotenv"
   },
   "dependencies": {
     "pg": "^8.12.0",
