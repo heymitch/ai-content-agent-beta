@@ -29,7 +29,7 @@ const MIN_TWEET_LENGTH = 50;  // Avoid very short tweets
 // "slash" = "1/5 " at start
 // "emoji" = "1/5 🧵" at start
 // "none" = no numbering
-const NUMBERING_STYLE = "emoji";
+const NUMBERING_STYLE = "none";
 
 // ============================================================================
 // MAIN FUNCTION
