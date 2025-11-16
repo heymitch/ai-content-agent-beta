@@ -268,6 +268,7 @@ CREATE INDEX IF NOT EXISTS idx_company_docs_team ON company_documents(team_id);
 CREATE INDEX IF NOT EXISTS idx_company_docs_drive_id ON company_documents(google_drive_file_id);
 CREATE INDEX IF NOT EXISTS idx_company_docs_status ON company_documents(status);
 CREATE INDEX IF NOT EXISTS idx_company_docs_searchable ON company_documents(searchable) WHERE searchable = true;
+CREATE INDEX IF NOT EXISTS idx_company_docs_metadata ON company_documents USING GIN(metadata);
 CREATE INDEX IF NOT EXISTS idx_company_docs_embedding ON company_documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- RAG search function

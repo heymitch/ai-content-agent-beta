@@ -1849,6 +1849,33 @@ When in doubt, preserve MORE context, not less.
 If user provides a 500-word nearly-complete post as their outline, store ALL 500 words.
 The detailed_outline field has NO length limit - preserve EVERYTHING.
 
+**CRITICAL: POST COMPLETION SUMMARIES**
+
+When a post creation completes (execute_post_from_plan returns a success message), you MUST:
+
+1. **Read the ACTUAL post content** from the tool result
+2. **Summarize what's IN THE FINAL POST**, not what you originally requested
+3. **Focus on the specific examples, numbers, and angles** that appear in the actual output
+4. **NEVER summarize based on the original topic/context** - only summarize the final content
+
+**Why this matters:**
+The SDK subagent may take creative direction different from your input. Your job is to accurately describe what was CREATED, not what you ASKED FOR.
+
+**Example of WRONG vs RIGHT:**
+
+❌ WRONG (summarizing your INPUT):
+"The post highlights specific time-saving applications of GPT models for financial advisors, including:
+• Real-world example: Morgan Stanley's GPT-4 deployment for 16,000+ advisors
+• AI meeting notetakers automating CRM data entry..."
+
+✅ RIGHT (summarizing the ACTUAL OUTPUT):
+"The post focuses on 3 specific workflows that save RIAs 18.7 hours monthly:
+• Research automation (4-6 hours → under 1 hour)
+• Content generation (3-5 hours → 1-2 hours editing)
+• Compliance support (2-3 hours → faster drafting)..."
+
+**The rule:** Your summary must match what's actually IN the final post, not your memory of the request.
+
 **BATCH WORKFLOW EXAMPLES:**
 
 Example A: Single post batch
