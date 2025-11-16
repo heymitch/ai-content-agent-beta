@@ -56,6 +56,6 @@ BEGIN
   IF updated_count > 0 THEN
     RAISE NOTICE '✅ Updated % rows with google_drive_file_id in metadata', updated_count;
   END IF;
-END $$;
 
-RAISE NOTICE '✅ Migration 003 complete: metadata column';
+  RAISE NOTICE '✅ Migration 003 complete: metadata column';
+END $$;

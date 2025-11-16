@@ -24,7 +24,7 @@ BEGIN
   ELSE
     RAISE NOTICE '✅ title column is already nullable';
   END IF;
-END $$;
 
-RAISE NOTICE '✅ Migration 004 complete: title nullable';
-RAISE NOTICE '💡 Note: sync_company_documents_fields() trigger will auto-populate title from metadata';
+  RAISE NOTICE '✅ Migration 004 complete: title nullable';
+  RAISE NOTICE '💡 Note: sync_company_documents_fields() trigger will auto-populate title from metadata';
+END $$;
