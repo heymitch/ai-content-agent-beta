@@ -9,15 +9,15 @@
 
 DO $$
 DECLARE
-  is_nullable TEXT;
+  col_nullable TEXT;
 BEGIN
   -- Check if title column is nullable
-  SELECT is_nullable INTO is_nullable
+  SELECT columns.is_nullable INTO col_nullable
   FROM information_schema.columns
   WHERE table_name = 'company_documents'
     AND column_name = 'title';
 
-  IF is_nullable = 'NO' THEN
+  IF col_nullable = 'NO' THEN
     RAISE NOTICE '➕ Making title column nullable...';
     ALTER TABLE company_documents ALTER COLUMN title DROP NOT NULL;
     RAISE NOTICE '✅ title column is now nullable';
