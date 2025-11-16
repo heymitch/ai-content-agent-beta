@@ -81,29 +81,39 @@ ORDER BY table_name;
 - `research`
 - `slack_threads`
 
-### 1.4. Run Migration (If Upgrading Existing Database)
+### 1.4. Run Migrations (If Upgrading Existing Database)
 
-If the client already has an older database and gets error: **"column company_documents.metadata does not exist"**, run this migration:
+If the client already has an older database, they may need to run these migrations:
+
+#### Migration 1: Add metadata column
+
+**Error:** "column company_documents.metadata does not exist"
 
 ```bash
-cd setup
-psql "postgresql://postgres.[CLIENT-PROJECT]:[PASSWORD]@[HOST]:5432/postgres" -f add_metadata_column.sql
-```
-
-**OR** have client run this in Supabase SQL Editor:
-
-```sql
--- Copy and paste the contents of setup/add_metadata_column.sql
+psql "$SUPABASE_DB_URL" -f setup/add_metadata_column.sql
 ```
 
 **What this adds:**
 - `metadata` JSONB column to `company_documents` table
-- Index on metadata column for performance
+- GIN index on metadata column for performance
 - Populates metadata with existing `google_drive_file_id` values
 
-**When to run this:**
-- If n8n workflow fails with "column metadata does not exist"
-- If upgrading from a database created before metadata column was added
+#### Migration 2: Make title nullable
+
+**Error:** "null value in column 'title' violates not-null constraint"
+
+```bash
+psql "$SUPABASE_DB_URL" -f setup/fix_title_nullable.sql
+```
+
+**What this does:**
+- Removes NOT NULL constraint from `title` column
+- Allows n8n vectorstore to insert documents without titles
+- Trigger will auto-populate title from metadata if present
+
+**When to run these:**
+- If n8n workflow fails with constraint errors
+- If upgrading from a database created before these changes
 - Safe to run multiple times (idempotent)
 
 ---
