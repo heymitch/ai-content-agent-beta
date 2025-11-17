@@ -101,7 +101,9 @@ Return the enhanced draft only (plain text, NO markdown formatting like **bold**
 # Clients can customize by creating .claude/prompts/linkedin/create_draft.md
 from integrations.prompt_loader import load_prompt
 
+print("🔍 DEBUG: About to load create_draft prompt for LinkedIn...")
 _draft_template = load_prompt("create_draft", platform="linkedin")
+print(f"🔍 DEBUG: Loaded create_draft template ({len(_draft_template)} chars)")
 
 # Inject writing rules into the template
 CREATE_HUMAN_DRAFT_PROMPT = _draft_template.replace(
