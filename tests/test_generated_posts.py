@@ -88,7 +88,7 @@ If you're also contemplating new approaches to try/experiment in response to dec
 I would greatly appreciate hearing your perspective."""
 
     # Import LinkedIn agent
-    from agents.linkedin_sdk_agent import LinkedInSDKAgent
+    from agents.linkedin_direct_api_agent import create_linkedin_post
 
     print("\n📝 Creating LinkedIn agent...")
     agent = LinkedInSDKAgent(user_id="test_user_123")
@@ -153,7 +153,7 @@ async def test_content_type_detection():
     print("TEST: Content Type Detection")
     print("="*60)
 
-    from agents.linkedin_sdk_agent import LinkedInSDKAgent
+    from agents.linkedin_direct_api_agent import create_linkedin_post
 
     agent = LinkedInSDKAgent(user_id="test_user")
 
