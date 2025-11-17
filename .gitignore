@@ -34,8 +34,18 @@ env-sample.txt
 clients/*/.env
 clients/*/.env.*
 
-# Client-specific system prompt customization
+# Client-specific customizations (don't commit client overrides)
 .claude/CLAUDE.md
+
+# Client custom prompt overrides (Claude Projects-style)
+.claude/prompts/*.md
+.claude/prompts/linkedin/*.md
+.claude/prompts/twitter/*.md
+.claude/prompts/email/*.md
+.claude/prompts/youtube/*.md
+.claude/prompts/instagram/*.md
+# BUT keep the README (instructions for clients)
+!.claude/prompts/README.md
 
 # IDE
 .vscode/
