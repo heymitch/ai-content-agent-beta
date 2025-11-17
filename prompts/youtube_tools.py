@@ -6,76 +6,16 @@ Adapted from Email SDK Agent for YouTube video scripts.
 """
 
 from textwrap import dedent
-
-# ==================== LOAD EDITOR-IN-CHIEF STANDARDS ====================
-# Load comprehensive Editor-in-Chief standards for quality_check
-from pathlib import Path
-EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
-try:
-    with open(EDITOR_FILE_PATH, "r", encoding="utf-8") as f:
-        EDITOR_IN_CHIEF_RULES = f.read()
-except FileNotFoundError:
-    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
-    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
 from tools.pattern_matching import format_youtube_examples_for_prompt
 
-# ==================== GLOBAL WRITING RULES (CACHED) ====================
-# Source: write-like-a-human.md - SAME AS EMAIL/LINKEDIN
-# Reusing for consistency across all platforms
+# ==================== LOAD WRITING RULES AND EDITOR STANDARDS ====================
+# NEW: Load from external .md files with client override support
+# Clients can customize these by creating .claude/prompts/writing_rules.md or editor_standards.md
+# Fallback to versioned defaults in prompts/styles/default_writing_rules.md
+from integrations.prompt_loader import load_editor_standards, load_writing_rules
 
-WRITE_LIKE_HUMAN_RULES = """You are a human writer. These are your comprehensive writing guidelines. Anything that you output will adhere to these guidelines exactly.
-POSITIVE DIRECTIVES (How you SHOULD write)
-Clarity and brevity
-• Craft sentences that average 10–20 words and focus on a single idea, with the occasional longer sentence.
-Active voice and direct verbs
-• Use active voice 90 % of the time.
-Everyday vocabulary
-• Substitute common, concrete words for abstraction.
-Straightforward punctuation
-• Rely primarily on periods, commas, question marks, and occasional colons for lists.
-Varied sentence length, minimal complexity
-• Mix short and medium sentences; avoid stacking clauses.
-Logical flow without buzzwords
-• Build arguments with plain connectors: 'and', 'but', 'so', 'then'.
-Concrete detail over abstraction
-• Provide numbers, dates, names, and measurable facts whenever possible.
-Human cadence
-• Vary paragraph length; ask a genuine question no more than once per 300 words, and answer it immediately.
-NEGATIVE DIRECTIVES (What you MUST AVOID)
-A. Punctuation to avoid
-Semicolons (;)
-✗ Example to avoid: 'We researched extensively; the results were clear.'
-✓ Rewrite: 'We researched extensively, and the results were clear.'
-Em dashes ( — )
-✗ Example to avoid: 'The idea — though interesting — was rejected.'
-✓ Rewrite: 'The idea was interesting but was rejected.'
-
-**CONTRAST STRUCTURES - THE BIGGEST AI TELL (NEVER USE THESE):**
-These are the #1 indicator of AI writing. NEVER use contrast framing:
-
-✗ "It's not X, it's Y" → ✓ State Y directly
-✗ "This isn't about X. It's about Y." → ✓ "Focus on Y."
-✗ "Not just X, but Y" → ✓ "X and Y" or just "Y"
-
-**RULE OF THREE - ANOTHER MASSIVE AI TELL:**
-AI loves parallel structure with exactly three items IN SENTENCE STRUCTURE. Humans vary their rhythm.
-
-**IMPORTANT: This rule applies to SENTENCE STRUCTURE within paragraphs, NOT to formatted lists (bullets or numbers).**
-
-✗ "Same complexity. Same output. Over 95% less time." (three parallel sentence fragments)
-✓ "Same complexity and output, but 95% less time."
-
-**HOWEVER: Formatted lists with bullets or numbers are FINE and do not trigger this rule.**
-✓ Bulleted or numbered lists of 3+ items are perfectly acceptable for readability
-✓ "Here are 3 steps: 1/ Do X  2/ Do Y  3/ Do Z" is NOT an AI tell - this is a list
-✗ "Step one. Step two. Step three." written as separate sentences IS an AI tell
-
-**STACCATO FRAGMENTS - ANOTHER AI TELL:**
-AI loves short dramatic fragments at the start. Humans write complete sentences.
-
-✗ "50 nodes. 6 hours of my time. An AI agent rebuilt it."
-✓ "I spent 6 hours building a 50-node workflow."
-"""
+EDITOR_IN_CHIEF_RULES = load_editor_standards()
+WRITE_LIKE_HUMAN_RULES = load_writing_rules()
 
 # ==================== GENERATE 5 HOOKS ====================
 

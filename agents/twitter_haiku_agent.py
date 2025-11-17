@@ -12,17 +12,11 @@ from anthropic import Anthropic, RateLimitError
 from utils.anthropic_client import get_anthropic_client
 from utils.retry_decorator import async_retry_with_backoff
 
-# Load WRITE_LIKE_HUMAN_RULES and editor-in-chief rules
-from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+# Load writing rules using new PromptLoader (supports client overrides)
+from integrations.prompt_loader import load_writing_rules, load_editor_standards
 
-# Load editor-in-chief rules
-EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
-try:
-    with open(EDITOR_FILE_PATH, 'r', encoding='utf-8') as f:
-        EDITOR_IN_CHIEF_RULES = f.read()
-except FileNotFoundError:
-    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
-    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
+WRITE_LIKE_HUMAN_RULES = load_writing_rules()
+EDITOR_IN_CHIEF_RULES = load_editor_standards()
 
 # Import search functions
 from tools.template_search import search_templates_agentic, get_template_by_name

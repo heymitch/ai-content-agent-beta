@@ -13,20 +13,14 @@ Instagram-specific adaptations:
 
 from textwrap import dedent
 
-# ==================== LOAD EDITOR-IN-CHIEF STANDARDS ====================
-# Load comprehensive Editor-in-Chief standards for quality_check
-from pathlib import Path
-EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
-try:
-    with open(EDITOR_FILE_PATH, "r", encoding="utf-8") as f:
-        EDITOR_IN_CHIEF_RULES = f.read()
-except FileNotFoundError:
-    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
-    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
+# ==================== LOAD WRITING RULES AND EDITOR STANDARDS ====================
+# NEW: Load from external .md files with client override support
+# Clients can customize these by creating .claude/prompts/writing_rules.md or editor_standards.md
+# Fallback to versioned defaults in prompts/styles/default_writing_rules.md
+from integrations.prompt_loader import load_editor_standards, load_writing_rules
 
-# ==================== GLOBAL WRITING RULES (REUSED FROM LINKEDIN) ====================
-# Import the same WRITE_LIKE_HUMAN_RULES to maintain consistency across platforms
-from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+EDITOR_IN_CHIEF_RULES = load_editor_standards()
+WRITE_LIKE_HUMAN_RULES = load_writing_rules()
 
 # ==================== GENERATE 5 HOOKS (INSTAGRAM-OPTIMIZED) ====================
 
