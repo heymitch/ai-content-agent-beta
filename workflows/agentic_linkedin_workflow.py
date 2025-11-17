@@ -10,7 +10,7 @@ from typing import Dict, Any
 # Add parent directory to path for validator imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from validators.linkedin_validator import LinkedInValidator
-from agents.linkedin_direct_api_agent import create_linkedin_post
+from agents.linkedin_direct_api_agent import create_linkedin_post_workflow
 
 
 class AgenticLinkedInWorkflow(ContentWorkflow):
@@ -65,7 +65,7 @@ class AgenticLinkedInWorkflow(ContentWorkflow):
         print(f"🚀 LinkedIn Workflow: Starting for '{brief}'")
 
         # Use Direct API agent
-        result = await create_linkedin_post(
+        result = await create_linkedin_post_workflow(
             topic=brief,
             context=brand_context,
             post_type='standard',
