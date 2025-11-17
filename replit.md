@@ -71,27 +71,32 @@ The application uses a **3-tier agent hierarchy** with specialized sub-agents:
 
 ### Platform-Specific Workflows
 
-**LinkedIn** (`agents/linkedin_sdk_agent.py`):
+**LinkedIn** ([agents/linkedin_direct_api_agent.py](agents/linkedin_direct_api_agent.py)):
 - Length: 100-300 words optimal
 - Structure: Hook → Body → CTA
 - Quality gates: No AI buzzwords, specific numbers, authentic voice
 - Tools: Hook generator, proof injector, web search, template search
 
-**Twitter/X** (`agents/twitter_sdk_agent.py`):
+**Twitter/X** ([agents/twitter_direct_api_agent.py](agents/twitter_direct_api_agent.py)):
 - Length: 280 chars per tweet, 5-7 tweet threads
 - Formats: Paragraph, What/How/Why, Listicle, Old vs New
 - Quality gates: 18/25 minimum, human detection 80%+
 - Autonomous format selection based on topic
 
-**Email** (`agents/email_sdk_agent.py`):
+**Email** ([agents/email_direct_api_agent.py](agents/email_direct_api_agent.py)):
 - Types: Value (400-500 words), Indirect (400-600 words), Direct (100-200 words)
 - Quality gates: Subject line A/B tested, clear CTA, skimmable structure
 - Autonomous type selection based on audience warmth
 
-**YouTube** (`agents/youtube_sdk_agent.py`):
+**YouTube** ([agents/youtube_direct_api_agent.py](agents/youtube_direct_api_agent.py)):
 - Structure: Script with timing markers (0:00, 0:30, etc.)
 - Length: 8-12 minutes optimal
 - Quality gates: Retention hooks every 90 seconds, clear B-roll cues
+
+**Instagram** ([agents/instagram_direct_api_agent.py](agents/instagram_direct_api_agent.py)):
+- Length: 150-250 words optimal
+- Structure: Hook → Value → CTA
+- Quality gates: Visual storytelling, engaging captions, hashtag strategy
 
 ### Knowledge Base & RAG
 
