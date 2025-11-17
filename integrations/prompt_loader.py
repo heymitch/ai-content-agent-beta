@@ -239,9 +239,12 @@ def _try_load_file(path: Path, source_description: str) -> Optional[str]:
 
     try:
         content = path.read_text(encoding='utf-8')
+        # Use print() to ensure it shows in deployment logs
+        print(f"Loaded prompt from {source_description}: {path.name}")
         logger.info(f"Loaded prompt from {source_description}: {path.name}")
         return content
     except Exception as e:
+        print(f"❌ Failed to read {path}: {e}")
         logger.error(f"Failed to read {path}: {e}")
         return None
 
