@@ -719,29 +719,36 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
             from integrations.airtable_client import get_airtable_client
             airtable = get_airtable_client()
 
-            # Status determination based on 0-25 scale
-            if validation_score >= 24:  # 24-25
-                airtable_status = "Ready"
-            elif validation_score >= 18:  # 18-23
-                airtable_status = "Draft"
-            else:  # <18
-                airtable_status = "Needs Review"
+            if not airtable:
+                print("⚠️ Airtable client not configured - skipping save")
+            else:
+                # Status determination based on 0-25 scale
+                if validation_score >= 24:  # 24-25
+                    airtable_status = "Ready"
+                elif validation_score >= 18:  # 18-23
+                    airtable_status = "Draft"
+                else:  # <18
+                    airtable_status = "Needs Review"
 
-            result = airtable.create_content_record(
-                content=clean_output,
-                platform='twitter',
-                post_hook=hook_preview,
-                status=airtable_status,
-                suggested_edits=validation_formatted,
-                publish_date=self.publish_date
-            )
+                result = airtable.create_content_record(
+                    content=clean_output,
+                    platform='twitter',
+                    post_hook=hook_preview,
+                    status=airtable_status,
+                    suggested_edits=validation_formatted,
+                    publish_date=self.publish_date
+                )
 
-            if result.get('success'):
-                airtable_url = result.get('url')
-                airtable_record_id = result.get('record_id')
-                print(f"✅ Saved to Airtable: {airtable_url}")
+                if result.get('success'):
+                    airtable_url = result.get('url')
+                    airtable_record_id = result.get('record_id')
+                    print(f"✅ Saved to Airtable: {airtable_url}")
+                else:
+                    print(f"⚠️ Airtable save returned success=False: {result.get('error', 'No error message')}")
         except Exception as e:
             print(f"❌ Airtable save failed: {e}")
+            import traceback
+            traceback.print_exc()
 
         # Save to Supabase
         print("\n💾 ATTEMPTING SUPABASE SAVE")
