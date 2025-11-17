@@ -10,23 +10,23 @@ from typing import Dict, Any
 # Add parent directory to path for validator imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from validators.linkedin_validator import LinkedInValidator
-from agents.linkedin_sdk_agent import LinkedInSDKAgent
+from agents.linkedin_direct_api_agent import create_linkedin_post
 
 
 class AgenticLinkedInWorkflow(ContentWorkflow):
     """
-    Fully agentic LinkedIn workflow with autonomous research and tool calling
+    LinkedIn workflow using Direct API agent
 
     Flow:
-    1. Autonomous hook generation (with web research)
+    1. Hook generation
     2. Draft creation with hook
-    3. Autonomous proof injection (with data research)
+    3. Proof injection
     4. Validation & editing loop
     """
 
     def __init__(self, supabase_client, airtable_client=None):
         """
-        Initialize agentic LinkedIn workflow
+        Initialize LinkedIn workflow
 
         Args:
             supabase_client: Supabase client instance
@@ -38,8 +38,7 @@ class AgenticLinkedInWorkflow(ContentWorkflow):
             supabase_client=supabase_client
         )
 
-        # Tier 2 LinkedIn SDK agent (Claude tool orchestrator)
-        self.agent = LinkedInSDKAgent()
+        self.supabase_client = supabase_client
 
     async def execute(
         self,
@@ -63,27 +62,29 @@ class AgenticLinkedInWorkflow(ContentWorkflow):
             Dict with draft, score, hooks, iterations, metadata
         """
 
-        print(f"🚀 Agentic LinkedIn Workflow: Starting for '{brief}'")
+        print(f"🚀 LinkedIn Workflow: Starting for '{brief}'")
 
-        sdk_result = await self.agent.create_post(
+        # Use Direct API agent
+        result = await create_linkedin_post(
             topic=brief,
             context=brand_context,
             post_type='standard',
-            target_score=target_score
+            target_score=target_score,
+            supabase_client=self.supabase_client
         )
 
-        if not sdk_result.get('success'):
-            raise RuntimeError(sdk_result.get('error', 'Unknown LinkedIn SDK error'))
+        if not result.get('success'):
+            raise RuntimeError(result.get('error', 'Unknown LinkedIn error'))
 
-        draft = sdk_result.get('post', '')
-        score = sdk_result.get('score', 0)
-        iterations = sdk_result.get('iterations', 1)
+        draft = result.get('post', '')
+        score = result.get('score', 0)
+        iterations = result.get('iterations', 1)
         grading = {
             'score': score,
-            'feedback': '',
+            'feedback': result.get('feedback', ''),
             'strengths': [],
             'issues': [],
-            'timeline': sdk_result.get('timeline', [])
+            'timeline': result.get('timeline', [])
         }
 
         normalized_result = {
@@ -92,11 +93,11 @@ class AgenticLinkedInWorkflow(ContentWorkflow):
             'score': score,
             'iterations': iterations,
             'platform': 'linkedin',
-            'hook_used': {'preview': sdk_result.get('hook')},
-            'all_hooks': [],
-            'workflow_type': 'sdk_agent'
+            'hook_used': {'preview': result.get('hook')},
+            'all_hooks': result.get('all_hooks', []),
+            'workflow_type': 'direct_api'
         }
 
-        print(f"✅ Agentic LinkedIn Workflow: Score {score}/100 in {iterations} iterations")
+        print(f"✅ LinkedIn Workflow: Score {score}/100 in {iterations} iterations")
 
         return normalized_result
