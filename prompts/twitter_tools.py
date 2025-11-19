@@ -10,85 +10,22 @@ from textwrap import dedent
 # NEW: Load from external .md files with client override support
 # Clients can customize these by creating .claude/prompts/writing_rules.md or editor_standards.md
 # Fallback to versioned defaults in prompts/styles/default_writing_rules.md
-from integrations.prompt_loader import load_editor_standards, load_writing_rules
+from integrations.prompt_loader import load_editor_standards, load_writing_rules, load_prompt
 
 EDITOR_IN_CHIEF_RULES = load_editor_standards()
 WRITE_LIKE_HUMAN_RULES = load_writing_rules()
 
 # ==================== GENERATE 5 HOOKS ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/twitter/generate_hooks.md
 
-GENERATE_HOOKS_PROMPT = dedent("""Generate EXACTLY 5 Twitter thread hooks for this topic, one for each type:
-
-Topic: {topic}
-Context: {context}
-Target Audience: {audience}
-
-MANDATORY FORMATS (from checklist):
-1. Question (provokes curiosity)
-2. Bold statement (counterintuitive)
-3. Specific number/stat
-4. Short story opener
-5. Mistake/lesson framing
-
-Each hook must:
-- Be under 280 characters (Twitter limit)
-- Stand alone as first tweet
-- Create intrigue for thread continuation
-- Target the specific audience
-- Be direct and punchy
-
-Return as JSON array with format:
-{json_example}
-""")
+GENERATE_HOOKS_PROMPT = load_prompt("generate_hooks", platform="twitter")
 
 # ==================== INJECT PROOF POINTS ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/twitter/inject_proof.md
 
-INJECT_PROOF_PROMPT = dedent("""{write_like_human_rules}
-
-=== INJECT PROOF POINTS ===
-
-Review this draft and ONLY add proof from verified sources.
-
-Draft: {draft}
-Topic: {topic}
-Industry: {industry}
-
-**COMPANY DOCUMENTS SEARCH RESULTS:**
-{proof_context}
-
-**WHERE PROOF CAN COME FROM:**
-1. **TOPIC/CONTEXT** - User explicitly provided: "6 hours → 10 minutes", "March 2024", "50 nodes"
-2. **WEB SEARCH RESULTS** - Verified via web_search tool (future): company metrics, industry benchmarks
-3. **COMPANY DOCUMENTS** - Retrieved from user-uploaded docs (case studies, testimonials, product docs) - SEE ABOVE
-
-**CRITICAL: DO NOT FABRICATE**
-- ❌ Making up dollar amounts: "$1,050", "$29"
-- ❌ Inventing percentages: "97.2% reduction", "34% faster"
-- ❌ Fabricating case studies: "12 client workflows", "tested across X companies"
-- ❌ Creating fake names: "Sarah", "James Chen", "my colleague at X"
-- ❌ Citing stats you don't have: "Gartner reported", "industry average of 4.3 hours"
-
-**WHAT YOU CAN DO:**
-- ✅ Use metrics from TOPIC: "6 hours vs 10 minutes" → Calculate: "~97% time reduction"
-- ✅ Add context from TOPIC: "50 nodes" → "complex 50-node workflow"
-- ✅ Use dates from TOPIC: "March 2024" → "Earlier this year in March 2024"
-- ✅ Add verified web search results (when tool provides them)
-- ✅ Add RAG-retrieved testimonials (when database provides them)
-
-**DEFAULT BEHAVIOR:**
-- If NO additional proof available → Return draft with MINIMAL changes
-- Better to have NO proof than FAKE proof
-
-**ROADMAP NOTE:**
-In future iterations, this tool will receive:
-- web_search results with verified industry stats
-- RAG-retrieved real case studies from user's database
-- Actual testimonials from user's clients
-
-For now: ONLY use what's explicitly in TOPIC. Do NOT invent metrics.
-
-Return the enhanced draft only (plain text, NO markdown formatting like **bold** or *italic*).
-""")
+INJECT_PROOF_PROMPT = load_prompt("inject_proof", platform="twitter")
 
 # ==================== CREATE HUMAN DRAFT ====================
 
@@ -479,80 +416,16 @@ Return empty array [] only if thread is 100% clean with ZERO patterns found.
 """)
 
 # ==================== APPLY AI FIXES ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/twitter/apply_fixes.md
 
-APPLY_FIXES_PROMPT = dedent("""You are fixing a Twitter thread based on quality feedback. Your job: apply 3-5 surgical fixes without rewriting the whole thread.
+_apply_fixes_template = load_prompt("apply_fixes", platform="twitter")
 
-Original Thread:
-{post}
-
-Issues from quality_check:
-{issues_json}
-
-CRITICAL RULES:
-
-0. **WRITE LIKE A HUMAN** - You must follow these rules when applying fixes:
-
-{write_like_human_rules}
-
-1. **BE SURGICAL** - Fix ONLY what's listed in issues
-   - Don't rewrite tweets that aren't broken
-   - Don't change the voice or structure
-   - Make minimal edits to raise the score
-
-2. **PRESERVE STRENGTHS**:
-   - ✅ KEEP specific numbers from original
-   - ✅ KEEP concrete examples and names
-   - ✅ KEEP emotional language that works
-   - ✅ KEEP contractions: "I'm", "I've", "that's", "here're" (human pattern)
-   - ✅ KEEP informal starters: "So", "And", "But" at tweet starts
-   - ✅ KEEP conversational hedging: "pretty well", "definitely", "a bunch of"
-   - ✅ KEEP lowercase when it's authentic
-   - ❌ DO NOT water down to vague language
-   - ❌ DO NOT make it more formal (contractions → full words)
-
-3. **APPLY FIXES BY SEVERITY**:
-   - Severity "high" → Must fix (raises score significantly)
-   - Severity "medium" → Fix if it doesn't hurt authenticity
-   - Severity "low" → Skip unless obviously wrong
-
-4. **TWITTER-SPECIFIC FIXES**:
-   - Ensure each tweet is under 280 characters
-   - Remove hashtags if present
-   - Simplify if a tweet is too verbose
-   - Maintain thread flow and numbering
-
-5. **EXAMPLES OF SURGICAL FIXES**:
-   - Issue: Hook too generic
-     Fix: Add specific detail or provocative angle
-
-   - Issue: Contrast framing "It's not X, it's Y"
-     Fix: Remove negation, state Y directly
-
-   - Issue: Tweet too long (>280 chars)
-     Fix: Cut unnecessary words, not core message
-
-   - Issue: Weak engagement trigger "Thoughts?"
-     Fix: Make more specific or keep simple if authentic
-
-Output JSON:
-{{
-  "revised_thread": "...",
-  "changes_made": [
-    {{
-      "issue_addressed": "hook_generic",
-      "original": "AI is changing everything",
-      "revised": "GPT-5 shows we've crossed the point where most people can't tell models apart",
-      "impact": "Raises hook score from 2 to 5"
-    }}
-  ],
-  "estimated_new_score": 21,
-  "notes": "Applied 3 surgical fixes. Preserved all original authenticity and voice."
-}}
-
-Make 3-5 surgical fixes maximum. Don't over-edit.
-
-IMPORTANT: Output plain text only. NO markdown formatting (**bold**, *italic*, ##headers).
-""")
+# Inject writing rules into the template
+APPLY_FIXES_PROMPT = _apply_fixes_template.replace(
+    "{write_like_human_rules}",
+    WRITE_LIKE_HUMAN_RULES
+)
 
 # ==================== VALIDATE FORMAT ====================
 
@@ -656,120 +529,16 @@ Return as JSON:
 """)
 
 # ==================== QUALITY CHECK (COMBINED: AI CRINGE + FACT CHECK) ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/twitter/quality_check.md
 
-QUALITY_CHECK_PROMPT = """You are evaluating a Twitter thread using Editor-in-Chief standards.
+_quality_check_template = load_prompt("quality_check", platform="twitter")
 
-═══════════════════════════════════════════════════════════════
-EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
-═══════════════════════════════════════════════════════════════
-
-""" + EDITOR_IN_CHIEF_RULES + """
-
-═══════════════════════════════════════════════════════════════
-END OF EDITOR-IN-CHIEF STANDARDS
-═══════════════════════════════════════════════════════════════
-
-YOUR TASK:
-1. Read the thread below
-2. Scan tweet-by-tweet for EVERY violation listed in Editor-in-Chief standards above
-3. Create ONE surgical issue per violation found
-4. Use EXACT replacement strategies from the standards (don't make up your own)
-5. ALSO check 280-character limit for each tweet
-
-Thread to evaluate:
-{post}
-
-WORKFLOW:
-
-STEP 1: VALIDATE 280-CHAR LIMIT (MANDATORY)
-- Parse thread into individual tweets
-- Count characters for EACH tweet
-- If ANY tweet >280 chars → Create HIGH severity issue with exact character count
-
-STEP 2: SCAN FOR VIOLATIONS
-Go through the thread tweet-by-tweet and find:
-- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y", "Rather than X")
-- Masked contrast patterns ("Instead of X", "but rather")
-- Section summaries ("In summary", "In conclusion")
-- Promotional puffery ("stands as", "testament")
-- Overused conjunctions ("moreover", "furthermore")
-- Vague attributions without sources
-- Em-dash overuse
-- Words needing substitution ("leverages", "encompasses", "facilitates")
-
-STEP 3: CREATE SURGICAL ISSUES
-For EACH violation found, create ONE issue:
-{{
-  "axis": "ai_tells" | "brevity",
-  "severity": "high" | "medium" | "low",
-  "pattern": "contrast_direct" | "over_280_chars" | "word_substitution" | etc,
-  "original": "[EXACT text - word-for-word quote]",
-  "fix": "[EXACT replacement using Editor-in-Chief examples]",
-  "impact": "[How this improves the thread]"
-}}
-
-STEP 4: USE REPLACEMENT STRATEGIES FROM STANDARDS
-When creating fixes, use the EXACT patterns from Editor-in-Chief standards:
-
-For contrast framing:
-❌ "Success isn't about working harder but working smarter."
-✅ "Success comes from working smarter and more strategically."
-
-For word substitutions:
-leverages → uses | encompasses → includes | facilitates → enables
-
-STEP 5: SCORE THE THREAD
-Hook (0-5): First tweet grabs attention + specific?
-Flow (0-5): Each tweet builds on previous?
-Brevity (0-5): Every tweet <280 chars + packs value?
-Proof (0-5): Concrete examples, not fabricated?
-Engagement (0-5): Strong ending trigger?
-
-Deduct 2 points per major AI tell.
-Deduct 5 points if ANY tweet exceeds 280 characters.
-
-STEP 6: VERIFY FACTS (use web_search)
-Search for names, companies, news claims.
-If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
-Only use "FABRICATED" if provably false.
-
-CRITICAL RULES:
-✅ Create ONE issue per violation (8 violations = 8 issues)
-✅ Quote EXACT text from thread in "original"
-✅ Use EXACT fixes from Editor-in-Chief standards (don't improvise)
-✅ Check EVERY tweet for 280-char limit
-✅ Be comprehensive - find EVERY violation
-
-Output JSON:
-{{
-  "scores": {{
-    "hook": 3,
-    "flow": 4,
-    "brevity": 5,
-    "proof": 5,
-    "engagement": 4,
-    "total": 21,
-    "ai_deductions": -4
-  }},
-  "decision": "revise",
-  "searches_performed": ["query 1", "query 2"],
-  "issues": [
-    {{
-      "axis": "ai_tells",
-      "severity": "high",
-      "pattern": "contrast_direct",
-      "original": "[exact quote from thread]",
-      "fix": "[exact fix from Editor-in-Chief examples]",
-      "impact": "[specific improvement]"
-    }}
-  ],
-  "surgical_summary": "Found [number] violations. Applying all fixes would raise score from [current] to [projected].",
-  "threshold": 20,
-  "meets_threshold": false
-}}
-
-Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
-"""
+# Inject editor-in-chief rules into the template
+QUALITY_CHECK_PROMPT = _quality_check_template.replace(
+    "{{EDITOR_IN_CHIEF_RULES}}",
+    EDITOR_IN_CHIEF_RULES
+)
 
 # ==================== CREATE CAROUSEL SLIDES ====================
 
