@@ -25,6 +25,8 @@ class ReactionHandler:
         # Map emoji to handler functions
         self.handlers: Dict[str, Callable] = {
             'calendar': self.handle_schedule,        # 📅
+            'date': self.handle_schedule,            # 📆 (alias for calendar)
+            'spiral_calendar_pad': self.handle_schedule,  # 🗓️ (alias for calendar)
             'pencil2': self.handle_revise,           # ✏️
             'arrows_counterclockwise': self.handle_regenerate,  # 🔄
             'white_check_mark': self.handle_approve, # ✅

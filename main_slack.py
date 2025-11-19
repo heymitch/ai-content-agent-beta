@@ -1064,9 +1064,12 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
 
         print(f"👍 Reaction {reaction} added to message {message_ts}")
 
+        # Initialize message_response for later use
+        message_response = None
+
         # Handle ✅ (white_check_mark) reaction for saving as Draft
-        # Handle 📅 🗓️ (calendar emojis) for scheduling to calendar
-        if reaction in ['white_check_mark', 'calendar', 'spiral_calendar_pad']:
+        # Handle 📅 🗓️ 📆 (calendar emojis) for scheduling to calendar
+        if reaction in ['white_check_mark', 'calendar', 'spiral_calendar_pad', 'date']:
             try:
                 # Get the message that was reacted to
                 message_response = slack_client.conversations_history(
@@ -1195,17 +1198,48 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                 import traceback
                 traceback.print_exc()
 
+        # Call ReactionHandler for all reactions (not just Haiku Twitter posts)
         handler = get_slack_handler()
         if handler and handler.reaction_handler:
             try:
-                await handler.reaction_handler.handle_reaction(
+                # Get the message to find the actual thread_ts
+                if not message_response:
+                    message_response = slack_client.conversations_history(
+                        channel=channel,
+                        latest=message_ts,
+                        limit=1,
+                        inclusive=True
+                    )
+
+                # Get actual thread_ts (the message may be in a thread)
+                actual_thread_ts = message_ts
+                if message_response.get('ok') and message_response.get('messages'):
+                    message = message_response['messages'][0]
+                    actual_thread_ts = message.get('thread_ts', message_ts)
+
+                result = await handler.reaction_handler.handle_reaction(
                     reaction_emoji=reaction,
-                    thread_ts=message_ts,
+                    thread_ts=actual_thread_ts,
                     user_id=user_id,
                     channel_id=channel
                 )
+
+                # Send feedback to user if handler returned a message
+                if result and result.get('message'):
+                    slack_client.chat_postMessage(
+                        channel=channel,
+                        thread_ts=actual_thread_ts,
+                        text=result['message'],
+                        mrkdwn=True
+                    )
+                    print(f"✅ Reaction handled: {result.get('action', 'unknown')}")
+                elif result and not result.get('success'):
+                    print(f"⚠️ Reaction handler returned failure: {result}")
+
             except Exception as e:
                 print(f"⚠️ Reaction handler error (non-fatal): {e}")
+                import traceback
+                traceback.print_exc()
                 # Don't crash - reaction handling is non-critical
 
         return {'status': 'reaction_handled'}
