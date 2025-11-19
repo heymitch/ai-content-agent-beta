@@ -198,6 +198,105 @@ class AirtableContentCalendar:
                 'error': str(e)
             }
 
+    def search_posts(
+        self,
+        platform: Optional[str] = None,
+        status: Optional[str] = None,
+        days_back: int = 30,
+        keyword: Optional[str] = None,
+        max_results: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Search content calendar for posts matching criteria.
+
+        Args:
+            platform: linkedin, twitter, email, youtube, instagram
+            status: Draft, Scheduled, Published, Archived
+            days_back: How far back to search (default 30 days)
+            keyword: Text to search in Post Hook and Body Content
+            max_results: Maximum number of results to return
+
+        Returns:
+            Dict with results array containing record_id, hook, body_preview, platform, status, dates
+        """
+        from datetime import datetime, timedelta
+
+        try:
+            formula_parts = []
+
+            # Platform filter (handle mapping)
+            if platform:
+                platform_mapping = {
+                    'linkedin': 'Linkedin',
+                    'twitter': 'X/Twitter',
+                    'email': 'Email',
+                    'youtube': 'Youtube',
+                    'instagram': 'Instagram'
+                }
+                airtable_platform = platform_mapping.get(platform.lower(), platform.capitalize())
+                formula_parts.append(f"FIND('{airtable_platform}', ARRAYJOIN({{Platform}}, ','))")
+
+            # Status filter
+            if status:
+                formula_parts.append(f"{{Status}} = '{status}'")
+
+            # Date range filter
+            if days_back:
+                cutoff = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                formula_parts.append(f"IS_AFTER({{Created}}, '{cutoff}')")
+
+            # Keyword search in Post Hook and Body Content
+            if keyword:
+                # Case-insensitive search using FIND with LOWER
+                keyword_escaped = keyword.replace("'", "\\'")
+                formula_parts.append(
+                    f"OR(FIND(LOWER('{keyword_escaped}'), LOWER({{Post Hook}})), "
+                    f"FIND(LOWER('{keyword_escaped}'), LOWER({{Body Content}})))"
+                )
+
+            # Combine filters
+            formula = None
+            if formula_parts:
+                formula = f"AND({', '.join(formula_parts)})"
+
+            # Fetch records
+            records = self.table.all(
+                formula=formula,
+                max_records=max_results,
+                sort=['-Created']  # Most recent first
+            )
+
+            # Format results for agent consumption
+            results = []
+            for record in records:
+                fields = record.get('fields', {})
+                body = fields.get('Body Content', '')
+
+                results.append({
+                    'record_id': record.get('id'),
+                    'hook': fields.get('Post Hook', '')[:200],
+                    'body_preview': body[:300] + '...' if len(body) > 300 else body,
+                    'platform': fields.get('Platform', []),
+                    'status': fields.get('Status', ''),
+                    'publish_date': fields.get('Publish Date', ''),
+                    'created': fields.get('Created', ''),
+                    'score': fields.get('% Score', 0),
+                    'url': f"https://airtable.com/{self.base_id}/{self.table_name}/{record.get('id')}"
+                })
+
+            return {
+                'success': True,
+                'total_found': len(results),
+                'results': results
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'results': []
+            }
+
     def get_posts_in_range(self, start_date, end_date):
         """
         Fetch posts from Airtable within a date range.

@@ -385,6 +385,136 @@ def analyze_content_performance(
         return f"Error analyzing performance: {str(e)}"
 
 
+def search_airtable_posts(
+    platform: str = None,
+    status: str = None,
+    days_back: int = 30,
+    keyword: str = None,
+    max_results: int = 10
+) -> str:
+    """
+    Search the Airtable content calendar for previous posts.
+
+    Use this to find posts to improve, reference, or analyze.
+    Searches published/scheduled content in the content calendar.
+
+    Args:
+        platform: Filter by platform (linkedin, twitter, email, youtube, instagram)
+        status: Filter by status (Draft, Scheduled, Published, Archived)
+        days_back: How far back to search (default 30 days)
+        keyword: Text to search in post hook/body
+        max_results: Maximum number of results
+
+    Returns:
+        Formatted list of matching posts with record IDs for retrieval
+    """
+    from integrations.airtable_client import get_airtable_client
+
+    try:
+        airtable = get_airtable_client()
+        if not airtable:
+            return "Airtable not configured. Set AIRTABLE_ACCESS_TOKEN, AIRTABLE_BASE_ID, and AIRTABLE_TABLE_NAME."
+
+        result = airtable.search_posts(
+            platform=platform,
+            status=status,
+            days_back=days_back,
+            keyword=keyword,
+            max_results=max_results
+        )
+
+        if not result.get('success'):
+            return f"Search failed: {result.get('error', 'Unknown error')}"
+
+        posts = result.get('results', [])
+
+        if not posts:
+            filters = []
+            if platform:
+                filters.append(f"platform={platform}")
+            if status:
+                filters.append(f"status={status}")
+            if keyword:
+                filters.append(f"keyword='{keyword}'")
+            if days_back:
+                filters.append(f"last {days_back} days")
+            filter_str = ", ".join(filters) if filters else "no filters"
+            return f"No posts found matching: {filter_str}"
+
+        # Format results for display
+        output = [f"Found {len(posts)} post(s):\n"]
+
+        for i, post in enumerate(posts, 1):
+            platforms = post.get('platform', [])
+            platform_str = ', '.join(platforms) if isinstance(platforms, list) else platforms
+
+            output.append(f"{i}. **{post.get('hook', 'No hook')[:100]}**")
+            output.append(f"   Platform: {platform_str} | Status: {post.get('status', 'Unknown')}")
+            if post.get('publish_date'):
+                output.append(f"   Publish Date: {post.get('publish_date')}")
+            if post.get('score'):
+                output.append(f"   Score: {post.get('score')}/100")
+            output.append(f"   Record ID: `{post.get('record_id')}`")
+            output.append(f"   [View in Airtable]({post.get('url')})")
+            output.append("")
+
+        output.append("\nTo get full content for editing, use get_airtable_post_content with the record_id.")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error searching Airtable: {str(e)}"
+
+
+def get_airtable_post_content(record_id: str) -> str:
+    """
+    Retrieve full post content from Airtable by record ID.
+
+    Use after search_airtable_posts to get complete post text for editing/improving.
+
+    Args:
+        record_id: Airtable record ID (e.g., 'rec123abc')
+
+    Returns:
+        Full post content with metadata
+    """
+    from integrations.airtable_client import get_airtable_client
+
+    try:
+        airtable = get_airtable_client()
+        if not airtable:
+            return "Airtable not configured."
+
+        result = airtable.get_content_record(record_id)
+
+        if not result.get('success'):
+            return f"Failed to retrieve record: {result.get('error', 'Unknown error')}"
+
+        record = result.get('record', {})
+        fields = record.get('fields', {})
+
+        # Format output
+        output = [
+            f"**Post Content (Record: {record_id})**\n",
+            f"**Platform:** {', '.join(fields.get('Platform', []))}",
+            f"**Status:** {fields.get('Status', 'Unknown')}",
+            f"**Publish Date:** {fields.get('Publish Date', 'Not set')}",
+            f"**Score:** {fields.get('% Score', 'N/A')}/100\n",
+            f"**Hook:**\n{fields.get('Post Hook', 'No hook')}\n",
+            f"**Body Content:**\n{fields.get('Body Content', 'No content')}\n"
+        ]
+
+        if fields.get('Suggested Edits'):
+            output.append(f"**Suggested Edits:**\n{fields.get('Suggested Edits')}\n")
+
+        output.append(f"\n[Edit in Airtable](https://airtable.com/{airtable.base_id}/{airtable.table_name}/{record_id})")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error retrieving post: {str(e)}"
+
+
 # Tool definitions for Claude Agent SDK
 CONTENT_TOOLS = [
     {
@@ -438,6 +568,32 @@ CONTENT_TOOLS = [
             },
             "required": ["user_id"]
         }
+    },
+    {
+        "name": "search_airtable_posts",
+        "description": "Search the Airtable content calendar for published/scheduled posts. Use when users ask to 'find my last LinkedIn post', 'show me posts about AI', 'what did I post yesterday', or want to improve existing content.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {"type": "string", "description": "Filter by platform", "enum": ["linkedin", "twitter", "email", "youtube", "instagram"]},
+                "status": {"type": "string", "description": "Filter by status", "enum": ["Draft", "Scheduled", "Published", "Archived"]},
+                "days_back": {"type": "integer", "description": "How far back to search", "default": 30},
+                "keyword": {"type": "string", "description": "Text to search in post content"},
+                "max_results": {"type": "integer", "description": "Maximum results", "default": 10}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_airtable_post_content",
+        "description": "Get full post content from Airtable by record ID. Use after search_airtable_posts to retrieve complete text for editing or improving.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "record_id": {"type": "string", "description": "Airtable record ID from search results"}
+            },
+            "required": ["record_id"]
+        }
     }
 ]
 
@@ -446,5 +602,7 @@ TOOL_FUNCTIONS = {
     "search_past_posts": search_past_posts,
     "get_content_calendar": get_content_calendar,
     "get_thread_context": get_thread_context,
-    "analyze_content_performance": analyze_content_performance
+    "analyze_content_performance": analyze_content_performance,
+    "search_airtable_posts": search_airtable_posts,
+    "get_airtable_post_content": get_airtable_post_content
 }
