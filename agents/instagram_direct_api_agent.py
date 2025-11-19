@@ -24,6 +24,9 @@ from utils.structured_logger import (
 )
 from utils.circuit_breaker import CircuitBreaker, CircuitState
 
+# Prompt loading with client context support
+from integrations.prompt_loader import load_system_prompt
+
 # Load environment variables
 load_dotenv()
 
@@ -278,8 +281,8 @@ class InstagramDirectAPIAgent:
 
         self.client = Anthropic(api_key=api_key)
 
-        # Email-specific system prompt (keep it small for fast initialization)
-        self.system_prompt = """You are an Instagram caption creation agent with a critical philosophy:
+        # Instagram-specific system prompt (keep it small for fast initialization)
+        base_system_prompt = """You are an Instagram caption creation agent with a critical philosophy:
 
 **PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
 
@@ -318,6 +321,9 @@ CRITICAL PRINCIPLES:
 • Preserve voice > enforce templates
 
 The user spent time thinking through their post. Your job is to make it BETTER, not to replace their thinking with generic AI output."""
+
+        # Load system prompt with client context from .claude/CLAUDE.md
+        self.system_prompt = load_system_prompt(base_system_prompt)
 
         print("🎯 Instagram Direct API Agent initialized (no SDK, no hangs)")
 
