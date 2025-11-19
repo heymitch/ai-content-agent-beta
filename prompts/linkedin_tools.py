@@ -23,78 +23,16 @@ WRITE_LIKE_HUMAN_RULES = load_writing_rules()
 # Clients can override by creating .claude/prompts/writing_rules.md
 
 # ==================== GENERATE 5 HOOKS ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/linkedin/generate_hooks.md
 
-GENERATE_HOOKS_PROMPT = dedent("""Generate EXACTLY 5 LinkedIn hooks for this topic, one for each type:
-
-Topic: {topic}
-Context: {context}
-Target Audience: {audience}
-
-MANDATORY FORMATS (from checklist):
-1. Question (provokes curiosity)
-2. Bold statement (counterintuitive)
-3. Specific number/stat
-4. Short story opener
-5. Mistake/lesson framing
-
-Each hook must:
-- Be under 200 characters
-- Create a cliffhanger for "See more"
-- Target the specific audience
-- Be direct and punchy
-
-Return as JSON array with format:
-{json_example}
-""")
+GENERATE_HOOKS_PROMPT = load_prompt("generate_hooks", platform="linkedin")
 
 # ==================== INJECT PROOF POINTS ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/linkedin/inject_proof.md
 
-INJECT_PROOF_PROMPT = dedent("""{write_like_human_rules}
-
-=== INJECT PROOF POINTS ===
-
-Review this draft and ONLY add proof from verified sources.
-
-Draft: {draft}
-Topic: {topic}
-Industry: {industry}
-
-**COMPANY DOCUMENTS SEARCH RESULTS:**
-{proof_context}
-
-**WHERE PROOF CAN COME FROM:**
-1. **TOPIC/CONTEXT** - User explicitly provided: "6 hours → 10 minutes", "March 2024", "50 nodes"
-2. **WEB SEARCH RESULTS** - Verified via web_search tool (future): company metrics, industry benchmarks
-3. **COMPANY DOCUMENTS** - Retrieved from user-uploaded docs (case studies, testimonials, product docs) - SEE ABOVE
-
-**CRITICAL: DO NOT FABRICATE**
-- ❌ Making up dollar amounts: "$1,050", "$29"
-- ❌ Inventing percentages: "97.2% reduction", "34% faster"
-- ❌ Fabricating case studies: "12 client workflows", "tested across X companies"
-- ❌ Creating fake names: "Sarah", "James Chen", "my colleague at X"
-- ❌ Citing stats you don't have: "Gartner reported", "industry average of 4.3 hours"
-
-**WHAT YOU CAN DO:**
-- ✅ Use metrics from TOPIC: "6 hours vs 10 minutes" → Calculate: "~97% time reduction"
-- ✅ Add context from TOPIC: "50 nodes" → "complex 50-node workflow"
-- ✅ Use dates from TOPIC: "March 2024" → "Earlier this year in March 2024"
-- ✅ Add verified web search results (when tool provides them)
-- ✅ Add RAG-retrieved testimonials (when database provides them)
-
-**DEFAULT BEHAVIOR:**
-- If NO additional proof available → Return draft with MINIMAL changes
-- Better to have NO proof than FAKE proof
-
-**ROADMAP NOTE:**
-In future iterations, this tool will receive:
-- web_search results with verified industry stats
-- RAG-retrieved real case studies from user's database
-- Actual testimonials from user's clients
-
-For now: ONLY use what's explicitly in TOPIC. Do NOT invent metrics.
-
-Return the enhanced draft only (plain text, NO markdown formatting like **bold** or *italic*).
-""")
+INJECT_PROOF_PROMPT = load_prompt("inject_proof", platform="linkedin")
 
 # ==================== CREATE HUMAN DRAFT ====================
 # Load draft prompt template (with client override support)
@@ -206,155 +144,16 @@ Return empty array [] only if post is 100% clean with ZERO patterns found.
 """)
 
 # ==================== APPLY AI FIXES ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/linkedin/apply_fixes.md
 
-APPLY_FIXES_PROMPT = dedent("""You are fixing a LinkedIn post based on quality feedback.
+_apply_fixes_template = load_prompt("apply_fixes", platform="linkedin")
 
-**CRITICAL PHILOSOPHY: PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
-
-This post contains the author's strategic thinking and intentional language choices.
-
-Original Post:
-{post}
-
-Issues from quality_check:
-{issues_json}
-
-Current Score: {current_score}/25
-GPTZero AI Detection: {gptzero_ai_pct}% AI (Target: <100%)
-Fix Strategy: {fix_strategy}
-
-GPTZero Flagged Sentences (rewrite these like a human):
-{gptzero_flagged_sentences}
-
-═══════════════════════════════════════════════════════════
-CRINGE QUESTIONS - BANNED COMPLETELY (DELETE ON SIGHT):
-═══════════════════════════════════════════════════════════
-
-❌ **TWO-TO-FOUR WORD TRANSITION QUESTIONS (THE #1 AI TELL):**
-
-These are IMMEDIATELY IDENTIFIABLE as AI writing. Delete completely or expand into a more direct or conversational statement to improve the rate of revelation and clarity for the reader.
-
-- "The truth?" → DELETE and just say the truth: "What I've seen is..." 
-- "The result?" → DELETE or "We ended up..." or "We saw..." 
-- "Sound familiar?" → DELETE
-- "When?" or "What happened?" → DELETE or "After X amount of days/weeks/months, we saw..."
-- "How much better?" → DELETE or "I'll share the numbers for you..." 
-- "And those other models?" → DELETE or "The other models tend to..."
-- "Want to know the secret?" → DELETE
-- "The catch?" → DELETE or "What's the trade-off?"
-- "Ready?" → DELETE
-- "Why?" → DELETE
-- "The best part?" → DELETE or "So this ended up being the best part..."
-
-NOTE: these are not comprehensive, but whenever you see a question mark in the body of a post, think about whether or not we need it. 
-
-**REPLACEMENT STRATEGY:**
-1. DELETE entirely (preferred - these add no value)
-2. OR expand to 8+ word specific question:
-   ✅ "Which step would move the needle for your workflow this month?"
-   ✅ "What's the biggest bottleneck in your current onboarding process?"
-
-═══════════════════════════════════════════════════════════
-
-YOUR JOB:
-1. Fix AI tells (contrast framing, rule of three, cringe questions, buzzwords)
-2. Fix formatting issues
-3. Add proof points if critically missing
-
-DO NOT:
-- Rewrite sentences that don't have problems
-- Change the strategic narrative
-- Replace specific language with generic language
-- "Improve" things that aren't broken
-
-The author chose their words intentionally. Respect that.
-
-CRITICAL RULES:
-
-0. **WRITE LIKE A HUMAN** - You must follow these rules when applying fixes:
-
-{write_like_human_rules}
-
-1. **FIX STRATEGY:**
-
-   **COMPREHENSIVE MODE - Fix ALL issues:**
-   - No limit on number of fixes - address EVERY problem in issues list
-   - Rewrite entire sections if needed to eliminate AI patterns
-   - Rewrite GPTZero flagged sentences to sound more human
-   - Still preserve: specific numbers, names, dates, strategic narrative
-   - But eliminate: ALL cringe questions, ALL contrast framing, ALL buzzwords, ALL formulaic headers
-   - Goal: Fix every single flagged issue
-
-   **If GPTZero shows high AI %:**
-   - Add more human signals to flagged sentences:
-     * Sentence fragments for emphasis
-     * Contractions (I'm, that's, here's)
-     * Varied sentence length (5-25 words, not uniform 12-15)
-     * Natural transitions (And, So, But at sentence starts)
-
-2. **PRESERVE STRENGTHS**:
-   - ✅ KEEP specific numbers from original: "6 hours", "10 minutes", "50 nodes"
-   - ✅ KEEP concrete timeframes: "entire morning", "before my coffee got cold"
-   - ✅ KEEP emotional language that works: "wasted", "disbelief", "terrifying"
-   - ✅ KEEP contractions: "I'm", "I've", "that's", "here're" (human pattern)
-   - ✅ KEEP informal starters: "So", "And", "But" at sentence starts
-   - ✅ KEEP conversational hedging: "pretty well", "definitely", "a bunch of"
-   - ❌ DO NOT water down to vague language
-   - ❌ DO NOT make it more formal (contractions → full words)
-
-3. **WHEN REWRITING/SIMPLIFYING**:
-   MANDATORY: Preserve ALL details from the original text
-   - Don't drop examples, names, numbers, or specifics when simplifying
-   - Ensure seamless transitions between sentences
-
-   SIMPLIFICATION APPROACH:
-   - Break complex sentences into shorter ones (10-20 words average)
-   - Use simple conjunctions: 'and', 'but', 'so' (not 'moreover', 'however', 'furthermore')
-   - Use everyday vocabulary (replace abstractions with concrete words)
-   - Prefer active voice: "The cat chased the mouse" not "The mouse was chased by the cat"
-   - But DON'T force active voice if it sounds unnatural
-
-   GOAL: Flesch Reading Ease score of 70+ (8th grade level)
-   - Shorter sentences + common words = more accessible
-   - But maintain all original meaning and specifics
-
-4. **APPLY FIXES BY SEVERITY**:
-   - Severity "high" → Must fix (raises score significantly)
-   - Severity "medium" → Fix if it doesn't hurt specificity
-   - Severity "low" → Skip unless obviously wrong
-
-4. **EXAMPLES OF SURGICAL FIXES**:
-   - Issue: Audience "founders" (generic)
-     Fix: Replace with "seed-stage B2B SaaS founders stuck at <$1M ARR"
-
-   - Issue: Contrast framing "It's not X, it's Y"
-     Fix: Remove negation, state Y directly
-
-   - Issue: Cringe question "The result?"
-     Fix: Remove entirely or make specific: "What happened?"
-
-   - Issue: Weak CTA "What do you think?"
-     Fix: Make specific: "Which step would work for your workflow?"
-
-Output JSON:
-{{
-  "revised_post": "...",
-  "changes_made": [
-    {{
-      "issue_addressed": "audience_generic",
-      "original": "founders",
-      "revised": "seed-stage B2B SaaS founders stuck at <$1M ARR",
-      "impact": "Raises audience score from 2 to 5"
-    }}
-  ],
-  "estimated_new_score": 21,
-  "notes": "Fixed ALL flagged issues. Preserved specifics and emotional punch. Rewrote GPTZero flagged sentences."
-}}
-
-Fix ALL issues - no limit. Every flagged pattern and GPTZero sentence must be addressed.
-
-IMPORTANT: Output plain text only. NO markdown formatting (**bold**, *italic*, ##headers).
-""")
+# Inject writing rules into the template
+APPLY_FIXES_PROMPT = _apply_fixes_template.replace(
+    "{write_like_human_rules}",
+    WRITE_LIKE_HUMAN_RULES
+)
 
 # ==================== VALIDATE FORMAT ====================
 
@@ -457,160 +256,16 @@ Return as JSON:
 """)
 
 # ==================== QUALITY CHECK (COMBINED: AI CRINGE + FACT CHECK) ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/linkedin/quality_check.md
 
-QUALITY_CHECK_PROMPT = """You are evaluating a LinkedIn post using Editor-in-Chief standards.
+_quality_check_template = load_prompt("quality_check", platform="linkedin")
 
-═══════════════════════════════════════════════════════════════
-EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
-═══════════════════════════════════════════════════════════════
-
-""" + EDITOR_IN_CHIEF_RULES + """
-
-═══════════════════════════════════════════════════════════════
-END OF EDITOR-IN-CHIEF STANDARDS
-═══════════════════════════════════════════════════════════════
-
-YOUR TASK:
-1. Read the post below
-2. Scan sentence-by-sentence for EVERY violation listed in Editor-in-Chief standards above
-3. Create ONE surgical issue per violation found
-4. Use EXACT replacement strategies from the standards (don't make up your own)
-
-Post to evaluate:
-{post}
-
-WORKFLOW:
-
-STEP 1: SCAN FOR VIOLATIONS
-Go through the post line-by-line and find:
-- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y", "Rather than X")
-- Masked contrast patterns ("Instead of X", "but rather")
-- Formulaic headers (ANY case):
-  * "The X:" pattern → "The promise:", "The reality:", "The result:", "The truth:", "The catch:", "The process:", "The best part:"
-  * "HERE'S HOW:", "HERE'S WHAT:", Title Case In Headings
-  * These are AI tells - convert to natural language or delete
-- Short questions (<8 words ending in "?"):
-  * "For me?" → Delete or expand to statement: "For me, the ability to..."
-  * "The truth?" → Delete entirely
-  * "What happened?" → Expand: "What did the data show after 30 days?"
-  * Count words - if <8 words AND ends with "?", it's a violation
-- Section summaries ("In summary", "In conclusion")
-- Promotional puffery ("stands as", "testament", "rich heritage")
-- Overused conjunctions ("moreover", "furthermore")
-- Vague attributions ("industry reports says" without source)
-- Em-dash overuse (multiple — in formulaic patterns)
-- Words needing substitution ("leverages", "encompasses", "facilitates")
-
-STEP 2: CREATE SURGICAL ISSUES
-For EACH violation found, create ONE issue:
-{{
-  "axis": "ai_tells",
-  "severity": "high" | "medium" | "low",
-  "pattern": "contrast_direct" | "contrast_masked" | "title_case" | "formulaic_header" | "cringe_question" | "puffery" | "word_substitution",
-  "original": "[EXACT text from post - word-for-word quote]",
-  "fix": "[EXACT replacement using Editor-in-Chief examples - don't paraphrase]",
-  "impact": "[How this improves the post]"
-}}
-
-EXAMPLES:
-
-Formulaic header violation:
-{{
-  "axis": "ai_tells",
-  "severity": "high",
-  "pattern": "formulaic_header",
-  "original": "The promise:",
-  "fix": "Self-hosting promises",
-  "impact": "Removes AI tell pattern, makes header natural"
-}}
-
-Short question violation:
-{{
-  "axis": "ai_tells",
-  "severity": "high",
-  "pattern": "cringe_question",
-  "original": "For me?",
-  "fix": "For me, the ability to",
-  "impact": "Removes 2-word cringe question, converts to statement"
-}}
-
-STEP 3: USE REPLACEMENT STRATEGIES FROM STANDARDS
-When creating fixes, use the EXACT patterns from Editor-in-Chief standards:
-
-For contrast framing:
-❌ "Success isn't about working harder but working smarter."
-✅ "Success comes from working smarter and more strategically."
-
-For formulaic headers "The X:":
-❌ "The promise:" / "The reality:" / "The catch:" / "The result:"
-✅ Convert to natural sentence: "Self-hosting promises" / "Reality showed" / "Here's the trade-off" / "We saw"
-
-For short questions (<8 words):
-❌ "For me?" → ✅ DELETE or "For me, the ability to"
-❌ "The truth?" → ✅ DELETE entirely
-❌ "What happened?" → ✅ "What did the data show after 30 days?"
-Rule: If question is <8 words, either DELETE or expand to 8+ word specific question
-
-For word substitutions:
-leverages → uses
-encompasses → includes
-facilitates → enables
-utilized → used
-
-STEP 4: SCORE THE POST
-Hook (0-5): Framework + specific + cliffhanger?
-Audience (0-5): Role + stage + problem?
-Headers (0-5): Tangible metrics/outcomes?
-Proof (0-5): Concrete numbers?
-CTA (0-5): Specific engagement trigger?
-
-Deduct 2 points per major AI tell (contrast framing, rule of three, etc).
-
-STEP 5: VERIFY FACTS (use web_search)
-Search for:
-- Names and companies mentioned
-- News events and claims
-- Statistics and data points
-
-If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
-Only use "FABRICATED" if provably false.
-
-CRITICAL RULES:
-✅ Create ONE issue per violation (8 violations = 8 issues)
-✅ Quote EXACT text from post in "original"
-✅ Use EXACT fixes from Editor-in-Chief standards (don't improvise)
-✅ Be comprehensive - find EVERY violation
-
-Output JSON:
-{{
-  "scores": {{
-    "hook": 3,
-    "audience": 2,
-    "headers": 4,
-    "proof": 5,
-    "cta": 4,
-    "total": 18,
-    "ai_deductions": -6
-  }},
-  "decision": "revise",
-  "searches_performed": ["query 1", "query 2"],
-  "issues": [
-    {{
-      "axis": "ai_tells",
-      "severity": "high",
-      "pattern": "contrast_direct",
-      "original": "[exact quote from post]",
-      "fix": "[exact fix from Editor-in-Chief examples]",
-      "impact": "[specific improvement]"
-    }}
-  ],
-  "surgical_summary": "Found [number] violations across [patterns]. Applying all fixes would raise score from [current] to [projected].",
-  "threshold": 20,
-  "meets_threshold": false
-}}
-
-Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
-"""
+# Inject editor-in-chief rules into the template
+QUALITY_CHECK_PROMPT = _quality_check_template.replace(
+    "{{EDITOR_IN_CHIEF_RULES}}",
+    EDITOR_IN_CHIEF_RULES
+)
 
 # ==================== CREATE CAROUSEL SLIDES ====================
 
