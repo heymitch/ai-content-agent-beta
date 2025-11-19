@@ -515,6 +515,171 @@ def get_airtable_post_content(record_id: str) -> str:
         return f"Error retrieving post: {str(e)}"
 
 
+def validate_content(text: str, platform: str = "linkedin") -> str:
+    """
+    Run quality check on content. Returns score (0-25), issues, and feedback.
+
+    Use this to:
+    - Validate pasted content
+    - Check drafts in co-write mode
+    - Score posts retrieved from Airtable
+
+    Args:
+        text: Content to validate
+        platform: Target platform for scoring criteria (linkedin, twitter, email, youtube, instagram)
+
+    Returns:
+        JSON with total_score, issues array, recommendations
+    """
+    import asyncio
+    import json
+
+    try:
+        # Import the appropriate native tool based on platform
+        if platform.lower() == 'linkedin':
+            from tools.linkedin_native_tools import quality_check_native
+        elif platform.lower() == 'twitter':
+            from tools.twitter_native_tools import quality_check_native
+        elif platform.lower() == 'email':
+            from tools.email_native_tools import quality_check_native
+        elif platform.lower() == 'youtube':
+            from tools.youtube_native_tools import quality_check_native
+        elif platform.lower() == 'instagram':
+            from tools.instagram_native_tools import quality_check_native
+        else:
+            from tools.linkedin_native_tools import quality_check_native  # Default
+
+        # Run async function
+        result = asyncio.run(quality_check_native(text))
+
+        return f"**Quality Check Results ({platform.capitalize()})**\n\n{result}"
+
+    except Exception as e:
+        return f"Error validating content: {str(e)}"
+
+
+def detect_ai_patterns(text: str) -> str:
+    """
+    Run GPTZero AI detection on content.
+
+    Returns AI probability percentage and flagged sentences.
+    Use this to check if content sounds robotic or AI-generated.
+
+    Args:
+        text: Content to analyze
+
+    Returns:
+        AI detection results with flagged sentences
+    """
+    import os
+    import requests
+
+    try:
+        gptzero_key = os.getenv('GPTZERO_API_KEY')
+        if not gptzero_key:
+            return "GPTZero API key not configured. Set GPTZERO_API_KEY in environment."
+
+        # Call GPTZero API
+        response = requests.post(
+            'https://api.gptzero.me/v2/predict/text',
+            headers={
+                'x-api-key': gptzero_key,
+                'Content-Type': 'application/json'
+            },
+            json={'document': text},
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return f"GPTZero API error: {response.status_code} - {response.text}"
+
+        result = response.json()
+
+        # Extract key metrics
+        ai_prob = result.get('documents', [{}])[0].get('completely_generated_prob', 0) * 100
+        sentences = result.get('documents', [{}])[0].get('sentences', [])
+
+        # Find flagged sentences (high AI probability)
+        flagged = []
+        for sent in sentences:
+            if sent.get('generated_prob', 0) > 0.8:
+                flagged.append(sent.get('sentence', '')[:100])
+
+        # Format output
+        output = [
+            f"**GPTZero AI Detection Results**\n",
+            f"**AI Probability:** {ai_prob:.1f}%",
+            f"**Verdict:** {'🟢 Human-like' if ai_prob < 50 else '🟡 Mixed signals' if ai_prob < 80 else '🔴 AI-detected'}",
+            f"\n**Flagged Sentences ({len(flagged)}):**"
+        ]
+
+        if flagged:
+            for i, sent in enumerate(flagged[:5], 1):  # Show top 5
+                output.append(f"  {i}. \"{sent}...\"")
+        else:
+            output.append("  None - content appears human-written!")
+
+        output.append(f"\n💡 Tip: Rewrite flagged sentences with specific details, varied rhythm, and personal voice.")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error detecting AI patterns: {str(e)}"
+
+
+def apply_content_fixes(text: str, issues: str, platform: str = "linkedin") -> str:
+    """
+    Apply fixes to content based on validation issues.
+
+    Use after validate_content to automatically fix identified issues.
+
+    Args:
+        text: Content to fix
+        issues: JSON array of issues from validate_content (or plain text description)
+        platform: Target platform
+
+    Returns:
+        Revised content with fixes applied
+    """
+    import asyncio
+    import json
+
+    try:
+        # Import the appropriate native tool based on platform
+        if platform.lower() == 'linkedin':
+            from tools.linkedin_native_tools import apply_fixes_native
+        elif platform.lower() == 'twitter':
+            from tools.twitter_native_tools import apply_fixes_native
+        elif platform.lower() == 'email':
+            from tools.email_native_tools import apply_fixes_native
+        elif platform.lower() == 'youtube':
+            from tools.youtube_native_tools import apply_fixes_native
+        elif platform.lower() == 'instagram':
+            from tools.instagram_native_tools import apply_fixes_native
+        else:
+            from tools.linkedin_native_tools import apply_fixes_native  # Default
+
+        # Parse issues if JSON, otherwise use as-is
+        try:
+            issues_list = json.loads(issues) if issues.startswith('[') else issues
+        except:
+            issues_list = issues
+
+        # Run async function with default parameters
+        result = asyncio.run(apply_fixes_native(
+            post=text,
+            issues_json=json.dumps(issues_list) if isinstance(issues_list, list) else issues_list,
+            current_score=15,  # Default mid-score
+            gptzero_ai_pct=None,
+            gptzero_flagged_sentences=None
+        ))
+
+        return f"**Fixed Content ({platform.capitalize()})**\n\n{result}"
+
+    except Exception as e:
+        return f"Error applying fixes: {str(e)}"
+
+
 # Tool definitions for Claude Agent SDK
 CONTENT_TOOLS = [
     {
@@ -594,6 +759,42 @@ CONTENT_TOOLS = [
             },
             "required": ["record_id"]
         }
+    },
+    {
+        "name": "validate_content",
+        "description": "Run quality check on content. Returns score, issues, and recommendations. Use to validate pasted content, check drafts in co-write mode, or score posts retrieved from Airtable.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Content to validate"},
+                "platform": {"type": "string", "description": "Target platform for scoring criteria", "enum": ["linkedin", "twitter", "email", "youtube", "instagram"], "default": "linkedin"}
+            },
+            "required": ["text"]
+        }
+    },
+    {
+        "name": "detect_ai_patterns",
+        "description": "Run GPTZero AI detection on content. Returns AI probability and flagged sentences. Use to check if content sounds robotic or AI-generated.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Content to analyze for AI patterns"}
+            },
+            "required": ["text"]
+        }
+    },
+    {
+        "name": "apply_content_fixes",
+        "description": "Apply fixes to content based on validation issues. Use after validate_content to automatically fix identified issues and improve the post.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Content to fix"},
+                "issues": {"type": "string", "description": "JSON array of issues from validate_content, or plain text description of problems to fix"},
+                "platform": {"type": "string", "description": "Target platform", "enum": ["linkedin", "twitter", "email", "youtube", "instagram"], "default": "linkedin"}
+            },
+            "required": ["text", "issues"]
+        }
     }
 ]
 
@@ -604,5 +805,8 @@ TOOL_FUNCTIONS = {
     "get_thread_context": get_thread_context,
     "analyze_content_performance": analyze_content_performance,
     "search_airtable_posts": search_airtable_posts,
-    "get_airtable_post_content": get_airtable_post_content
+    "get_airtable_post_content": get_airtable_post_content,
+    "validate_content": validate_content,
+    "detect_ai_patterns": detect_ai_patterns,
+    "apply_content_fixes": apply_content_fixes
 }
