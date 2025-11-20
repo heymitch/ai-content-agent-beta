@@ -52,7 +52,8 @@ async def run_quality_check(content: str, platform: str) -> Dict[str, Any]:
     client = get_anthropic_client()
 
     # Format prompt for the specific platform
-    prompt = QUALITY_CHECK_PROMPT.format(post=content)
+    # Use replace() instead of .format() to avoid KeyError on unescaped JSON in prompt
+    prompt = QUALITY_CHECK_PROMPT.replace("{post}", content)
 
     try:
         # Call Claude with web_search tool for fact checking
