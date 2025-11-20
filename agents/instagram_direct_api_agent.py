@@ -40,7 +40,6 @@ logger = get_logger(__name__)
 from tools.instagram_native_tools import (
     generate_5_hooks_native,
     search_company_documents_native,
-    inject_proof_points_native,
     create_caption_draft_native,
     condense_to_limit_native,
     quality_check_native,
