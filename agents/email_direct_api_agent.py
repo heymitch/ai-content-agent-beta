@@ -693,22 +693,44 @@ Your goal: 18+/25 on the first pass. The stacked rules have everything you need.
 
         # Format validation issues for Airtable
         validation_formatted = None
-        if validation_issues or gptzero_flagged_sentences:
-            lines = ["🔍 VALIDATION RESULTS:\n"]
-            lines.append(f"Quality Score: {validation_score}/25")
+        if validation_issues or gptzero_flagged_sentences or gptzero_ai_pct is not None:
+            lines = [f"Quality Score: {validation_score}/25"]
+            lines.append("Suggested Edits:")
 
+            # GPTZero AI Detection - show first
             if gptzero_ai_pct is not None:
-                lines.append(f"\n🤖 GPTZero AI Detection: {gptzero_ai_pct}% AI")
+                lines.append(f"🤖 GPTZero AI Detection: {gptzero_ai_pct}% AI")
 
-            if validation_issues:
-                lines.append(f"\n⚠️ ISSUES FOUND ({len(validation_issues)} total):\n")
-                for i, issue in enumerate(validation_issues, 1):
+            # Issues found
+            total_issues = len(validation_issues) + len(gptzero_flagged_sentences)
+            if total_issues > 0:
+                lines.append(f"\n⚠️ ISSUES FOUND ({total_issues} total):\n")
+
+                issue_num = 1
+                # Show validation issues with the actual offending text
+                for issue in validation_issues:
                     if isinstance(issue, dict):
-                        severity = issue.get('severity', 'medium').upper()
+                        original = issue.get('original', '')
                         pattern = issue.get('pattern', 'unknown')
-                        lines.append(f"{i}. [{severity}] {pattern}")
+                        fix = issue.get('fix', '')
+                        if original:
+                            lines.append(f"{issue_num}. \"{original}\" - {pattern}")
+                            if fix:
+                                lines.append(f"   → Fix: {fix}")
+                        else:
+                            lines.append(f"{issue_num}. [{pattern}]")
                     else:
-                        lines.append(f"{i}. {issue}")
+                        lines.append(f"{issue_num}. {issue}")
+                    issue_num += 1
+
+                # Show GPTZero flagged sentences
+                if gptzero_flagged_sentences:
+                    lines.append("\n📝 GPTZero Flagged Sentences (rewrite to sound more human):")
+                    for sentence in gptzero_flagged_sentences:
+                        lines.append(f"{issue_num}. \"{sentence}\"")
+                        issue_num += 1
+            else:
+                lines.append("\n✅ No specific issues found")
 
             validation_formatted = "\n".join(lines)
         else:
