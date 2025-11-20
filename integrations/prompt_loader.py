@@ -239,12 +239,9 @@ def _try_load_file(path: Path, source_description: str) -> Optional[str]:
 
     try:
         content = path.read_text(encoding='utf-8')
-        # Use print() to ensure it shows in deployment logs
-        print(f"Loaded prompt from {source_description}: {path.name}")
         logger.info(f"Loaded prompt from {source_description}: {path.name}")
         return content
     except Exception as e:
-        print(f"❌ Failed to read {path}: {e}")
         logger.error(f"Failed to read {path}: {e}")
         return None
 
@@ -384,7 +381,6 @@ Your goal: Produce 18+/25 content on the first pass by following all stacked rul
 """
 
     logger.info(f"📚 Stacked prompts for {platform}: {len(stacked)} chars ({len(sections)} sections)")
-    print(f"📚 Stacked prompts for {platform}: {len(stacked)} chars")
 
     return stacked
 

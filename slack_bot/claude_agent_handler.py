@@ -756,7 +756,7 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
 
         elif platform.lower() in ['youtube', 'video']:
             # Use the Direct API Agent workflow
-            from agents.youtube_direct_api_agent import create_youtube_script_workflow
+            from agents.youtube_direct_api_agent import create_youtube_workflow
             # Detect script type from style/context
             youtube_style = "short_form"  # Default (30-150 words, 12-60 sec)
             if "medium" in style.lower() or "explainer" in style.lower():
@@ -764,7 +764,7 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
             elif "long" in style.lower() or "deep" in style.lower():
                 youtube_style = "long_form"  # 400-1000 words, 3-10 min
 
-            result = await create_youtube_script_workflow(topic, context, youtube_style)
+            result = await create_youtube_workflow(topic, context, youtube_style)
             return result  # Already formatted with timing markers
 
         elif platform.lower() in ['instagram', 'ig', 'insta']:

@@ -345,8 +345,8 @@ async def _execute_single_post(
         )
 
     elif platform == "youtube":
-        from agents.youtube_direct_api_agent import create_youtube_script_workflow
-        result = await create_youtube_script_workflow(
+        from agents.youtube_direct_api_agent import create_youtube_workflow
+        result = await create_youtube_workflow(
             topic=topic,
             context=context,  # Strategic outline + optional strategy memory
             script_type=style or 'educational',

@@ -61,9 +61,9 @@ async def test_youtube():
     print("TEST 3: YOUTUBE - Content automation script")
     print("=" * 80)
 
-    from agents.youtube_direct_api_agent import create_youtube_script_workflow
+    from agents.youtube_direct_api_agent import create_youtube_workflow
 
-    result = await create_youtube_script_workflow(
+    result = await create_youtube_workflow(
         topic="3 ways AI agents will transform content creation in 2025",
         context="Educational video for content creators, focus on actionable insights",
         style="educational",
