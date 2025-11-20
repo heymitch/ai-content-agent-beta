@@ -144,17 +144,36 @@ class AirtableContentCalendar:
                 'url': url
             }
         except Exception as e:
-            error_str = str(e).lower()
+            error_str = str(e)
             print(f"❌ Airtable API error: {e}")
 
+            # If platform select option doesn't exist, retry without platform
+            if 'INVALID_MULTIPLE_CHOICE_OPTIONS' in error_str and 'Platform' in fields:
+                print(f"⚠️ Platform '{airtable_platform}' not in Airtable options, retrying without platform...")
+                del fields['Platform']
+                try:
+                    record = self.table.create(fields)
+                    url = f"https://airtable.com/{self.base_id}/{self.table_name}/{record['id']}"
+                    print(f"✅ Airtable record created (without platform): {record['id']}")
+                    return {
+                        'success': True,
+                        'record_id': record['id'],
+                        'fields': record['fields'],
+                        'url': url,
+                        'warning': f"Platform '{platform}' not set - add '{airtable_platform}' to Airtable Platform field options"
+                    }
+                except Exception as retry_e:
+                    print(f"❌ Airtable retry failed: {retry_e}")
+                    error_str = str(retry_e)
+
             # Detect quota/rate limit errors
-            is_quota_error = any(keyword in error_str for keyword in [
+            is_quota_error = any(keyword in error_str.lower() for keyword in [
                 'quota', 'rate limit', 'too many requests', '429', 'limit exceeded'
             ])
 
             return {
                 'success': False,
-                'error': str(e),
+                'error': error_str,
                 'is_quota_error': is_quota_error,
                 'fallback_message': 'Airtable quota exceeded. Saved to Supabase only.' if is_quota_error else None
             }
