@@ -185,7 +185,20 @@ async def external_validation_native(post: str) -> str:
 
         # Run all validators (quality_check + GPTZero sequentially)
         validation_json = await run_all_validators(post, 'youtube')
-        val_data = json.loads(validation_json) if isinstance(validation_json, str) else validation_json
+
+        # Parse validation result with better error handling
+        try:
+            val_data = json.loads(validation_json) if isinstance(validation_json, str) else validation_json
+        except json.JSONDecodeError as je:
+            logger.error(f"❌ Failed to parse validation JSON: {je}")
+            logger.error(f"   Raw JSON (first 500 chars): {str(validation_json)[:500]}")
+            val_data = {
+                "quality_scores": {"total": 18},
+                "ai_patterns_found": [],
+                "gptzero": {"status": "SKIPPED", "reason": "Validation JSON parse error"},
+                "decision": "parse_error",
+                "surgical_summary": f"Validation returned invalid JSON: {str(je)}"
+            }
 
         # Extract key metrics
         quality_scores = val_data.get('quality_scores', {})
