@@ -103,8 +103,24 @@ def search_company_documents(
         words = re.findall(r'\b\w+\b', query.lower())
         keywords = [w for w in words if w not in stop_words and len(w) > 2]
 
+        # Limit to 3 most relevant keywords to reduce sequential HTTP requests
+        # Prioritize: proper nouns (capitalized in original), then longer words (more specific)
+        original_words = re.findall(r'\b\w+\b', query)
+
+        def keyword_relevance(kw):
+            # Find original casing
+            for orig in original_words:
+                if orig.lower() == kw:
+                    # Capitalized words (likely names/proper nouns) get highest priority
+                    if orig[0].isupper():
+                        return (0, -len(kw))  # 0 = highest priority
+            # Longer words are more specific/relevant
+            return (1, -len(kw))
+
+        keywords = sorted(keywords, key=keyword_relevance)[:3]
+
         print(f"🔍 HYBRID SEARCH for: '{query}'")
-        print(f"   Extracted keywords: {keywords}")
+        print(f"   Top 3 keywords (from {len(words)} words): {keywords}")
 
         keyword_matches = []
         seen_ids = set()
