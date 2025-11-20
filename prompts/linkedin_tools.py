@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # ==================== LOAD EDITOR-IN-CHIEF STANDARDS ====================
 # Load comprehensive Editor-in-Chief standards for quality_check
 # Now uses PromptLoader with client override support (.claude/prompts/)
-from integrations.prompt_loader import load_editor_standards, load_writing_rules
+from integrations.prompt_loader import load_editor_standards, load_writing_rules, load_prompt
 
 EDITOR_IN_CHIEF_RULES = load_editor_standards()
 WRITE_LIKE_HUMAN_RULES = load_writing_rules()
@@ -37,7 +37,6 @@ INJECT_PROOF_PROMPT = load_prompt("inject_proof", platform="linkedin")
 # ==================== CREATE HUMAN DRAFT ====================
 # Load draft prompt template (with client override support)
 # Clients can customize by creating .claude/prompts/linkedin/create_draft.md
-from integrations.prompt_loader import load_prompt
 
 print("🔍 DEBUG: About to load create_draft prompt for LinkedIn...")
 _draft_template = load_prompt("create_draft", platform="linkedin")
