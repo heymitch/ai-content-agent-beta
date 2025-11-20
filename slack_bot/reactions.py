@@ -82,9 +82,12 @@ class ReactionHandler:
         # Find handler for this emoji
         handler = self.handlers.get(reaction_emoji)
         if not handler:
+            # Silently ignore unknown reactions (like zap, eyes, etc.)
+            print(f"ℹ️ Ignoring unhandled reaction: {reaction_emoji}")
             return {
-                'success': False,
-                'message': f'Unknown reaction: {reaction_emoji}'
+                'success': True,  # Not a failure, just not handled
+                'action': 'ignored',
+                'message': None  # No message to send
             }
 
         # Execute handler
