@@ -237,6 +237,8 @@ async def run_all_validators(content: str, platform: str) -> str:
     logger.info("📊 Running quality check first...")
     try:
         quality_result = await asyncio.wait_for(run_quality_check(content, platform), timeout=60.0)
+        logger.info(f"📊 Quality check raw result keys: {quality_result.keys() if isinstance(quality_result, dict) else 'not a dict'}")
+        logger.info(f"📊 Quality check scores: {quality_result.get('scores', 'missing')}")
     except asyncio.TimeoutError:
         logger.warning("⚠️ Quality check timed out after 60s - using fallback")
         quality_result = {
@@ -277,6 +279,7 @@ async def run_all_validators(content: str, platform: str) -> str:
     # Convert to JSON string for Airtable
     json_str = json.dumps(validation_data, indent=2, ensure_ascii=False)
 
+    logger.info(f"📋 Returning validation JSON ({len(json_str)} chars)")
     logger.info("📋 Validation summary:")
     logger.info(f"   Quality Score: {quality_result.get('scores', {}).get('total', 0)}/25")
     logger.info(f"   AI Patterns Found: {len(quality_result.get('issues', []))}")
