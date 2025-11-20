@@ -25,7 +25,7 @@ from utils.structured_logger import (
 from utils.circuit_breaker import CircuitBreaker, CircuitState
 
 # Prompt loading with client context support
-from integrations.prompt_loader import load_system_prompt
+from integrations.prompt_loader import load_system_prompt, stack_prompts
 
 # Load environment variables
 load_dotenv()
