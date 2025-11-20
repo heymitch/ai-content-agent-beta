@@ -411,7 +411,7 @@ Topic: {topic}
 Context/Outline:
 {context}
 
-FAST MODE WORKFLOW:
+WORKFLOW:
 
 1. Evaluate the Context/Outline:
    - Rich outline (>200 words)? → Preserve user's thinking, polish it
@@ -434,7 +434,7 @@ FAST MODE WORKFLOW:
 CRITICAL: Follow ALL rules from Writing Rules and Editor-in-Chief Standards above.
 Your goal: 18+/25 on the first pass. The stacked rules have everything you need."""
 
-            print(f"📤 Sending creation prompt to Claude via direct API (Fast Mode)...")
+            print(f"📤 Sending creation prompt to Claude via direct API...")
 
             # Initialize conversation messages
             messages = [
@@ -445,7 +445,7 @@ Your goal: 18+/25 on the first pass. The stacked rules have everything you need.
             ]
 
             # Manual tool calling loop (replaces SDK's receive_response iterator)
-            max_iterations = 10  # Fast Mode: fewer iterations needed
+            max_iterations = 10  # Default mode: fewer iterations with stacked prompts
             iteration = 0
             final_output = None
 

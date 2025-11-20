@@ -397,144 +397,56 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
                     logger.info("🔄 Circuit breaker entering HALF_OPEN", **log_context)
 
         try:
-            # Import WRITE_LIKE_HUMAN_RULES for comprehensive anti-slop guidance
-            from prompts.instagram_tools import WRITE_LIKE_HUMAN_RULES
+            # Stack all prompts into system message (Claude Projects style)
+            stacked_system = stack_prompts("instagram")
 
-            # Build creation prompt with FULL writing rules (will be cached)
-            creation_prompt = f"""{WRITE_LIKE_HUMAN_RULES}
+            print(f"📚 Using stacked prompts: {len(stacked_system)} chars (cached)")
 
-═══════════════════════════════════════════════════════════
-INSTAGRAM CAPTION CREATION TASK
-═══════════════════════════════════════════════════════════
-
-Create an Instagram caption ({caption_type} format).
+            # Simple user message - all rules are in the system prompt
+            creation_prompt = f"""Create an Instagram caption ({caption_type} format).
 
 Topic: {topic}
 
 Context/Outline:
 {context}
 
-**CRITICAL: Apply the WRITE_LIKE_HUMAN_RULES above to ALL content you generate or synthesize from tool results.**
+WORKFLOW:
 
-MANDATORY WORKFLOW (NO SHORTCUTS, NO SELF-ASSESSMENT):
+1. Evaluate the Context/Outline:
+   - Rich outline (>200 words)? → Preserve user's thinking, polish it
+   - Thin outline? → Generate hooks, build from scratch
 
-═══════════════════════════════════════════════════════════
-PHASE 1: DRAFT CREATION
-═══════════════════════════════════════════════════════════
+2. Call tools as needed:
+   - generate_5_hooks (if thin outline)
+   - create_caption_draft (always - pass context through)
+   - condense_to_limit (if over 2,200 chars)
 
-Evaluate the Context/Outline:
-- Does it contain strategic narrative (>200 words with specific language)?
+3. Self-validate against ALL stacked rules above before returning
 
-IF YES (rich strategic context):
-   → Extract the user's exact thinking
-   → Build on it, don't replace it
-   → DO NOT call generate_5_hooks (user already has an angle!)
-   → DO call create_caption_draft WITH the outline as context
-   → The tool will PRESERVE user's language and structure, just polish it
-   → THEN proceed to Phase 2 below (quality gate is STILL MANDATORY)
-
-IF NO (topic or thin outline):
-   → Call generate_5_hooks to explore angles
-   → Call create_caption_draft to build full content (returns ONLY post_text, no scoring)
-   → Call inject_proof_points to add metrics
-   → THEN proceed to Phase 2 below
-
-═══════════════════════════════════════════════════════════
-PHASE 2: VALIDATION & REWRITE (MANDATORY - SINGLE PASS)
-═══════════════════════════════════════════════════════════
-
-STOP. DO NOT RETURN THE POST YET.
-
-WORKFLOW (DRAFT → VALIDATE → FIX → RE-VALIDATE):
-
-1. Call external_validation(post=your_draft)
-   - This runs Editor-in-Chief rules + GPTZero AI detection on DRAFT
-   - Returns: total_score, issues, gptzero_ai_pct, gptzero_flagged_sentences
-   - STORE these for reference (original_score, original_issues)
-
-2. Call apply_fixes with ALL parameters:
-   apply_fixes(
-     post=your_draft,
-     issues_json=json.dumps(validation.issues),
-     current_score=validation.total_score,
-     gptzero_ai_pct=validation.gptzero_ai_pct,
-     gptzero_flagged_sentences=validation.gptzero_flagged_sentences
-   )
-
-   - apply_fixes will fix EVERY issue (no 3-5 limit)
-   - Rewrites ALL GPTZero flagged sentences to sound more human
-   - Returns revised_post
-   - STORE revised_post
-
-3. **RE-VALIDATE the REVISED post** to see what still needs fixing:
-   final_validation = external_validation(post=revised_post)
-
-   - This checks if apply_fixes actually fixed the issues
-   - Returns FINAL validation results for Airtable "Suggested Edits"
-   - User sees what STILL needs manual fixing in the final post
-
-4. **MANDATORY STOP - DO NOT ITERATE AGAIN:**
-   - YOU HAVE NOW DONE: Draft → Validation → Fix → Revalidation
-   - That is 1 fix + 1 revalidation = MAXIMUM ALLOWED
-   - If final_score >= 17: STOP IMMEDIATELY and return result
-   - If final_score < 17: STILL STOP - one iteration is enough
-   - DO NOT call apply_fixes again - over-polishing destroys original voice
-   - DO NOT call external_validation again - you already have the final score
-   - IMMEDIATELY return the JSON in step 5
-
-5. **CRITICAL:** Return the REVISED post with FINAL validation metadata:
-
-   Return JSON with REVISED content + FINAL validation:
+4. Return JSON with content and self-assessment:
    {{
-     "post_text": "[INSERT revised_post HERE - the FIXED version from apply_fixes]",
-     "original_score": [score from FINAL validation in step 3],
-     "validation_issues": [issues from FINAL validation in step 3],
-     "gptzero_ai_pct": [AI % from FINAL validation in step 3],
-     "gptzero_flagged_sentences": [flagged sentences from FINAL validation in step 3]
+     "caption": "...",
+     "hashtags": ["#tag1", "#tag2", "#tag3"],
+     "self_score": 20,
+     "potential_issues": ["any patterns that might still need work"],
+     "character_count": 1850
    }}
 
-   ❌ **ANTI-PATTERNS (DO NOT DO THIS):**
-   - Do NOT return the original draft in post_text
-   - Do NOT skip apply_fixes and return draft directly
-   - Do NOT forget to extract revised_post from apply_fixes response
-   - Do NOT show the user the draft - only show the REVISED version
-
-   ✅ **CORRECT FLOW:**
-   1. draft = create_caption_draft(...)
-   2. draft_validation = external_validation(post=draft)
-   3. fixed = apply_fixes(post=draft, issues=draft_validation.issues, ...)
-   4. final_validation = external_validation(post=fixed.revised_post)  ← RE-VALIDATE!
-   5. Return {{post_text: fixed.revised_post, validation from step 4}} ← Final validation goes to Airtable!
-
-CRITICAL:
-- TWO validation passes: Draft validation (for apply_fixes input) + Final validation (for Airtable)
-- Return revised_post with FINAL validation metadata
-- User sees what STILL needs fixing after apply_fixes ran
-- If FINAL validation shows 0 issues → post is clean!
-- If FINAL validation shows issues → user knows what to manually edit
-- The post_text field MUST contain the REVISED version from apply_fixes
-- The validation metadata MUST be from FINAL validation (step 4), not draft validation
-
-Return format MUST include REVISED post_text + validation metadata for Airtable."""
+CRITICAL: Follow ALL rules from Writing Rules and Editor-in-Chief Standards above.
+Your goal: 18+/25 on the first pass. The stacked rules have everything you need."""
 
             print(f"📤 Sending creation prompt to Claude via direct API...")
 
-            # Initialize conversation messages with prompt caching on first message
+            # Initialize conversation messages
             messages = [
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": creation_prompt,
-                            "cache_control": {"type": "ephemeral"}  # Cache WRITE_LIKE_HUMAN_RULES
-                        }
-                    ]
+                    "content": creation_prompt
                 }
             ]
 
-            # Manual tool calling loop (replaces SDK's receive_response iterator)
-            max_iterations = 20  # Prevent infinite loops
+            # Manual tool calling loop
+            max_iterations = 10  # Default mode: fewer iterations with stacked prompts
             iteration = 0
             final_output = None
 
@@ -551,7 +463,13 @@ Return format MUST include REVISED post_text + validation metadata for Airtable.
                             self.client.messages.create,
                             model="claude-sonnet-4-5-20250929",
                             max_tokens=8000,
-                            system=self.system_prompt,
+                            system=[
+                                {
+                                    "type": "text",
+                                    "text": stacked_system,
+                                    "cache_control": {"type": "ephemeral"}  # Cache stacked prompts
+                                }
+                            ],
                             tools=TOOL_SCHEMAS,
                             messages=messages
                         ),
