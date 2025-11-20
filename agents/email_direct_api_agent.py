@@ -475,12 +475,12 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
    - create_human_draft (always - pass context through)
    - inject_proof_points (if draft needs metrics)
 
-3. VALIDATION - YOU MUST CALL THIS TOOL:
-   - Call external_validation(post=your_draft) - DO NOT SKIP THIS STEP
+3. VALIDATION - CALL EXACTLY ONCE:
+   - Call external_validation(post=your_draft)
    - This runs Editor-in-Chief rules + GPTZero AI detection
-   - Wait for the tool result before proceeding
+   - Wait for the tool result
 
-4. Return JSON with content AND the actual values from external_validation:
+4. IMMEDIATELY return JSON after validation - DO NOT call any more tools:
    {{
      "subject_line": "...",
      "preview_text": "...",
@@ -489,7 +489,9 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
      "validation_issues": [issues from validation],
      "gptzero_ai_pct": [AI % from validation],
      "gptzero_flagged_sentences": [flagged sentences]
-   }}"""
+   }}
+
+IMPORTANT: This is for feedback/tuning. Return results even if score is low or GPTZero flags it."""
 
             # Build the creation prompt
             creation_prompt = f"""Create an email newsletter ({normalized_email_type} format).
@@ -501,8 +503,7 @@ Context/Outline:
 
 {workflow_section}
 
-CRITICAL: Follow ALL rules from Writing Rules and Editor-in-Chief Standards above.
-Your goal: 18+/25 on the first pass. The stacked rules have everything you need."""
+CRITICAL: Follow ALL rules from Writing Rules and Editor-in-Chief Standards above."""
 
             # Filter tools based on mode
             # In default mode, exclude quality_check and apply_fixes (those are for thinking_mode loop)
