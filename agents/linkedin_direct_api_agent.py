@@ -334,7 +334,8 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
         post_type: str = "standard",
         target_score: int = 85,
         session_id: Optional[str] = None,
-        publish_date: Optional[str] = None
+        publish_date: Optional[str] = None,
+        thinking_mode: bool = False
     ) -> Dict[str, Any]:
         """
         Create a LinkedIn post using direct Anthropic API with manual tool calling
@@ -346,6 +347,7 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
             target_score: Minimum quality score (default 85)
             session_id: Session for conversation continuity
             publish_date: Optional publish date for scheduling
+            thinking_mode: If True, adds validation + fix loop for higher quality
 
         Returns:
             Dict with final post, score, hooks tested, iterations
@@ -397,21 +399,48 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
                     logger.info("🔄 Circuit breaker entering HALF_OPEN", **log_context)
 
         try:
-            # FAST MODE: Stack all prompts into system message (Claude Projects style)
+            # Stack all prompts into system message (Claude Projects style)
             # This gets cached - only the user content varies
             stacked_system = stack_prompts("linkedin")
 
-            print(f"📚 Using stacked prompts: {len(stacked_system)} chars (cached)")
+            mode_label = "Thinking Mode" if thinking_mode else "Default"
+            print(f"📚 Using stacked prompts: {len(stacked_system)} chars (cached) - {mode_label}")
 
-            # Simple user message - all rules are in the system prompt
-            creation_prompt = f"""Create a LinkedIn {post_type} post.
+            # Build workflow based on mode
+            if thinking_mode:
+                # THINKING MODE: Adds external validation + apply_fixes for higher quality
+                workflow_section = """WORKFLOW (THINKING MODE - Higher Quality):
 
-Topic: {topic}
+1. Evaluate the Context/Outline:
+   - Rich outline (>200 words)? → Preserve user's thinking, polish it
+   - Thin outline? → Generate hooks, build from scratch
 
-Context/Outline:
-{context}
+2. Call tools to create draft:
+   - generate_5_hooks (if thin outline)
+   - create_human_draft (always - pass context through)
+   - inject_proof_points (if draft needs metrics)
 
-WORKFLOW:
+3. VALIDATION PASS (MANDATORY):
+   - Call external_validation(post=your_draft)
+   - This runs Editor-in-Chief rules + GPTZero AI detection
+   - Returns: total_score, issues, gptzero_ai_pct, gptzero_flagged_sentences
+
+4. FIX PASS (MANDATORY):
+   - Call apply_fixes with ALL parameters from validation
+   - Fix EVERY issue identified
+   - Rewrite GPTZero-flagged sentences
+
+5. Return JSON with FIXED content and validation metadata:
+   {{
+     "post_text": "[the FIXED version from apply_fixes]",
+     "original_score": [score from validation],
+     "validation_issues": [issues from validation],
+     "gptzero_ai_pct": [AI % from validation],
+     "gptzero_flagged_sentences": [flagged sentences]
+   }}"""
+            else:
+                # DEFAULT MODE: One-shot with self-validation
+                workflow_section = """WORKFLOW:
 
 1. Evaluate the Context/Outline:
    - Rich outline (>200 words)? → Preserve user's thinking, polish it
@@ -429,7 +458,17 @@ WORKFLOW:
      "post_text": "...",
      "self_score": 20,
      "potential_issues": ["any patterns that might still need work"]
-   }}
+   }}"""
+
+            # Build the creation prompt
+            creation_prompt = f"""Create a LinkedIn {post_type} post.
+
+Topic: {topic}
+
+Context/Outline:
+{context}
+
+{workflow_section}
 
 CRITICAL: Follow ALL rules from Writing Rules and Editor-in-Chief Standards above.
 Your goal: 18+/25 on the first pass. The stacked rules have everything you need."""
@@ -444,8 +483,8 @@ Your goal: 18+/25 on the first pass. The stacked rules have everything you need.
                 }
             ]
 
-            # Manual tool calling loop (replaces SDK's receive_response iterator)
-            max_iterations = 10  # Default mode: fewer iterations with stacked prompts
+            # Manual tool calling loop
+            max_iterations = 15 if thinking_mode else 10  # Thinking mode needs more iterations for validation
             iteration = 0
             final_output = None
 
@@ -774,7 +813,8 @@ async def create_linkedin_post_workflow(
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
     user_id: Optional[str] = None,
-    publish_date: Optional[str] = None
+    publish_date: Optional[str] = None,
+    thinking_mode: bool = False
 ) -> str:
     """
     Main entry point for LinkedIn content creation using direct API
@@ -788,6 +828,7 @@ async def create_linkedin_post_workflow(
         thread_ts: Slack thread timestamp (for Airtable/Supabase saves)
         user_id: Slack user ID (for Airtable/Supabase saves)
         publish_date: Optional publish date
+        thinking_mode: If True, adds validation + fix loop for higher quality
 
     Returns:
         Formatted string with post content, score, and links
@@ -808,7 +849,8 @@ async def create_linkedin_post_workflow(
             context=f"{context} | Style: {style}",
             post_type=post_type,
             target_score=85,
-            publish_date=publish_date
+            publish_date=publish_date,
+            thinking_mode=thinking_mode
         )
 
         if result['success']:
