@@ -121,9 +121,17 @@ def perplexity_search(query: str, search_focus: str = "internet") -> str:
         citations = getattr(response, 'citations', [])
         search_results = getattr(response, 'search_results', [])
 
+        # Debug: Log what we're getting back
         success_msg = f"✅ Perplexity search success: query='{query[:50]}...', model={model}, citations={len(citations)}"
         logger.info(success_msg)
-        print(success_msg, flush=True)  # Ensure visible in Replit logs
+        print(success_msg, flush=True)
+
+        # Log citation details for debugging
+        if citations:
+            print(f"   Citations type: {type(citations)}", flush=True)
+            print(f"   First citation: {citations[0] if citations else 'None'}", flush=True)
+        if search_results:
+            print(f"   Search results: {len(search_results)} items", flush=True)
 
         return json.dumps({
             'success': True,
