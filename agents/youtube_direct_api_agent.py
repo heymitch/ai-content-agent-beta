@@ -331,18 +331,20 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
         script_type: str = "standard",
         target_score: int = 85,
         session_id: Optional[str] = None,
-        publish_date: Optional[str] = None
+        publish_date: Optional[str] = None,
+        thinking_mode: bool = False
     ) -> Dict[str, Any]:
         """
-        Create a Email post using direct Anthropic API with manual tool calling
+        Create a YouTube script using direct Anthropic API with manual tool calling
 
         Args:
             topic: Main topic/angle
             context: Additional requirements, CTAs, etc.
-            script_type: standard, carousel, or video
+            script_type: standard, tutorial, or explainer
             target_score: Minimum quality score (default 85)
             session_id: Session for conversation continuity
             publish_date: Optional publish date for scheduling
+            thinking_mode: If True, adds validation + fix loop for higher quality
 
         Returns:
             Dict with final post, score, hooks tested, iterations
@@ -397,17 +399,46 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
             # Stack all prompts into system message (Claude Projects style)
             stacked_system = stack_prompts("youtube")
 
-            print(f"📚 Using stacked prompts: {len(stacked_system)} chars (cached)")
+            mode_label = "Thinking Mode" if thinking_mode else "Default"
+            print(f"📚 Using stacked prompts: {len(stacked_system)} chars (cached) - {mode_label}")
 
-            # Simple user message - all rules are in the system prompt
-            creation_prompt = f"""Create a YouTube video script ({script_type} format).
+            # Build workflow based on mode
+            if thinking_mode:
+                # THINKING MODE: Adds external validation + apply_fixes for higher quality
+                workflow_section = """WORKFLOW (THINKING MODE - Higher Quality):
 
-Topic: {topic}
+1. Evaluate the Context/Outline:
+   - Rich outline (>200 words)? → Preserve user's thinking, polish it
+   - Thin outline? → Generate hooks, build from scratch
 
-Context/Outline:
-{context}
+2. Call tools to create draft:
+   - generate_5_hooks (if thin outline)
+   - create_human_script (always - pass context through)
+   - inject_proof_points (if draft needs metrics)
 
-WORKFLOW:
+3. VALIDATION PASS (MANDATORY):
+   - Call external_validation(post=your_draft)
+   - This runs Editor-in-Chief rules + GPTZero AI detection
+   - Returns: total_score, issues, gptzero_ai_pct, gptzero_flagged_sentences
+
+4. FIX PASS (MANDATORY):
+   - Call apply_fixes with ALL parameters from validation
+   - Fix EVERY issue identified
+   - Rewrite GPTZero-flagged sentences
+
+5. Return JSON with FIXED content and validation metadata:
+   {
+     "title": "...",
+     "script": "...",
+     "description": "...",
+     "original_score": [score from validation],
+     "validation_issues": [issues from validation],
+     "gptzero_ai_pct": [AI % from validation],
+     "gptzero_flagged_sentences": [flagged sentences]
+   }"""
+            else:
+                # DEFAULT MODE: One-shot with self-validation
+                workflow_section = """WORKFLOW:
 
 1. Evaluate the Context/Outline:
    - Rich outline (>200 words)? → Preserve user's thinking, polish it
@@ -421,13 +452,23 @@ WORKFLOW:
 3. Self-validate against ALL stacked rules above before returning
 
 4. Return JSON with content and self-assessment:
-   {{
+   {
      "title": "...",
      "script": "...",
      "description": "...",
      "self_score": 20,
      "potential_issues": ["any patterns that might still need work"]
-   }}
+   }"""
+
+            # Build the creation prompt
+            creation_prompt = f"""Create a YouTube video script ({script_type} format).
+
+Topic: {topic}
+
+Context/Outline:
+{context}
+
+{workflow_section}
 
 CRITICAL: Follow ALL rules from Writing Rules and Editor-in-Chief Standards above.
 Your goal: 18+/25 on the first pass. The stacked rules have everything you need."""
@@ -443,7 +484,7 @@ Your goal: 18+/25 on the first pass. The stacked rules have everything you need.
             ]
 
             # Manual tool calling loop
-            max_iterations = 10  # Default mode: fewer iterations with stacked prompts
+            max_iterations = 15 if thinking_mode else 10  # Thinking mode needs more iterations for validation
             iteration = 0
             final_output = None
 
@@ -759,14 +800,16 @@ Your goal: 18+/25 on the first pass. The stacked rules have everything you need.
 
 # ================== INTEGRATION FUNCTION (SAME INTERFACE AS SDK VERSION) ==================
 
-async def create_youtube_script_workflow(
+async def create_youtube_workflow(
     topic: str,
     context: str = "",
     style: str = "thought_leadership",
+    script_type: str = "tutorial",
     channel_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
     user_id: Optional[str] = None,
-    publish_date: Optional[str] = None
+    publish_date: Optional[str] = None,
+    thinking_mode: bool = False
 ) -> str:
     """
     Main entry point for YouTube script creation using direct API
@@ -776,10 +819,12 @@ async def create_youtube_script_workflow(
         topic: Main topic for the script
         context: Additional context
         style: Content style
+        script_type: Script type (tutorial, explainer, etc.)
         channel_id: Slack channel ID (for Airtable/Supabase saves)
         thread_ts: Slack thread timestamp (for Airtable/Supabase saves)
         user_id: Slack user ID (for Airtable/Supabase saves)
         publish_date: Optional publish date
+        thinking_mode: If True, adds validation + fix loop for higher quality
 
     Returns:
         Formatted string with post content, score, and links
@@ -793,14 +838,13 @@ async def create_youtube_script_workflow(
     )
 
     try:
-        script_type = "carousel" if "visual" in style.lower() else "standard"
-
         result = await agent.create_post(
             topic=topic,
             context=f"{context} | Style: {style}",
             script_type=script_type,
             target_score=85,
-            publish_date=publish_date
+            publish_date=publish_date,
+            thinking_mode=thinking_mode
         )
 
         if result['success']:
