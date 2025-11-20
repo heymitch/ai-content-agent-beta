@@ -143,6 +143,11 @@ CREATE TABLE IF NOT EXISTS company_documents (
   status TEXT DEFAULT 'active'
 );
 
+-- Fix existing NOT NULL constraints that break n8n inserts
+-- These columns should be nullable since trigger populates defaults
+ALTER TABLE company_documents ALTER COLUMN title DROP NOT NULL;
+ALTER TABLE company_documents ALTER COLUMN document_type DROP NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_company_docs_type ON company_documents(document_type);
 CREATE INDEX IF NOT EXISTS idx_company_docs_user ON company_documents(user_id);
 CREATE INDEX IF NOT EXISTS idx_company_docs_team ON company_documents(team_id);
