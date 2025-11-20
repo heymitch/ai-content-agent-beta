@@ -462,7 +462,7 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
      "gptzero_flagged_sentences": [flagged sentences]
    }}"""
             else:
-                # DEFAULT MODE: One-shot with self-validation
+                # DEFAULT MODE: With external validation for GPTZero feedback
                 workflow_section = f"""WORKFLOW:
 {word_count_guidance}
 
@@ -475,15 +475,20 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
    - create_human_draft (always - pass context through)
    - inject_proof_points (if draft needs metrics)
 
-3. Self-validate against ALL stacked rules above before returning
+3. VALIDATION (MANDATORY):
+   - Call external_validation(post=your_draft)
+   - This runs Editor-in-Chief rules + GPTZero AI detection
+   - Returns: total_score, issues, gptzero_ai_pct, gptzero_flagged_sentences
 
-4. Return JSON with content and self-assessment:
+4. Return JSON with content and validation metadata:
    {{
      "subject_line": "...",
      "preview_text": "...",
      "email_body": "...",
-     "self_score": 20,
-     "potential_issues": ["any patterns that might still need work"]
+     "original_score": [score from validation],
+     "validation_issues": [issues from validation],
+     "gptzero_ai_pct": [AI % from validation],
+     "gptzero_flagged_sentences": [flagged sentences]
    }}"""
 
             # Build the creation prompt
