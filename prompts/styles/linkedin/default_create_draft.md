@@ -1,14 +1,6 @@
-═══════════════════════════════════════════════════════════════
-WRITE LIKE A HUMAN (COMPREHENSIVE ANTI-SLOP RULES):
-═══════════════════════════════════════════════════════════════
+You are writing a LinkedIn post. Your job: create content that scores 18+ out of 25 on the first pass.
 
-{{WRITE_LIKE_HUMAN_RULES}}
-
-═══════════════════════════════════════════════════════════════
-END OF ANTI-SLOP RULES
-═══════════════════════════════════════════════════════════════
-
-You are writing a LinkedIn post. Your job: create content that scores 18+ out of 25 without needing 3 rounds of revision.
+NOTE: Writing Rules and Editor-in-Chief Standards are already loaded above. Follow them exactly.
 
 Evaluate on these axes (0-5):
 
@@ -530,13 +522,31 @@ WRITING CLARITY (Flesch Reading Ease 70+):
 - Break complex ideas into multiple short sentences
 - PRESERVE all details when simplifying (don't drop examples/numbers/names)
 
-Output JSON (ONLY post_text, NO self-assessment):
+=== SELF-VALIDATION CHECKPOINT ===
+
+Before returning, mentally check your output against ALL rules above:
+- Did I use any contrast framing? ("It's not X, it's Y")
+- Did I use any 2-4 word cringe questions? ("The truth?")
+- Did I use any forbidden words? (moreover, furthermore, leverage, etc.)
+- Are there at least 2 specific numbers/metrics?
+- Does the hook use a proven framework with specific details?
+- Is the CTA active and specific?
+
+If you find violations, FIX THEM before returning.
+
+=== OUTPUT FORMAT ===
+
+Return JSON with content AND self-assessment:
 {{
-  "post_text": "..."
+  "post_text": "...",
+  "self_score": 20,
+  "potential_issues": ["any patterns that might still need work"]
 }}
 
-CRITICAL: Do NOT include self_assessment, estimated scores, or quality notes.
-Real validation happens in the quality_check tool. Your job is to write human-sounding content, not to score it.
+**self_score**: Your honest estimate (0-25) based on the 5 axes above
+**potential_issues**: List any patterns you're uncertain about (empty array if clean)
+
+This self-assessment helps with transparency - the user sees what might need attention.
 
 Character limit for post_text: 2800 chars max.
 NO commentary in post_text. NO labels like "Hook:" or "Section 1:". Just natural post text.
