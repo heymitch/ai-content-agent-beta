@@ -106,12 +106,9 @@ REPLIT_BOT_FILTER_FIX.md
 ENTERPRISE_DEPLOYMENT_STRATEGY.md
 
 # Test files in root (keep tests/ folder)
-/test_agent_sdk_*.py
+/test_*.py
 /*_test.py
 run_tests.sh
-test_multi_platform_*.py
-test_multi_platform_mock.py
-test_multi_platform_quality.py
 
 # Temporary and backup files
 *.backup
