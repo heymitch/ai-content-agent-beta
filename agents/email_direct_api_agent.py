@@ -462,8 +462,8 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
      "gptzero_flagged_sentences": [flagged sentences]
    }}"""
             else:
-                # DEFAULT MODE: With external validation for GPTZero feedback
-                workflow_section = f"""WORKFLOW:
+                # DEFAULT MODE: Fast one-shot with self-assessment
+                workflow_section = f"""WORKFLOW (ONE-SHOT):
 {word_count_guidance}
 
 1. Evaluate the Context/Outline:
@@ -475,23 +475,13 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
    - create_human_draft (always - pass context through)
    - inject_proof_points (if draft needs metrics)
 
-3. VALIDATION - CALL EXACTLY ONCE:
-   - Call external_validation(post=your_draft)
-   - This runs Editor-in-Chief rules + GPTZero AI detection
-   - Wait for the tool result
-
-4. IMMEDIATELY return JSON after validation - DO NOT call any more tools:
+3. Return JSON with the email and self-assessment:
    {{
      "subject_line": "...",
      "preview_text": "...",
      "email_body": "...",
-     "original_score": [score from validation],
-     "validation_issues": [issues from validation],
-     "gptzero_ai_pct": [AI % from validation],
-     "gptzero_flagged_sentences": [flagged sentences]
-   }}
-
-IMPORTANT: This is for feedback/tuning. Return results even if score is low or GPTZero flags it."""
+     "self_score": [score from create_human_draft self_assessment]
+   }}"""
 
             # Build the creation prompt
             creation_prompt = f"""Create an email newsletter ({normalized_email_type} format).
@@ -503,19 +493,19 @@ Context/Outline:
 
 {workflow_section}
 
-CRITICAL: Follow ALL rules from Writing Rules and Editor-in-Chief Standards above."""
+CRITICAL: Follow ALL rules from Writing Rules and Editor-in-Chief Standards above.
+Your goal: 18+/25 on the first pass. The stacked rules have everything you need."""
 
             # Filter tools based on mode
-            # In default mode, exclude quality_check and apply_fixes (those are for thinking_mode loop)
             if thinking_mode:
                 tools_to_use = TOOL_SCHEMAS
             else:
-                # Only provide tools needed for default workflow
+                # Default mode: only content creation tools (no validation/fix tools)
                 tools_to_use = [
                     tool for tool in TOOL_SCHEMAS
-                    if tool["name"] not in ["quality_check", "apply_fixes"]
+                    if tool["name"] not in ["quality_check", "apply_fixes", "external_validation"]
                 ]
-                logger.info(f"🔧 Default mode: providing {len(tools_to_use)} tools (excluding quality_check/apply_fixes)")
+                logger.info(f"🔧 Default mode: providing {len(tools_to_use)} tools (excluding validation tools)")
 
             print(f"📤 Sending creation prompt to Claude via direct API...")
 
