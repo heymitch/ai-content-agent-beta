@@ -1211,17 +1211,20 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                         inclusive=True
                     )
 
-                # Get actual thread_ts (the message may be in a thread)
+                # Get actual thread_ts and message content
                 actual_thread_ts = message_ts
+                message_content = None
                 if message_response.get('ok') and message_response.get('messages'):
                     message = message_response['messages'][0]
                     actual_thread_ts = message.get('thread_ts', message_ts)
+                    message_content = message.get('text', '')
 
                 result = await handler.reaction_handler.handle_reaction(
                     reaction_emoji=reaction,
                     thread_ts=actual_thread_ts,
                     user_id=user_id,
-                    channel_id=channel
+                    channel_id=channel,
+                    message_content=message_content
                 )
 
                 print(f"📋 Reaction handler result: success={result.get('success')}, has_message={bool(result.get('message'))}")

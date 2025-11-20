@@ -39,7 +39,8 @@ class ReactionHandler:
         reaction_emoji: str,
         thread_ts: str,
         user_id: str,
-        channel_id: str
+        channel_id: str,
+        message_content: str = None
     ) -> Dict[str, Any]:
         """
         Route reaction to appropriate handler
@@ -49,6 +50,7 @@ class ReactionHandler:
             thread_ts: Thread timestamp
             user_id: User who reacted
             channel_id: Channel ID
+            message_content: Optional message content (fallback if thread not in DB)
 
         Returns:
             Result dict with action taken and response message
@@ -58,10 +60,24 @@ class ReactionHandler:
         thread = self.memory.get_thread(thread_ts)
         if not thread:
             print(f"⚠️ Thread not found in slack_threads table: {thread_ts}")
-            return {
-                'success': False,
-                'message': f'Thread not found. This content may be too old or wasn\'t created by the agent.\n\nThread TS: {thread_ts}'
-            }
+            # If we have message content, create a synthetic thread object
+            if message_content:
+                print(f"📝 Using message content as fallback ({len(message_content)} chars)")
+                thread = {
+                    'thread_ts': thread_ts,
+                    'channel_id': channel_id,
+                    'user_id': user_id,
+                    'latest_draft': message_content,
+                    'latest_score': 80,  # Default score for external content
+                    'platform': 'linkedin',  # Default platform, could be detected
+                    'status': 'external',
+                    'metadata': {}
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f'Thread not found. This content may be too old or wasn\'t created by the agent.\n\nThread TS: {thread_ts}'
+                }
 
         # Find handler for this emoji
         handler = self.handlers.get(reaction_emoji)
