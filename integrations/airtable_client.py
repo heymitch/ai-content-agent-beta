@@ -133,15 +133,19 @@ class AirtableContentCalendar:
             fields['Suggested Edits'] = json.dumps(metadata, ensure_ascii=False)
 
         try:
+            print(f"📝 Airtable: Creating record with platform={platform}, content_len={len(clean_content)}")
             record = self.table.create(fields)
+            url = f"https://airtable.com/{self.base_id}/{self.table_name}/{record['id']}"
+            print(f"✅ Airtable record created: {record['id']}")
             return {
                 'success': True,
                 'record_id': record['id'],
                 'fields': record['fields'],
-                'url': f"https://airtable.com/{self.base_id}/{self.table_name}/{record['id']}"
+                'url': url
             }
         except Exception as e:
             error_str = str(e).lower()
+            print(f"❌ Airtable API error: {e}")
 
             # Detect quota/rate limit errors
             is_quota_error = any(keyword in error_str for keyword in [

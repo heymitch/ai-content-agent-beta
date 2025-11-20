@@ -439,16 +439,17 @@ def extract_airtable_url_from_result(result) -> str:
 
     # Handle string result - try to find Airtable URL
     # Pattern 1: Direct URL (https://airtable.com/...)
-    url_match = re.search(r'https://airtable\.com/[^\s\)\]]+', str(result))
+    url_match = re.search(r'https://airtable\.com/[^\s\)\]\*]+', str(result))
 
     if url_match:
-        return url_match.group(0)
+        url = url_match.group(0).rstrip('*')  # Remove trailing asterisks from markdown
+        return url
 
-    # Pattern 2: "Airtable: URL" format (handles emoji prefix like 📊 Airtable:)
-    airtable_prefix_match = re.search(r'Airtable:\s*(https://airtable\.com/[^\s\)\]]+)', str(result))
+    # Pattern 2: "Airtable Record:" format (handles markdown like 📊 **Airtable Record:**)
+    airtable_prefix_match = re.search(r'Airtable\s*(?:Record)?:?\*?\*?\s*(https://airtable\.com/[^\s\)\]\*]+)', str(result))
 
     if airtable_prefix_match:
-        return airtable_prefix_match.group(1)
+        return airtable_prefix_match.group(1).rstrip('*')
 
     # Fallback: Return placeholder
     print(f"⚠️ Could not extract Airtable URL from result")
