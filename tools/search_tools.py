@@ -121,7 +121,9 @@ def perplexity_search(query: str, search_focus: str = "internet") -> str:
         citations = getattr(response, 'citations', [])
         search_results = getattr(response, 'search_results', [])
 
-        logger.info(f"Perplexity search success: query='{query[:50]}...', model={model}, citations={len(citations)}")
+        success_msg = f"✅ Perplexity search success: query='{query[:50]}...', model={model}, citations={len(citations)}"
+        logger.info(success_msg)
+        print(success_msg, flush=True)  # Ensure visible in Replit logs
 
         return json.dumps({
             'success': True,
@@ -134,7 +136,9 @@ def perplexity_search(query: str, search_focus: str = "internet") -> str:
         }, indent=2)
 
     except Exception as e:
-        logger.error(f"Perplexity API error: {type(e).__name__}: {e}")
+        error_msg = f"❌ Perplexity API error: {type(e).__name__}: {e}"
+        logger.error(error_msg)
+        print(error_msg, flush=True)  # Ensure visible in Replit logs
         return json.dumps({
             'error': str(e),
             'error_type': type(e).__name__,
