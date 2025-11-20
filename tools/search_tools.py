@@ -2,11 +2,14 @@
 Search and research tools
 """
 import json
+import logging
 from typing import Dict, List
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 def web_search(query: str, max_results: int = 5) -> str:
@@ -95,33 +98,48 @@ def perplexity_search(query: str, search_focus: str = "internet") -> str:
             }
         ]
 
+        # Check for API key before making request
+        api_key = os.getenv('PERPLEXITY_API_KEY')
+        if not api_key:
+            logger.error("PERPLEXITY_API_KEY not found in environment")
+            return json.dumps({
+                'error': 'PERPLEXITY_API_KEY not configured',
+                'query': query,
+                'note': 'Add PERPLEXITY_API_KEY to your environment variables'
+            })
+
         response = perplexity.chat.completions.create(
             model=model,
             messages=messages,
             max_tokens=1000,
-            temperature=0.2,  # Lower temp for factual accuracy
-            return_citations=True,
-            return_images=False
+            temperature=0.2  # Lower temp for factual accuracy
+            # Note: citations are returned automatically in response
         )
 
-        # Extract answer and citations
+        # Extract answer and citations (citations come automatically)
         answer = response.choices[0].message.content
         citations = getattr(response, 'citations', [])
+        search_results = getattr(response, 'search_results', [])
+
+        logger.info(f"Perplexity search success: query='{query[:50]}...', model={model}, citations={len(citations)}")
 
         return json.dumps({
             'success': True,
             'query': query,
             'answer': answer,
             'citations': citations,
+            'search_results': search_results,
             'model': model,
             'search_focus': search_focus
         }, indent=2)
 
     except Exception as e:
+        logger.error(f"Perplexity API error: {type(e).__name__}: {e}")
         return json.dumps({
             'error': str(e),
+            'error_type': type(e).__name__,
             'query': query,
-            'note': 'Perplexity API requires PERPLEXITY_API_KEY environment variable'
+            'note': 'Check PERPLEXITY_API_KEY and API status'
         })
 
 
