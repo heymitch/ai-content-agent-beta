@@ -1224,6 +1224,8 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                     channel_id=channel
                 )
 
+                print(f"📋 Reaction handler result: success={result.get('success')}, has_message={bool(result.get('message'))}")
+
                 # Send feedback to user if handler returned a message
                 if result and result.get('message'):
                     slack_client.chat_postMessage(
@@ -1232,9 +1234,12 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                         text=result['message'],
                         mrkdwn=True
                     )
-                    print(f"✅ Reaction handled: {result.get('action', 'unknown')}")
+                    if result.get('success'):
+                        print(f"✅ Reaction handled: {result.get('action', 'unknown')}")
+                    else:
+                        print(f"⚠️ Reaction failed but sent message: {result.get('action', 'unknown')}")
                 elif result and not result.get('success'):
-                    print(f"⚠️ Reaction handler returned failure: {result}")
+                    print(f"⚠️ Reaction handler returned failure (no message): {result}")
 
             except Exception as e:
                 print(f"⚠️ Reaction handler error (non-fatal): {e}")

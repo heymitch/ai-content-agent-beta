@@ -54,11 +54,13 @@ class ReactionHandler:
             Result dict with action taken and response message
         """
         # Get thread context
+        print(f"🔍 Looking up thread: {thread_ts}")
         thread = self.memory.get_thread(thread_ts)
         if not thread:
+            print(f"⚠️ Thread not found in slack_threads table: {thread_ts}")
             return {
                 'success': False,
-                'message': 'Thread not found. This content may be too old.'
+                'message': f'Thread not found. This content may be too old or wasn\'t created by the agent.\n\nThread TS: {thread_ts}'
             }
 
         # Find handler for this emoji
