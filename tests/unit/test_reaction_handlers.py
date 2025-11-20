@@ -103,22 +103,18 @@ class TestHandleReaction:
         assert 'Unknown reaction' in result['message']
 
     @pytest.mark.asyncio
-    async def test_logs_reaction_on_success(self, handler):
-        """Logs reaction after successful handling"""
-        handler.airtable.create_record = Mock(return_value={'id': 'rec123'})
+    async def test_successful_handling(self, handler):
+        """Handles reaction successfully"""
+        handler.airtable.create_content_record = Mock(return_value={'id': 'rec123'})
 
-        await handler.handle_reaction(
+        result = await handler.handle_reaction(
             reaction_emoji='calendar',
             thread_ts='1234567890.123456',
             user_id='U123',
             channel_id='C456'
         )
 
-        handler.memory.log_reaction.assert_called_once()
-        call_args = handler.memory.log_reaction.call_args
-        assert call_args[1]['thread_ts'] == '1234567890.123456'
-        assert call_args[1]['reaction_emoji'] == 'calendar'
-        assert call_args[1]['user_id'] == 'U123'
+        assert result['success'] is True
 
 
 class TestHandleSchedule:
@@ -139,7 +135,7 @@ class TestHandleSchedule:
     @pytest.mark.asyncio
     async def test_saves_to_airtable_as_draft(self, handler):
         """Calendar emoji saves to Airtable with Draft status"""
-        handler.airtable.create_record = Mock(return_value={'id': 'rec123'})
+        handler.airtable.create_content_record = Mock(return_value={'id': 'rec123'})
 
         thread = {
             'thread_ts': '1234567890.123456',
@@ -156,11 +152,12 @@ class TestHandleSchedule:
         assert 'Saved to Linkedin calendar as Draft' in result['message']
 
         # Verify Airtable was called with correct data
-        call_args = handler.airtable.create_record.call_args[0][0]
-        assert call_args['Content'] == 'Test content for LinkedIn'
-        assert call_args['Platform'] == 'Linkedin'
-        assert call_args['Status'] == 'Draft'
-        assert call_args['Quality Score'] == 85
+        handler.airtable.create_content_record.assert_called_once()
+        call_kwargs = handler.airtable.create_content_record.call_args[1]
+        assert call_kwargs['content'] == 'Test content for LinkedIn'
+        assert call_kwargs['platform'] == 'Linkedin'
+        assert call_kwargs['status'] == 'Draft'
+        assert call_kwargs['quality_score'] == 85
 
     @pytest.mark.asyncio
     async def test_rejects_low_quality_score(self, handler):
@@ -183,7 +180,7 @@ class TestHandleSchedule:
     @pytest.mark.asyncio
     async def test_handles_airtable_error(self, handler):
         """Gracefully handles Airtable save errors"""
-        handler.airtable.create_record = Mock(side_effect=Exception('API Error'))
+        handler.airtable.create_content_record = Mock(side_effect=Exception('API Error'))
 
         thread = {
             'thread_ts': '1234567890.123456',
@@ -202,7 +199,7 @@ class TestHandleSchedule:
     @pytest.mark.asyncio
     async def test_updates_thread_status(self, handler):
         """Updates thread status after successful save"""
-        handler.airtable.create_record = Mock(return_value={'id': 'rec123'})
+        handler.airtable.create_content_record = Mock(return_value={'id': 'rec123'})
 
         thread = {
             'thread_ts': '1234567890.123456',

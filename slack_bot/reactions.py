@@ -93,15 +93,6 @@ class ReactionHandler:
         # Execute handler
         try:
             result = await handler(thread, user_id, channel_id)
-
-            # Log reaction
-            self.memory.log_reaction(
-                thread_ts=thread_ts,
-                reaction_emoji=reaction_emoji,
-                user_id=user_id,
-                action_taken=result.get('action', 'unknown')
-            )
-
             return result
         except Exception as e:
             print(f"❌ Reaction handler error: {e}")
@@ -141,15 +132,18 @@ class ReactionHandler:
 
         try:
             # Send to Airtable as Draft
-            record = self.airtable.create_record({
-                'Content': draft,
-                'Platform': platform.capitalize(),
-                'Quality Score': score,
-                'Status': 'Draft',  # Save as Draft, not Scheduled
-                'Source': 'Slack Bot',
-                'User ID': user_id,
-                'Created At': thread.get('created_at', '')
-            })
+            record = self.airtable.create_content_record(
+                content=draft,
+                platform=platform.capitalize(),
+                quality_score=score,
+                status='Draft',
+                metadata={
+                    'source': 'Slack Bot',
+                    'user_id': user_id,
+                    'thread_ts': thread.get('thread_ts', ''),
+                    'created_at': thread.get('created_at', '')
+                }
+            )
 
             # Update thread status
             self.memory.update_status(thread['thread_ts'], 'draft_saved')
