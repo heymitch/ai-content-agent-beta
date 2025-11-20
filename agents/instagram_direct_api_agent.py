@@ -66,7 +66,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "generate_5_hooks",
-        "description": "Generate 5 Email hooks in different formats",
+        "description": "Generate 5 Instagram hooks in different formats",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -85,7 +85,11 @@ TOOL_SCHEMAS = [
             "properties": {
                 "topic": {"type": "string", "description": "Post topic"},
                 "hook": {"type": "string", "description": "Selected hook"},
-                "context": {"type": "string", "description": "Additional context"},
+                "context": {"type": "string", "description": "Additional context"}
+            },
+            "required": ["topic", "hook", "context"]
+        }
+    },
     {
         "name": "condense_to_limit",
         "description": "Ensure caption is under 2,200 characters while preserving impact",
@@ -96,15 +100,6 @@ TOOL_SCHEMAS = [
                 "target_length": {"type": "integer", "description": "Target character limit (default 2200)"}
             },
             "required": ["caption"]
-        }
-    }
-            },
-            "required": ["topic", "hook", "context"]
-        }
-    },
-                "industry": {"type": "string", "description": "Industry context"}
-            },
-            "required": ["draft", "topic", "industry"]
         }
     },
     {
@@ -184,6 +179,7 @@ async def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
                     context=tool_input.get('context', '')
                 ),
                 timeout=30.0
+            )
 
         elif tool_name == "condense_to_limit":
             result = await asyncio.wait_for(
@@ -193,8 +189,8 @@ async def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
                 ),
                 timeout=30.0
             )
-            )
 
+        elif tool_name == "quality_check":
             result = await asyncio.wait_for(
                 quality_check_native(
                     post=tool_input.get('post', '')
