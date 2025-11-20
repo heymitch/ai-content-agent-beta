@@ -25,7 +25,21 @@ async def run_quality_check(content: str, platform: str) -> Dict[str, Any]:
     Uses the same quality_check logic that runs in SDK agents
     Returns structured scores + AI pattern issues
     """
-    from prompts.linkedin_tools import QUALITY_CHECK_PROMPT
+    # Import platform-specific quality check prompt
+    if platform == 'linkedin':
+        from prompts.linkedin_tools import QUALITY_CHECK_PROMPT
+    elif platform == 'twitter':
+        from prompts.twitter_tools import QUALITY_CHECK_PROMPT
+    elif platform == 'email':
+        from prompts.email_tools import QUALITY_CHECK_PROMPT
+    elif platform == 'youtube':
+        from prompts.youtube_tools import QUALITY_CHECK_PROMPT
+    elif platform == 'instagram':
+        from prompts.instagram_tools import QUALITY_CHECK_PROMPT
+    else:
+        # Fallback to LinkedIn for unknown platforms
+        from prompts.linkedin_tools import QUALITY_CHECK_PROMPT
+        logger.warning(f"⚠️ Unknown platform '{platform}', using LinkedIn quality check prompt")
 
     # Validate API key
     api_key = os.getenv('ANTHROPIC_API_KEY')

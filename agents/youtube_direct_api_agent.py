@@ -478,6 +478,18 @@ Context/Outline:
 CRITICAL: Follow ALL rules from Writing Rules and Editor-in-Chief Standards above.
 Your goal: 18+/25 on the first pass. The stacked rules have everything you need."""
 
+            # Filter tools based on mode
+            # In default mode, exclude quality_check and apply_fixes (those are for thinking_mode loop)
+            if thinking_mode:
+                tools_to_use = TOOL_SCHEMAS
+            else:
+                # Only provide tools needed for default workflow
+                tools_to_use = [
+                    tool for tool in TOOL_SCHEMAS
+                    if tool["name"] not in ["quality_check", "apply_fixes"]
+                ]
+                logger.info(f"🔧 Default mode: providing {len(tools_to_use)} tools (excluding quality_check/apply_fixes)")
+
             print(f"📤 Sending creation prompt to Claude via direct API...")
 
             # Initialize conversation messages
@@ -513,7 +525,7 @@ Your goal: 18+/25 on the first pass. The stacked rules have everything you need.
                                     "cache_control": {"type": "ephemeral"}  # Cache stacked prompts
                                 }
                             ],
-                            tools=TOOL_SCHEMAS,
+                            tools=tools_to_use,
                             messages=messages
                         ),
                         timeout=timeout
