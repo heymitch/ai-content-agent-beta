@@ -2263,6 +2263,129 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         return file_blocks
 
+    async def _handle_multimodal_message(
+        self,
+        message: str,
+        file_blocks: list,
+        thread_ts: str,
+        request_id: str
+    ) -> str:
+        """
+        Handle messages with images/PDFs using direct Anthropic API
+        (SDK query() only accepts strings, so we use direct API for multimodal)
+
+        Args:
+            message: User's text message
+            file_blocks: List of content blocks (images, PDFs, text)
+            thread_ts: Thread timestamp for context
+            request_id: Request ID for logging
+
+        Returns:
+            Claude's response text
+        """
+        from anthropic import Anthropic
+
+        print(f"[{request_id}] 🖼️  Using direct Anthropic API for multimodal content")
+
+        # Initialize Anthropic client
+        client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+        # Build content array with text and media
+        content = []
+
+        # Add text message first
+        content.append({
+            "type": "text",
+            "text": message
+        })
+
+        # Add file blocks (images, PDFs, text files)
+        for block in file_blocks:
+            if block.get("type") == "image":
+                # Image block - already in correct format
+                content.append(block)
+                print(f"[{request_id}]    📸 Added image to content")
+            elif block.get("type") == "document":
+                # PDF block - already in correct format
+                content.append(block)
+                print(f"[{request_id}]    📄 Added PDF to content")
+            elif block.get("type") == "text":
+                # Text file - append to content
+                content.append(block)
+                print(f"[{request_id}]    📝 Added text file to content")
+
+        # Get conversation history for context (if available)
+        conversation_history = []
+        if hasattr(self, 'memory_handler') and self.memory_handler:
+            try:
+                history = self.memory_handler.get_thread_history(thread_ts)
+                if history:
+                    # Convert to messages format (last 10 messages for context)
+                    for msg in history[-10:]:
+                        role = msg.get('role', 'user')
+                        msg_content = msg.get('content', '')
+                        if role in ['user', 'assistant'] and msg_content:
+                            conversation_history.append({
+                                "role": role,
+                                "content": msg_content
+                            })
+            except Exception as e:
+                print(f"[{request_id}] ⚠️  Could not load conversation history: {e}")
+
+        # Build system prompt (simplified version for multimodal)
+        system_prompt = """You are a helpful AI assistant that can analyze images, PDFs, and documents.
+
+When analyzing visual content:
+- Describe what you see clearly and accurately
+- Extract any text or data present
+- Provide insights relevant to the user's question
+- If asked to create content based on an image/document, use the visual context
+
+Be direct and helpful. If you can't see something clearly, say so."""
+
+        # Add conversation history + current message
+        messages = conversation_history + [{"role": "user", "content": content}]
+
+        print(f"[{request_id}] 📤 Sending multimodal request to Claude API...")
+        print(f"[{request_id}]    Content blocks: {len(content)} (text + {len(file_blocks)} files)")
+
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4096,
+                system=system_prompt,
+                messages=messages
+            )
+
+            # Extract response text
+            response_text = ""
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    response_text += block.text
+
+            print(f"[{request_id}] ✅ Multimodal response received ({len(response_text)} chars)")
+            return response_text
+
+        except Exception as e:
+            error_msg = f"Error processing multimodal content: {str(e)}"
+            print(f"[{request_id}] ❌ {error_msg}")
+            return f"❌ {error_msg}\n\nPlease try again or rephrase your request."
+
+    def _has_multimodal_content(self, file_blocks: list) -> bool:
+        """
+        Check if file_blocks contains images or PDFs that require direct API
+
+        Args:
+            file_blocks: List of processed file blocks
+
+        Returns:
+            True if contains images/PDFs, False if text-only
+        """
+        for block in file_blocks:
+            if block.get("type") in ["image", "document"]:
+                return True
+        return False
+
     def _detect_cowrite_mode(self, message: str) -> bool:
         """
         Detect if user explicitly wants co-write mode
@@ -2557,6 +2680,16 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         if slack_files:
             file_blocks = await self._process_slack_files(slack_files, request_id)
             print(f"[{request_id}] 📎 Processed {len(file_blocks)} file block(s) for Claude")
+
+        # Check for multimodal content (images/PDFs) - requires direct API
+        if file_blocks and self._has_multimodal_content(file_blocks):
+            print(f"[{request_id}] 🖼️  Multimodal content detected - using direct Anthropic API")
+            return await self._handle_multimodal_message(
+                message=contextualized_message,
+                file_blocks=file_blocks,
+                thread_ts=thread_ts,
+                request_id=request_id
+            )
 
         # Check if this message requires co-write mode
         message_needs_cowrite = self._detect_cowrite_mode(message)
