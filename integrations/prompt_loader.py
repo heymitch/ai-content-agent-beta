@@ -298,3 +298,172 @@ def load_writing_rules() -> str:
 def load_editor_standards() -> str:
     """Load editor-in-chief standards."""
     return load_prompt("editor_standards")
+
+
+def stack_prompts(platform: str, include_create_draft: bool = True) -> str:
+    """
+    Stack multiple prompts into a single system message - Claude Projects style.
+
+    This creates a comprehensive context that gets cached, allowing the model
+    to produce excellent content in a single pass without needing validation loops.
+
+    Stack order:
+    1. CLAUDE.md (client business context)
+    2. Writing Rules (anti-AI-tells, human signals)
+    3. Editor Standards (Editor-in-Chief rules)
+    4. Platform Create Draft (format-specific instructions)
+
+    Args:
+        platform: Target platform (linkedin, twitter, email, youtube, instagram)
+        include_create_draft: Whether to include the create_draft prompt (default True)
+
+    Returns:
+        Combined system prompt with all rules stacked
+
+    Example:
+        >>> stacked = stack_prompts("linkedin")
+        >>> # Use stacked as system message in Direct API call
+        >>> # All rules cached, only user content varies
+    """
+    sections = []
+
+    # Section 1: Client Business Context (from CLAUDE.md)
+    client_context = _load_client_context()
+    if client_context:
+        sections.append(f"""# CLIENT BUSINESS CONTEXT
+
+{client_context}
+
+---
+""")
+
+    # Section 2: Writing Rules (anti-AI-tells, human signals)
+    writing_rules = load_writing_rules()
+    sections.append(f"""# WRITING RULES
+
+{writing_rules}
+
+---
+""")
+
+    # Section 3: Editor-in-Chief Standards
+    editor_standards = load_editor_standards()
+    sections.append(f"""# EDITOR-IN-CHIEF STANDARDS
+
+{editor_standards}
+
+---
+""")
+
+    # Section 4: Platform-specific Create Draft (if requested)
+    if include_create_draft:
+        create_draft = load_prompt("create_draft", platform=platform)
+        sections.append(f"""# {platform.upper()} CONTENT CREATION
+
+{create_draft}
+""")
+
+    # Combine all sections
+    stacked = "\n".join(sections)
+
+    # Add final instruction to use all rules
+    stacked += """
+---
+
+## CRITICAL INSTRUCTIONS
+
+You have been given comprehensive rules above. When creating content:
+
+1. **Follow ALL rules** from Writing Rules AND Editor-in-Chief Standards
+2. **Avoid all forbidden patterns** - do not use contrast framing, cringe questions, puffery
+3. **Inject human signals** - use contractions, varied sentence lengths, natural transitions
+4. **Self-validate before returning** - mentally check your output against the rules above
+5. **Report potential issues** - if anything might still need work, note it in self_assessment
+
+Your goal: Produce 18+/25 content on the first pass by following all stacked rules.
+"""
+
+    logger.info(f"📚 Stacked prompts for {platform}: {len(stacked)} chars ({len(sections)} sections)")
+    print(f"📚 Stacked prompts for {platform}: {len(stacked)} chars")
+
+    return stacked
+
+
+def _load_client_context() -> Optional[str]:
+    """
+    Load client context from CLAUDE.md if it exists.
+
+    Returns:
+        Client context content or None
+    """
+    claude_md = Path(__file__).parent.parent / '.claude' / 'CLAUDE.md'
+
+    if not claude_md.exists():
+        return None
+
+    try:
+        content = claude_md.read_text().strip()
+        return content if content else None
+    except Exception as e:
+        logger.error(f"Error reading CLAUDE.md: {e}")
+        return None
+
+
+def get_stacked_prompt_info(platform: str) -> Dict[str, any]:
+    """
+    Get information about what would be stacked for a platform.
+    Useful for debugging and understanding the final context size.
+
+    Args:
+        platform: Target platform
+
+    Returns:
+        Dictionary with section info and total size
+    """
+    info = {
+        "platform": platform,
+        "sections": [],
+        "total_chars": 0
+    }
+
+    # Check client context
+    client_context = _load_client_context()
+    if client_context:
+        info["sections"].append({
+            "name": "CLIENT_CONTEXT",
+            "chars": len(client_context)
+        })
+
+    # Writing rules
+    try:
+        writing = load_writing_rules()
+        info["sections"].append({
+            "name": "WRITING_RULES",
+            "chars": len(writing)
+        })
+    except:
+        pass
+
+    # Editor standards
+    try:
+        editor = load_editor_standards()
+        info["sections"].append({
+            "name": "EDITOR_STANDARDS",
+            "chars": len(editor)
+        })
+    except:
+        pass
+
+    # Platform create_draft
+    try:
+        create = load_prompt("create_draft", platform=platform)
+        info["sections"].append({
+            "name": f"{platform.upper()}_CREATE_DRAFT",
+            "chars": len(create)
+        })
+    except:
+        pass
+
+    info["total_chars"] = sum(s["chars"] for s in info["sections"])
+
+    return info
