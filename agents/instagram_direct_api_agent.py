@@ -452,12 +452,12 @@ The user spent time thinking through their post. Your job is to make it BETTER, 
    - create_caption_draft (always - pass context through)
    - condense_to_limit (if over 2,200 chars)
 
-3. VALIDATION (MANDATORY):
-   - Call external_validation(post=your_draft)
+3. VALIDATION - YOU MUST CALL THIS TOOL:
+   - Call external_validation(post=your_draft) - DO NOT SKIP THIS STEP
    - This runs Editor-in-Chief rules + GPTZero AI detection
-   - Returns: total_score, issues, gptzero_ai_pct, gptzero_flagged_sentences
+   - Wait for the tool result before proceeding
 
-4. Return JSON with content and validation metadata:
+4. Return JSON with content AND the actual values from external_validation:
    {
      "caption": "...",
      "hashtags": ["#tag1", "#tag2", "#tag3"],
