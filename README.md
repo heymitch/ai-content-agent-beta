@@ -75,7 +75,9 @@ ai-content-agent-template/
 │
 ├── scripts/                    # Setup and utility scripts
 │   ├── bootstrap_database.js   # Database initialization
-│   └── export_database.py      # Database export utility
+│   ├── export_database.py      # Database export utility
+│   ├── check_migrations.py     # Migration status diagnostics
+│   └── apply_rpc_fix.py        # RPC function fixes
 │
 └── prompts/                    # System prompts for agents
     ├── linkedin_tools.py
@@ -409,6 +411,13 @@ python -m pytest validators/tests/
 
 ## 📚 Resources
 
+### Project Documentation
+- **[Installation Troubleshooting](docs/INSTALLATION_TROUBLESHOOTING.md)**: Common deployment issues and fixes
+- **[Bootstrap Troubleshooting](docs/BOOTSTRAP_TROUBLESHOOTING.md)**: Database setup help
+- **[Client Deployment Guide](docs/CLIENT_DEPLOYMENT.md)**: Deploying for clients
+- **[RAG Search Guide](docs/RAG_SEARCH_GUIDE.md)**: Semantic search setup
+
+### External Resources
 - **Claude Agent SDK**: [docs.anthropic.com](https://docs.anthropic.com/claude/docs/agent-sdk)
 - **Supabase**: [supabase.com/docs](https://supabase.com/docs)
 - **Tavily API**: [docs.tavily.com](https://docs.tavily.com)
