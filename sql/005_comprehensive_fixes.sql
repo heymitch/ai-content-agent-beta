@@ -13,6 +13,315 @@ BEGIN
 END $$;
 
 -- ============================================================================
+-- PREREQUISITE: Enable required extensions
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- ============================================================================
+-- PREREQUISITE: Create ALL tables if they don't exist
+-- This ensures the migration works on any database state
+-- ============================================================================
+
+-- Table 1: content_examples
+CREATE TABLE IF NOT EXISTS content_examples (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  platform TEXT NOT NULL,
+  content TEXT NOT NULL,
+  human_score INTEGER,
+  engagement_rate DECIMAL,
+  impressions INTEGER,
+  clicks INTEGER,
+  content_type TEXT,
+  creator TEXT,
+  hook_line TEXT,
+  main_points TEXT[],
+  cta_line TEXT,
+  tags TEXT[],
+  topics TEXT[],
+  embedding VECTOR(1536),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  status TEXT DEFAULT 'approved'
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_examples_platform ON content_examples(platform);
+CREATE INDEX IF NOT EXISTS idx_content_examples_creator ON content_examples(creator);
+CREATE INDEX IF NOT EXISTS idx_content_examples_tags ON content_examples USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_content_examples_status ON content_examples(status);
+CREATE INDEX IF NOT EXISTS idx_content_examples_embedding ON content_examples USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- Table 2: conversation_history
+CREATE TABLE IF NOT EXISTS conversation_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_ts TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+  content TEXT NOT NULL,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_thread ON conversation_history(thread_ts);
+CREATE INDEX IF NOT EXISTS idx_conversation_user ON conversation_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_created ON conversation_history(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversation_channel ON conversation_history(channel_id);
+
+-- Table 3: research
+CREATE TABLE IF NOT EXISTS research (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  topic TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  full_report TEXT,
+  key_stats TEXT[],
+  source_urls TEXT[],
+  source_names TEXT[],
+  primary_source TEXT,
+  credibility_score INTEGER DEFAULT 5,
+  research_date DATE NOT NULL,
+  last_verified DATE,
+  used_in_content_ids UUID[],
+  usage_count INTEGER DEFAULT 0,
+  topics TEXT[],
+  embedding VECTOR(1536),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  status TEXT DEFAULT 'active'
+);
+
+CREATE INDEX IF NOT EXISTS idx_research_topic ON research(topic);
+CREATE INDEX IF NOT EXISTS idx_research_topics ON research USING GIN(topics);
+CREATE INDEX IF NOT EXISTS idx_research_date ON research(research_date DESC);
+CREATE INDEX IF NOT EXISTS idx_research_status ON research(status);
+CREATE INDEX IF NOT EXISTS idx_research_credibility ON research(credibility_score DESC);
+CREATE INDEX IF NOT EXISTS idx_research_embedding ON research USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- Table 4: company_documents
+CREATE TABLE IF NOT EXISTS company_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT,
+  content TEXT NOT NULL,
+  document_type TEXT,
+  google_drive_file_id TEXT UNIQUE,
+  google_drive_url TEXT,
+  file_name TEXT,
+  mime_type TEXT,
+  last_synced TIMESTAMP,
+  voice_description TEXT,
+  do_list TEXT[],
+  dont_list TEXT[],
+  signature_phrases TEXT[],
+  forbidden_words TEXT[],
+  tone TEXT,
+  user_id TEXT,
+  team_id TEXT,
+  searchable BOOLEAN DEFAULT true,
+  embedding VECTOR(1536),
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  status TEXT DEFAULT 'active'
+);
+
+CREATE INDEX IF NOT EXISTS idx_company_docs_type ON company_documents(document_type);
+CREATE INDEX IF NOT EXISTS idx_company_docs_user ON company_documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_company_docs_team ON company_documents(team_id);
+CREATE INDEX IF NOT EXISTS idx_company_docs_drive_id ON company_documents(google_drive_file_id);
+CREATE INDEX IF NOT EXISTS idx_company_docs_status ON company_documents(status);
+CREATE INDEX IF NOT EXISTS idx_company_docs_searchable ON company_documents(searchable) WHERE searchable = true;
+CREATE INDEX IF NOT EXISTS idx_company_docs_embedding ON company_documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- Table 5: performance_analytics
+CREATE TABLE IF NOT EXISTS performance_analytics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  content_id UUID,
+  platform TEXT NOT NULL,
+  content TEXT NOT NULL,
+  content_type TEXT,
+  quality_score INTEGER NOT NULL,
+  quality_breakdown JSONB,
+  human_score INTEGER,
+  iterations INTEGER DEFAULT 1,
+  time_to_create INTEGER,
+  tools_used TEXT[],
+  published BOOLEAN DEFAULT FALSE,
+  published_at TIMESTAMP,
+  published_url TEXT,
+  impressions INTEGER,
+  clicks INTEGER,
+  likes INTEGER,
+  comments INTEGER,
+  shares INTEGER,
+  engagement_rate DECIMAL,
+  conversions INTEGER,
+  revenue_generated DECIMAL,
+  user_id TEXT NOT NULL,
+  thread_ts TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  last_updated TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_performance_user ON performance_analytics(user_id);
+CREATE INDEX IF NOT EXISTS idx_performance_platform ON performance_analytics(platform);
+CREATE INDEX IF NOT EXISTS idx_performance_score ON performance_analytics(quality_score DESC);
+CREATE INDEX IF NOT EXISTS idx_performance_published ON performance_analytics(published, published_at DESC);
+
+-- Table 6: generated_posts
+CREATE TABLE IF NOT EXISTS generated_posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  platform TEXT NOT NULL CHECK (platform IN ('linkedin', 'twitter', 'email', 'youtube', 'blog', 'instagram')),
+  post_hook TEXT,
+  body_content TEXT NOT NULL,
+  content_type TEXT,
+  platform_metadata JSONB DEFAULT '{}',
+  airtable_record_id TEXT UNIQUE,
+  airtable_url TEXT,
+  airtable_status TEXT,
+  ayrshare_post_id TEXT UNIQUE,
+  ayrshare_platform_ids JSONB,
+  status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'scheduled', 'published', 'failed', 'archived')),
+  scheduled_for TIMESTAMP,
+  published_at TIMESTAMP,
+  published_url TEXT,
+  impressions INTEGER DEFAULT 0,
+  engagements INTEGER DEFAULT 0,
+  clicks INTEGER DEFAULT 0,
+  likes INTEGER DEFAULT 0,
+  comments INTEGER DEFAULT 0,
+  shares INTEGER DEFAULT 0,
+  saves INTEGER DEFAULT 0,
+  engagement_rate DECIMAL,
+  click_through_rate DECIMAL,
+  conversions INTEGER DEFAULT 0,
+  revenue_attributed DECIMAL DEFAULT 0,
+  last_analytics_sync TIMESTAMP,
+  quality_score INTEGER,
+  quality_breakdown JSONB,
+  human_score INTEGER,
+  iterations INTEGER DEFAULT 1,
+  slack_thread_ts TEXT,
+  slack_channel_id TEXT,
+  user_id TEXT NOT NULL,
+  created_by_agent TEXT,
+  embedding VECTOR(1536),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_generated_posts_platform ON generated_posts(platform);
+CREATE INDEX IF NOT EXISTS idx_generated_posts_status ON generated_posts(status);
+CREATE INDEX IF NOT EXISTS idx_generated_posts_user ON generated_posts(user_id);
+CREATE INDEX IF NOT EXISTS idx_generated_posts_airtable ON generated_posts(airtable_record_id) WHERE airtable_record_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_generated_posts_ayrshare ON generated_posts(ayrshare_post_id) WHERE ayrshare_post_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_generated_posts_published ON generated_posts(published_at DESC) WHERE status = 'published';
+CREATE INDEX IF NOT EXISTS idx_generated_posts_thread ON generated_posts(slack_thread_ts) WHERE slack_thread_ts IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_generated_posts_engagement ON generated_posts(engagement_rate DESC) WHERE engagement_rate IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_generated_posts_embedding ON generated_posts USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- Table 7: slack_threads
+CREATE TABLE IF NOT EXISTS slack_threads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_ts TEXT UNIQUE NOT NULL,
+  channel_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  latest_draft TEXT,
+  latest_score INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'drafting',
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_slack_threads_thread_ts ON slack_threads(thread_ts);
+CREATE INDEX IF NOT EXISTS idx_slack_threads_user_id ON slack_threads(user_id);
+CREATE INDEX IF NOT EXISTS idx_slack_threads_status ON slack_threads(status);
+CREATE INDEX IF NOT EXISTS idx_slack_threads_platform ON slack_threads(platform);
+CREATE INDEX IF NOT EXISTS idx_slack_threads_created_at ON slack_threads(created_at DESC);
+
+-- Table 8: document_metadata
+CREATE TABLE IF NOT EXISTS document_metadata (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    url TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    schema TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_metadata_created_at ON document_metadata(created_at DESC);
+
+-- Table 9: document_rows
+CREATE TABLE IF NOT EXISTS document_rows (
+    id SERIAL PRIMARY KEY,
+    dataset_id TEXT REFERENCES document_metadata(id) ON DELETE CASCADE,
+    row_data JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_rows_dataset_id ON document_rows(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_document_rows_data ON document_rows USING GIN (row_data);
+
+-- ============================================================================
+-- PREREQUISITE: Create trigger functions
+-- ============================================================================
+
+-- Auto-populate title and document_type from metadata (for n8n compatibility)
+CREATE OR REPLACE FUNCTION sync_company_documents_fields()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.title IS NULL AND NEW.metadata ? 'title' THEN
+    NEW.title := NEW.metadata->>'title';
+  END IF;
+  IF NEW.document_type IS NULL THEN
+    NEW.document_type := COALESCE(NEW.metadata->>'document_type', 'document');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_sync_company_documents_fields ON company_documents;
+CREATE TRIGGER trigger_sync_company_documents_fields
+  BEFORE INSERT OR UPDATE ON company_documents
+  FOR EACH ROW
+  EXECUTE FUNCTION sync_company_documents_fields();
+
+-- Auto-update timestamp for generated_posts
+CREATE OR REPLACE FUNCTION update_generated_posts_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS generated_posts_updated_at ON generated_posts;
+CREATE TRIGGER generated_posts_updated_at
+  BEFORE UPDATE ON generated_posts
+  FOR EACH ROW
+  EXECUTE FUNCTION update_generated_posts_timestamp();
+
+-- Auto-update timestamp for slack_threads
+CREATE OR REPLACE FUNCTION update_slack_threads_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_slack_threads_updated_at ON slack_threads;
+CREATE TRIGGER trigger_update_slack_threads_updated_at
+  BEFORE UPDATE ON slack_threads
+  FOR EACH ROW
+  EXECUTE FUNCTION update_slack_threads_updated_at();
+
+DO $$
+BEGIN
+  RAISE NOTICE '✅ All prerequisite tables and triggers created/verified';
+END $$;
+
+-- ============================================================================
 -- FIX 1: Add missing columns to company_documents (for legacy schemas)
 -- Then drop NOT NULL constraints that break n8n inserts
 -- ============================================================================
