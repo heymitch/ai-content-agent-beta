@@ -145,6 +145,15 @@ class ReactionHandler:
                 }
             )
 
+            # Check if record creation failed
+            if not record.get('success', True):
+                error_msg = record.get('error', 'Unknown error')
+                return {
+                    'success': False,
+                    'action': 'save_failed',
+                    'message': f'❌ Failed to save draft: {error_msg}\n\nTry again or contact support.'
+                }
+
             # Update thread status
             self.memory.update_status(thread['thread_ts'], 'draft_saved')
 
