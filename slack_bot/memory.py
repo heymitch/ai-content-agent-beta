@@ -64,6 +64,9 @@ class SlackThreadMemory:
         """
         Get thread by timestamp
 
+        First checks slack_threads, then falls back to conversation_history
+        to reconstruct thread context.
+
         Args:
             thread_ts: Slack thread timestamp
 
@@ -71,12 +74,49 @@ class SlackThreadMemory:
             Thread record or None
         """
         try:
+            # First try slack_threads table
             result = self.supabase.table('slack_threads')\
                 .select('*')\
                 .eq('thread_ts', thread_ts)\
                 .execute()
 
-            return result.data[0] if result.data else None
+            if result.data:
+                return result.data[0]
+
+            # Fallback: reconstruct from conversation_history
+            history = self.supabase.table('conversation_history')\
+                .select('*')\
+                .eq('thread_ts', thread_ts)\
+                .order('created_at', desc=True)\
+                .limit(10)\
+                .execute()
+
+            if history.data:
+                # Get the most recent message to extract metadata
+                latest = history.data[0]
+
+                # Try to find the latest assistant response with content
+                latest_draft = ""
+                for msg in history.data:
+                    if msg.get('role') == 'assistant' and msg.get('content'):
+                        latest_draft = msg['content']
+                        break
+
+                # Reconstruct thread object from conversation_history
+                return {
+                    'thread_ts': thread_ts,
+                    'channel_id': latest.get('channel_id', ''),
+                    'user_id': latest.get('user_id', ''),
+                    'platform': latest.get('metadata', {}).get('platform', 'linkedin') if latest.get('metadata') else 'linkedin',
+                    'latest_draft': latest_draft,
+                    'latest_score': 80,  # Default score
+                    'status': 'drafting',
+                    'metadata': latest.get('metadata', {}),
+                    'created_at': history.data[-1].get('created_at'),  # First message
+                    'updated_at': latest.get('created_at')
+                }
+
+            return None
         except Exception as e:
             print(f"⚠️ Failed to get thread: {e}")
             return None
