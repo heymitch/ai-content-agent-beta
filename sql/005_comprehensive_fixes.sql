@@ -13,11 +13,128 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- FIX 1: Drop NOT NULL constraints that break n8n inserts
+-- FIX 1: Add missing columns to company_documents (for legacy schemas)
+-- Then drop NOT NULL constraints that break n8n inserts
 -- ============================================================================
 
-ALTER TABLE company_documents ALTER COLUMN title DROP NOT NULL;
-ALTER TABLE company_documents ALTER COLUMN document_type DROP NOT NULL;
+DO $$
+BEGIN
+  -- Add title column if missing
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'title') THEN
+    ALTER TABLE company_documents ADD COLUMN title TEXT;
+    RAISE NOTICE '➕ Added title column to company_documents';
+  END IF;
+
+  -- Add document_type column if missing
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'document_type') THEN
+    ALTER TABLE company_documents ADD COLUMN document_type TEXT;
+    RAISE NOTICE '➕ Added document_type column to company_documents';
+  END IF;
+
+  -- Add other potentially missing columns
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'google_drive_file_id') THEN
+    ALTER TABLE company_documents ADD COLUMN google_drive_file_id TEXT UNIQUE;
+    RAISE NOTICE '➕ Added google_drive_file_id column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'google_drive_url') THEN
+    ALTER TABLE company_documents ADD COLUMN google_drive_url TEXT;
+    RAISE NOTICE '➕ Added google_drive_url column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'file_name') THEN
+    ALTER TABLE company_documents ADD COLUMN file_name TEXT;
+    RAISE NOTICE '➕ Added file_name column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'mime_type') THEN
+    ALTER TABLE company_documents ADD COLUMN mime_type TEXT;
+    RAISE NOTICE '➕ Added mime_type column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'last_synced') THEN
+    ALTER TABLE company_documents ADD COLUMN last_synced TIMESTAMP;
+    RAISE NOTICE '➕ Added last_synced column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'voice_description') THEN
+    ALTER TABLE company_documents ADD COLUMN voice_description TEXT;
+    RAISE NOTICE '➕ Added voice_description column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'do_list') THEN
+    ALTER TABLE company_documents ADD COLUMN do_list TEXT[];
+    RAISE NOTICE '➕ Added do_list column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'dont_list') THEN
+    ALTER TABLE company_documents ADD COLUMN dont_list TEXT[];
+    RAISE NOTICE '➕ Added dont_list column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'signature_phrases') THEN
+    ALTER TABLE company_documents ADD COLUMN signature_phrases TEXT[];
+    RAISE NOTICE '➕ Added signature_phrases column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'forbidden_words') THEN
+    ALTER TABLE company_documents ADD COLUMN forbidden_words TEXT[];
+    RAISE NOTICE '➕ Added forbidden_words column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'tone') THEN
+    ALTER TABLE company_documents ADD COLUMN tone TEXT;
+    RAISE NOTICE '➕ Added tone column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'user_id') THEN
+    ALTER TABLE company_documents ADD COLUMN user_id TEXT;
+    RAISE NOTICE '➕ Added user_id column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'team_id') THEN
+    ALTER TABLE company_documents ADD COLUMN team_id TEXT;
+    RAISE NOTICE '➕ Added team_id column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'searchable') THEN
+    ALTER TABLE company_documents ADD COLUMN searchable BOOLEAN DEFAULT true;
+    RAISE NOTICE '➕ Added searchable column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'status') THEN
+    ALTER TABLE company_documents ADD COLUMN status TEXT DEFAULT 'active';
+    RAISE NOTICE '➕ Added status column to company_documents';
+  END IF;
+
+  RAISE NOTICE '✅ company_documents columns verified';
+END $$;
+
+-- Now safe to drop NOT NULL constraints (columns exist)
+-- Use DO block to handle case where columns don't have NOT NULL constraint
+DO $$
+BEGIN
+  -- Only drop NOT NULL if the constraint exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'company_documents'
+    AND column_name = 'title'
+    AND is_nullable = 'NO'
+  ) THEN
+    ALTER TABLE company_documents ALTER COLUMN title DROP NOT NULL;
+    RAISE NOTICE '➕ Dropped NOT NULL from title column';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'company_documents'
+    AND column_name = 'document_type'
+    AND is_nullable = 'NO'
+  ) THEN
+    ALTER TABLE company_documents ALTER COLUMN document_type DROP NOT NULL;
+    RAISE NOTICE '➕ Dropped NOT NULL from document_type column';
+  END IF;
+END $$;
 
 -- ============================================================================
 -- FIX 2: Add missing indexes for n8n
