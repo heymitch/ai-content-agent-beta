@@ -383,8 +383,10 @@ $$;
 
 -- ============================================================================
 -- FIX 5: Add missing views
+-- Must DROP first because Postgres can't change column names with CREATE OR REPLACE
 -- ============================================================================
 
+DROP VIEW IF EXISTS top_performing_content;
 CREATE OR REPLACE VIEW top_performing_content AS
 SELECT
   id,
@@ -399,6 +401,7 @@ FROM generated_posts
 WHERE status = 'published'
   AND engagement_rate > 0.05;
 
+DROP VIEW IF EXISTS generated_posts_analytics;
 CREATE OR REPLACE VIEW generated_posts_analytics AS
 SELECT
   id,
