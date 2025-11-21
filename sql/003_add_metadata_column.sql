@@ -42,19 +42,30 @@ BEGIN
 END $$;
 
 -- Populate metadata column with google_drive_file_id for existing rows
+-- Only if google_drive_file_id column exists
 DO $$
 DECLARE
   updated_count INTEGER;
 BEGIN
-  UPDATE company_documents
-  SET metadata = jsonb_build_object('google_drive_file_id', google_drive_file_id)
-  WHERE google_drive_file_id IS NOT NULL
-    AND (metadata IS NULL OR NOT metadata ? 'google_drive_file_id');
+  -- Check if google_drive_file_id column exists before using it
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'company_documents'
+    AND column_name = 'google_drive_file_id'
+  ) THEN
+    UPDATE company_documents
+    SET metadata = jsonb_build_object('google_drive_file_id', google_drive_file_id)
+    WHERE google_drive_file_id IS NOT NULL
+      AND (metadata IS NULL OR NOT metadata ? 'google_drive_file_id');
 
-  GET DIAGNOSTICS updated_count = ROW_COUNT;
+    GET DIAGNOSTICS updated_count = ROW_COUNT;
 
-  IF updated_count > 0 THEN
-    RAISE NOTICE '✅ Updated % rows with google_drive_file_id in metadata', updated_count;
+    IF updated_count > 0 THEN
+      RAISE NOTICE '✅ Updated % rows with google_drive_file_id in metadata', updated_count;
+    END IF;
+  ELSE
+    RAISE NOTICE '⏭️ google_drive_file_id column not present, skipping metadata population';
   END IF;
 
   RAISE NOTICE '✅ Migration 003 complete: metadata column';
