@@ -220,36 +220,32 @@ CREATE INDEX IF NOT EXISTS idx_brand_voice_team ON brand_voice(team_id);
 -- Drop ALL overloads by querying pg_proc to avoid signature mismatches
 -- ============================================================================
 
--- Drop all existing function overloads using pg_proc
--- This handles any signature that might exist
+-- Drop functions individually with explicit signatures
+-- Must handle the case where functions don't exist OR have different signatures
+
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_content_examples(vector, text, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_content_examples(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_research(vector, float, int, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_research(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_company_documents(vector, text, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_company_documents(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_documents(vector, int, jsonb) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_documents(vector, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_knowledge(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.search_generated_posts(vector, text, text, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.search_generated_posts(vector, text, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.search_top_performing_posts(vector, text, float, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.search_top_performing_posts(vector, float, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_generated_posts(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+-- Also try dropping by name only (catches any signature)
 DO $$
-DECLARE
-  r RECORD;
+DECLARE r RECORD;
 BEGIN
-  FOR r IN
-    SELECT p.oid::regprocedure::text as func_sig
-    FROM pg_proc p
-    JOIN pg_namespace n ON p.pronamespace = n.oid
-    WHERE n.nspname = 'public'
-    AND p.proname IN (
-      'match_content_examples',
-      'match_research',
-      'match_company_documents',
-      'match_documents',
-      'match_knowledge',
-      'search_generated_posts',
-      'search_top_performing_posts',
-      'match_generated_posts'
-    )
+  FOR r IN SELECT oid::regprocedure::text as sig FROM pg_proc WHERE proname IN ('match_content_examples','match_research','match_company_documents','match_documents','match_knowledge','search_generated_posts','search_top_performing_posts','match_generated_posts') AND pronamespace = 'public'::regnamespace
   LOOP
-    BEGIN
-      EXECUTE 'DROP FUNCTION ' || r.func_sig || ' CASCADE';
-      RAISE NOTICE 'Dropped: %', r.func_sig;
-    EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE 'Could not drop %: %', r.func_sig, SQLERRM;
-    END;
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.sig || ' CASCADE';
   END LOOP;
-  RAISE NOTICE '✅ Function cleanup complete';
 END $$;
 
 -- Now create all functions with correct signatures
