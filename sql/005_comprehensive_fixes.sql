@@ -597,16 +597,94 @@ CREATE INDEX IF NOT EXISTS idx_brand_voice_team ON brand_voice(team_id);
 -- Must DROP first because return types may have changed
 -- ============================================================================
 
--- CRITICAL: Drop ALL functions by dynamically querying pg_proc
--- This is the ONLY reliable way to drop functions with unknown signatures
+-- CRITICAL: Drop ALL functions with explicit signatures
+-- PostgreSQL requires exact signature match to drop, so we list all possible variants
+-- Using IF EXISTS so it doesn't fail if function doesn't exist
+
+-- Drop match_content_examples (all known signatures)
+DROP FUNCTION IF EXISTS match_content_examples(vector, text, float, int) CASCADE;
+DROP FUNCTION IF EXISTS match_content_examples(vector(1536), text, float, int) CASCADE;
+DROP FUNCTION IF EXISTS match_content_examples(vector, text, float, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_content_examples(vector(1536), text, float, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_content_examples(vector, text, double precision, int) CASCADE;
+DROP FUNCTION IF EXISTS match_content_examples(vector(1536), text, double precision, int) CASCADE;
+DROP FUNCTION IF EXISTS match_content_examples(vector, text, double precision, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_content_examples(vector(1536), text, double precision, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_content_examples(vector, text, real, int) CASCADE;
+DROP FUNCTION IF EXISTS match_content_examples(vector(1536), text, real, integer) CASCADE;
+
+-- Drop match_research (all known signatures)
+DROP FUNCTION IF EXISTS match_research(vector, float, int, int) CASCADE;
+DROP FUNCTION IF EXISTS match_research(vector(1536), float, int, int) CASCADE;
+DROP FUNCTION IF EXISTS match_research(vector, float, integer, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_research(vector(1536), float, integer, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_research(vector, double precision, int, int) CASCADE;
+DROP FUNCTION IF EXISTS match_research(vector(1536), double precision, int, int) CASCADE;
+DROP FUNCTION IF EXISTS match_research(vector, double precision, integer, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_research(vector(1536), double precision, integer, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_research(vector, real, int, int) CASCADE;
+DROP FUNCTION IF EXISTS match_research(vector(1536), real, integer, integer) CASCADE;
+
+-- Drop match_company_documents (all known signatures)
+DROP FUNCTION IF EXISTS match_company_documents(vector, float, int) CASCADE;
+DROP FUNCTION IF EXISTS match_company_documents(vector(1536), float, int) CASCADE;
+DROP FUNCTION IF EXISTS match_company_documents(vector, float, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_company_documents(vector(1536), float, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_company_documents(vector, double precision, int) CASCADE;
+DROP FUNCTION IF EXISTS match_company_documents(vector(1536), double precision, int) CASCADE;
+DROP FUNCTION IF EXISTS match_company_documents(vector, double precision, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_company_documents(vector(1536), double precision, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_company_documents(vector, real, int) CASCADE;
+DROP FUNCTION IF EXISTS match_company_documents(vector(1536), real, integer) CASCADE;
+
+-- Drop match_documents (all known signatures)
+DROP FUNCTION IF EXISTS match_documents(vector, int, jsonb) CASCADE;
+DROP FUNCTION IF EXISTS match_documents(vector(1536), int, jsonb) CASCADE;
+DROP FUNCTION IF EXISTS match_documents(vector, integer, jsonb) CASCADE;
+DROP FUNCTION IF EXISTS match_documents(vector(1536), integer, jsonb) CASCADE;
+
+-- Drop match_knowledge (all known signatures)
+DROP FUNCTION IF EXISTS match_knowledge(vector, float, int) CASCADE;
+DROP FUNCTION IF EXISTS match_knowledge(vector(1536), float, int) CASCADE;
+DROP FUNCTION IF EXISTS match_knowledge(vector, float, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_knowledge(vector(1536), float, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_knowledge(vector, double precision, int) CASCADE;
+DROP FUNCTION IF EXISTS match_knowledge(vector(1536), double precision, int) CASCADE;
+DROP FUNCTION IF EXISTS match_knowledge(vector, double precision, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_knowledge(vector(1536), double precision, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_knowledge(vector, real, int) CASCADE;
+DROP FUNCTION IF EXISTS match_knowledge(vector(1536), real, integer) CASCADE;
+
+-- Drop search_generated_posts (all known signatures)
+DROP FUNCTION IF EXISTS search_generated_posts(vector, text, int) CASCADE;
+DROP FUNCTION IF EXISTS search_generated_posts(vector(1536), text, int) CASCADE;
+DROP FUNCTION IF EXISTS search_generated_posts(vector, text, integer) CASCADE;
+DROP FUNCTION IF EXISTS search_generated_posts(vector(1536), text, integer) CASCADE;
+
+-- Drop search_top_performing_posts (all known signatures)
+DROP FUNCTION IF EXISTS search_top_performing_posts(text, int, int) CASCADE;
+DROP FUNCTION IF EXISTS search_top_performing_posts(text, integer, integer) CASCADE;
+
+-- Drop match_generated_posts (all known signatures)
+DROP FUNCTION IF EXISTS match_generated_posts(vector, float, int) CASCADE;
+DROP FUNCTION IF EXISTS match_generated_posts(vector(1536), float, int) CASCADE;
+DROP FUNCTION IF EXISTS match_generated_posts(vector, float, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_generated_posts(vector(1536), float, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_generated_posts(vector, double precision, int) CASCADE;
+DROP FUNCTION IF EXISTS match_generated_posts(vector(1536), double precision, int) CASCADE;
+DROP FUNCTION IF EXISTS match_generated_posts(vector, double precision, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_generated_posts(vector(1536), double precision, integer) CASCADE;
+DROP FUNCTION IF EXISTS match_generated_posts(vector, real, int) CASCADE;
+DROP FUNCTION IF EXISTS match_generated_posts(vector(1536), real, integer) CASCADE;
+
+-- Also use dynamic approach as backup to catch any remaining variants
 DO $$
 DECLARE
   func_sig TEXT;
   func_count INT := 0;
 BEGIN
-  RAISE NOTICE '🗑️ Dropping all match/search functions...';
+  RAISE NOTICE '🗑️ Dropping any remaining match/search functions...';
 
-  -- Loop through each function we need to drop
   FOR func_sig IN
     SELECT p.oid::regprocedure::text
     FROM pg_proc p
@@ -623,15 +701,15 @@ BEGIN
       'match_generated_posts'
     )
   LOOP
-    RAISE NOTICE 'Dropping: %', func_sig;
-    EXECUTE 'DROP FUNCTION ' || func_sig || ' CASCADE';
+    RAISE NOTICE 'Dropping remaining: %', func_sig;
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || func_sig || ' CASCADE';
     func_count := func_count + 1;
   END LOOP;
 
   IF func_count > 0 THEN
-    RAISE NOTICE '✅ Dropped % functions', func_count;
+    RAISE NOTICE '✅ Dropped % additional functions', func_count;
   ELSE
-    RAISE NOTICE '✅ No existing functions to drop';
+    RAISE NOTICE '✅ All functions already dropped';
   END IF;
 END $$;
 
