@@ -217,35 +217,44 @@ CREATE INDEX IF NOT EXISTS idx_brand_voice_team ON brand_voice(team_id);
 -- ============================================================================
 -- FIX 4: Add SECURITY DEFINER to all functions
 -- Must DROP first because return types may have changed
--- Drop ALL overloads by querying pg_proc to avoid signature mismatches
 -- ============================================================================
 
--- Drop functions individually with explicit signatures
--- Must handle the case where functions don't exist OR have different signatures
-
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_content_examples(vector, text, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_content_examples(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_research(vector, float, int, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_research(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_company_documents(vector, text, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_company_documents(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_documents(vector, int, jsonb) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_documents(vector, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_knowledge(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.search_generated_posts(vector, text, text, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.search_generated_posts(vector, text, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.search_top_performing_posts(vector, text, float, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.search_top_performing_posts(vector, float, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-DO $$ BEGIN DROP FUNCTION IF EXISTS public.match_generated_posts(vector, float, int) CASCADE; EXCEPTION WHEN OTHERS THEN NULL; END $$;
-
--- Also try dropping by name only (catches any signature)
+-- CRITICAL: Drop ALL functions by dynamically querying pg_proc
+-- This is the ONLY reliable way to drop functions with unknown signatures
 DO $$
-DECLARE r RECORD;
+DECLARE
+  func_sig TEXT;
+  func_count INT := 0;
 BEGIN
-  FOR r IN SELECT oid::regprocedure::text as sig FROM pg_proc WHERE proname IN ('match_content_examples','match_research','match_company_documents','match_documents','match_knowledge','search_generated_posts','search_top_performing_posts','match_generated_posts') AND pronamespace = 'public'::regnamespace
+  RAISE NOTICE '🗑️ Dropping all match/search functions...';
+
+  -- Loop through each function we need to drop
+  FOR func_sig IN
+    SELECT p.oid::regprocedure::text
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public'
+    AND p.proname IN (
+      'match_content_examples',
+      'match_research',
+      'match_company_documents',
+      'match_documents',
+      'match_knowledge',
+      'search_generated_posts',
+      'search_top_performing_posts',
+      'match_generated_posts'
+    )
   LOOP
-    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.sig || ' CASCADE';
+    RAISE NOTICE 'Dropping: %', func_sig;
+    EXECUTE 'DROP FUNCTION ' || func_sig || ' CASCADE';
+    func_count := func_count + 1;
   END LOOP;
+
+  IF func_count > 0 THEN
+    RAISE NOTICE '✅ Dropped % functions', func_count;
+  ELSE
+    RAISE NOTICE '✅ No existing functions to drop';
+  END IF;
 END $$;
 
 -- Now create all functions with correct signatures
