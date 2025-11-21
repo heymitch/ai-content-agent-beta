@@ -220,34 +220,36 @@ CREATE INDEX IF NOT EXISTS idx_brand_voice_team ON brand_voice(team_id);
 -- Drop ALL overloads by querying pg_proc to avoid signature mismatches
 -- ============================================================================
 
--- Drop all existing function overloads
+-- Drop all existing function overloads using pg_proc
+-- This handles any signature that might exist
 DO $$
 DECLARE
-  func_names TEXT[] := ARRAY[
-    'match_content_examples',
-    'match_research',
-    'match_company_documents',
-    'match_documents',
-    'match_knowledge',
-    'search_generated_posts',
-    'search_top_performing_posts',
-    'match_generated_posts'
-  ];
-  func_name TEXT;
-  func_oid OID;
+  r RECORD;
 BEGIN
-  FOREACH func_name IN ARRAY func_names LOOP
-    -- Drop all overloads of this function
-    FOR func_oid IN
-      SELECT p.oid
-      FROM pg_proc p
-      JOIN pg_namespace n ON p.pronamespace = n.oid
-      WHERE p.proname = func_name AND n.nspname = 'public'
-    LOOP
-      EXECUTE format('DROP FUNCTION IF EXISTS %s CASCADE', func_oid::regprocedure);
-    END LOOP;
+  FOR r IN
+    SELECT p.oid::regprocedure::text as func_sig
+    FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'public'
+    AND p.proname IN (
+      'match_content_examples',
+      'match_research',
+      'match_company_documents',
+      'match_documents',
+      'match_knowledge',
+      'search_generated_posts',
+      'search_top_performing_posts',
+      'match_generated_posts'
+    )
+  LOOP
+    BEGIN
+      EXECUTE 'DROP FUNCTION ' || r.func_sig || ' CASCADE';
+      RAISE NOTICE 'Dropped: %', r.func_sig;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'Could not drop %: %', r.func_sig, SQLERRM;
+    END;
   END LOOP;
-  RAISE NOTICE '✅ Dropped all existing function overloads';
+  RAISE NOTICE '✅ Function cleanup complete';
 END $$;
 
 -- Now create all functions with correct signatures
