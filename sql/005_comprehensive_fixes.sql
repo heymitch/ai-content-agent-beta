@@ -125,6 +125,75 @@ CREATE TABLE IF NOT EXISTS company_documents (
   status TEXT DEFAULT 'active'
 );
 
+-- CRITICAL: Add missing columns to company_documents for old schemas
+-- This must happen BEFORE creating indexes that reference these columns
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'document_type') THEN
+    ALTER TABLE company_documents ADD COLUMN document_type TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'user_id') THEN
+    ALTER TABLE company_documents ADD COLUMN user_id TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'team_id') THEN
+    ALTER TABLE company_documents ADD COLUMN team_id TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'google_drive_file_id') THEN
+    ALTER TABLE company_documents ADD COLUMN google_drive_file_id TEXT UNIQUE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'status') THEN
+    ALTER TABLE company_documents ADD COLUMN status TEXT DEFAULT 'active';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'searchable') THEN
+    ALTER TABLE company_documents ADD COLUMN searchable BOOLEAN DEFAULT true;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'embedding') THEN
+    ALTER TABLE company_documents ADD COLUMN embedding VECTOR(1536);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'title') THEN
+    ALTER TABLE company_documents ADD COLUMN title TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'metadata') THEN
+    ALTER TABLE company_documents ADD COLUMN metadata JSONB;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'created_at') THEN
+    ALTER TABLE company_documents ADD COLUMN created_at TIMESTAMP DEFAULT NOW();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'updated_at') THEN
+    ALTER TABLE company_documents ADD COLUMN updated_at TIMESTAMP DEFAULT NOW();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'google_drive_url') THEN
+    ALTER TABLE company_documents ADD COLUMN google_drive_url TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'file_name') THEN
+    ALTER TABLE company_documents ADD COLUMN file_name TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'mime_type') THEN
+    ALTER TABLE company_documents ADD COLUMN mime_type TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'last_synced') THEN
+    ALTER TABLE company_documents ADD COLUMN last_synced TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'voice_description') THEN
+    ALTER TABLE company_documents ADD COLUMN voice_description TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'do_list') THEN
+    ALTER TABLE company_documents ADD COLUMN do_list TEXT[];
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'dont_list') THEN
+    ALTER TABLE company_documents ADD COLUMN dont_list TEXT[];
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'signature_phrases') THEN
+    ALTER TABLE company_documents ADD COLUMN signature_phrases TEXT[];
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'forbidden_words') THEN
+    ALTER TABLE company_documents ADD COLUMN forbidden_words TEXT[];
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'tone') THEN
+    ALTER TABLE company_documents ADD COLUMN tone TEXT;
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_company_docs_type ON company_documents(document_type);
 CREATE INDEX IF NOT EXISTS idx_company_docs_user ON company_documents(user_id);
 CREATE INDEX IF NOT EXISTS idx_company_docs_team ON company_documents(team_id);
