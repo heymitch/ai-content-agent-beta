@@ -217,13 +217,42 @@ CREATE INDEX IF NOT EXISTS idx_brand_voice_team ON brand_voice(team_id);
 -- ============================================================================
 -- FIX 4: Add SECURITY DEFINER to all functions
 -- Must DROP first because return types may have changed
--- Use CASCADE and drop all overloads to avoid signature mismatches
+-- Drop ALL overloads by querying pg_proc to avoid signature mismatches
 -- ============================================================================
 
+-- Drop all existing function overloads
+DO $$
+DECLARE
+  func_names TEXT[] := ARRAY[
+    'match_content_examples',
+    'match_research',
+    'match_company_documents',
+    'match_documents',
+    'match_knowledge',
+    'search_generated_posts',
+    'search_top_performing_posts',
+    'match_generated_posts'
+  ];
+  func_name TEXT;
+  func_oid OID;
+BEGIN
+  FOREACH func_name IN ARRAY func_names LOOP
+    -- Drop all overloads of this function
+    FOR func_oid IN
+      SELECT p.oid
+      FROM pg_proc p
+      JOIN pg_namespace n ON p.pronamespace = n.oid
+      WHERE p.proname = func_name AND n.nspname = 'public'
+    LOOP
+      EXECUTE format('DROP FUNCTION IF EXISTS %s CASCADE', func_oid::regprocedure);
+    END LOOP;
+  END LOOP;
+  RAISE NOTICE '✅ Dropped all existing function overloads';
+END $$;
+
+-- Now create all functions with correct signatures
+
 -- Function 1: match_content_examples
-DROP FUNCTION IF EXISTS match_content_examples(vector, text, float, int) CASCADE;
-DROP FUNCTION IF EXISTS match_content_examples(vector, float, int) CASCADE;
-DROP FUNCTION IF EXISTS match_content_examples CASCADE;
 CREATE OR REPLACE FUNCTION match_content_examples(
   query_embedding vector(1536),
   filter_platform text DEFAULT NULL,
@@ -265,9 +294,6 @@ AS $$
 $$;
 
 -- Function 2: match_research
-DROP FUNCTION IF EXISTS match_research(vector, float, int, int) CASCADE;
-DROP FUNCTION IF EXISTS match_research(vector, float, int) CASCADE;
-DROP FUNCTION IF EXISTS match_research CASCADE;
 CREATE OR REPLACE FUNCTION match_research(
   query_embedding vector(1536),
   match_threshold float DEFAULT 0.7,
@@ -305,9 +331,6 @@ AS $$
 $$;
 
 -- Function 3: match_company_documents
-DROP FUNCTION IF EXISTS match_company_documents(vector, text, float, int) CASCADE;
-DROP FUNCTION IF EXISTS match_company_documents(vector, float, int) CASCADE;
-DROP FUNCTION IF EXISTS match_company_documents CASCADE;
 CREATE OR REPLACE FUNCTION match_company_documents(
   query_embedding vector(1536),
   filter_type text DEFAULT NULL,
@@ -346,9 +369,6 @@ AS $$
 $$;
 
 -- Function 4: match_documents (n8n vectorstore compatibility)
-DROP FUNCTION IF EXISTS match_documents(vector, int, jsonb) CASCADE;
-DROP FUNCTION IF EXISTS match_documents(vector, int) CASCADE;
-DROP FUNCTION IF EXISTS match_documents CASCADE;
 CREATE OR REPLACE FUNCTION match_documents(
   query_embedding vector(1536),
   match_count int DEFAULT NULL,
@@ -378,8 +398,6 @@ END;
 $$;
 
 -- Function 5: match_knowledge (backward compatibility)
-DROP FUNCTION IF EXISTS match_knowledge(vector, float, int) CASCADE;
-DROP FUNCTION IF EXISTS match_knowledge CASCADE;
 CREATE OR REPLACE FUNCTION match_knowledge(
   query_embedding vector(1536),
   match_threshold float DEFAULT 0.7,
@@ -411,9 +429,6 @@ AS $$
 $$;
 
 -- Function 6: search_generated_posts
-DROP FUNCTION IF EXISTS search_generated_posts(vector, text, text, float, int) CASCADE;
-DROP FUNCTION IF EXISTS search_generated_posts(vector, text, float, int) CASCADE;
-DROP FUNCTION IF EXISTS search_generated_posts CASCADE;
 CREATE OR REPLACE FUNCTION search_generated_posts(
   query_embedding vector(1536),
   filter_platform text DEFAULT NULL,
@@ -454,9 +469,6 @@ AS $$
 $$;
 
 -- Function 7: search_top_performing_posts
-DROP FUNCTION IF EXISTS search_top_performing_posts(vector, text, float, float, int) CASCADE;
-DROP FUNCTION IF EXISTS search_top_performing_posts(vector, float, float, int) CASCADE;
-DROP FUNCTION IF EXISTS search_top_performing_posts CASCADE;
 CREATE OR REPLACE FUNCTION search_top_performing_posts(
   query_embedding vector(1536),
   filter_platform text DEFAULT NULL,
@@ -500,8 +512,6 @@ AS $$
 $$;
 
 -- Function 8: match_generated_posts (MISSING - called in analytics_tools.py)
-DROP FUNCTION IF EXISTS match_generated_posts(vector, float, int) CASCADE;
-DROP FUNCTION IF EXISTS match_generated_posts CASCADE;
 CREATE OR REPLACE FUNCTION match_generated_posts(
   query_embedding vector(1536),
   match_threshold float DEFAULT 0.7,
