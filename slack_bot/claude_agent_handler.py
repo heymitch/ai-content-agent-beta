@@ -18,7 +18,10 @@ import uuid
 
 # Import our existing tool functions
 from tools.search_tools import web_search as _web_search_func
+from tools.search_tools import perplexity_search as _perplexity_search_func
 from tools.search_tools import search_knowledge_base as _search_kb_func
+from tools.search_tools import search_content_examples as _search_content_examples_func
+from tools.search_tools import analyze_past_content as _analyze_past_content_func
 from tools.company_documents import search_company_documents as _search_company_docs_func
 from tools.template_search import search_templates_semantic as _search_templates_func
 from tools.template_search import get_template_by_name as _get_template_func
@@ -27,6 +30,11 @@ from slack_bot.agent_tools import (
     get_content_calendar as _get_calendar_func,
     get_thread_context as _get_context_func,
     analyze_content_performance as _analyze_perf_func
+)
+from slack_bot.analytics_tools import (
+    get_post_analytics as _get_analytics_func,
+    show_top_performers as _show_top_func,
+    analyze_content_patterns as _analyze_patterns_func
 )
 from agents.batch_orchestrator import (
     execute_sequential_batch,
@@ -68,6 +76,42 @@ async def web_search(args):
 
 
 @tool(
+    "perplexity_search",
+    "Deep research with citations using Perplexity AI. Best for: fact-checking, finding recent stats/data, researching complex topics. Returns synthesized answer with source citations. Use when you need authoritative, cited information.",
+    {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Research query - be specific for best results"},
+            "search_focus": {
+                "type": "string",
+                "description": "Search focus area: 'internet' (default), 'news', 'academic', 'youtube', 'reddit'",
+                "default": "internet"
+            }
+        },
+        "required": ["query"]
+    }
+)
+async def perplexity_search(args):
+    """Perplexity research tool with citations"""
+    query = args.get('query', '')
+    search_focus = args.get('search_focus', 'internet')
+
+    # Run blocking I/O in thread pool
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: _perplexity_search_func(query=query, search_focus=search_focus)
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
     "search_knowledge_base",
     "Search internal knowledge base using RAG for brand voice and documentation.",
     {"query": str, "match_count": int}
@@ -89,19 +133,142 @@ async def search_knowledge_base(args):
 
 @tool(
     "search_company_documents",
-    "Search user-uploaded company documents (case studies, testimonials, product docs). Use BEFORE asking user for context.",
-    {"query": str, "match_count": int, "document_type": str}
+    "Search company documents using semantic RAG. For MEETING TRANSCRIPTS: use document_type='transcript' and sort_by_date=True. Leave document_type=None to search ALL documents semantically. Only filter by document_type if user explicitly requests case studies, testimonials, product docs, or transcripts. Use BEFORE asking user for context.",
+    {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Search query"},
+            "match_count": {"type": "integer", "description": "Number of results to return", "default": 3},
+            "document_type": {"type": "string", "description": "Optional filter: case_study, testimonial, product_doc, transcript, or internal_doc"},
+            "sort_by_date": {"type": "boolean", "description": "If true, sort by created_at DESC (most recent first). Use for finding 'last meeting'.", "default": False}
+        },
+        "required": ["query"]
+    }
 )
 async def search_company_documents(args):
     """Search company documents for context enrichment"""
+    print(f"\n🔧 TOOL WRAPPER: search_company_documents called")
+    print(f"   Args received: {args}")
+
     query = args.get('query', '')
     match_count = args.get('match_count', 3)
-    document_type = args.get('document_type')  # Optional: 'case_study', 'testimonial', 'product_doc'
+    document_type = args.get('document_type')  # Optional: 'case_study', 'testimonial', 'product_doc', 'transcript'
+    sort_by_date = args.get('sort_by_date', False)
 
-    result = _search_company_docs_func(
-        query=query,
-        match_count=match_count,
-        document_type=document_type
+    # Convert string "None" to actual None
+    if document_type in ("None", "null", ""):
+        document_type = None
+
+    print(f"   Calling _search_company_docs_func with:")
+    print(f"      query={query}")
+    print(f"      match_count={match_count}")
+    print(f"      document_type={document_type}")
+    print(f"      sort_by_date={sort_by_date}")
+
+    # Run blocking I/O in thread pool to avoid blocking event loop
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: _search_company_docs_func(
+            query=query,
+            match_count=match_count,
+            document_type=document_type,
+            sort_by_date=sort_by_date
+        )
+    )
+
+    print(f"   Result type: {type(result)}")
+    print(f"   Result length: {len(result) if result else 0}")
+    print(f"   Result preview: {result[:200] if result else 'NONE'}")
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "search_content_examples",
+    "Search 700+ content examples from the database using semantic search. Do NOT filter by platform unless user explicitly requests it - search ALL platforms by default. Use the user's exact search terms without adding qualifiers like 'high-performing' or 'proven'.",
+    {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "User's search query - use their exact words"},
+            "platform": {"type": ["string", "null"], "description": "Platform filter (LinkedIn, X, Email, YouTube) - omit to search all platforms"},
+            "match_count": {"type": "integer", "description": "Number of results", "default": 5}
+        },
+        "required": ["query"]
+    }
+)
+async def search_content_examples(args):
+    """Search content examples semantically"""
+    print(f"\n🔧 TOOL WRAPPER: search_content_examples called")
+    print(f"   Args received: {args}")
+
+    query = args.get('query', '')
+    platform = args.get('platform')  # Optional: 'LinkedIn', 'Twitter', 'Email', 'Blog'
+
+    # Convert string "None" to actual None
+    if platform in ("None", "null", ""):
+        platform = None
+
+    match_count = args.get('match_count', 5)
+
+    print(f"   Calling _search_content_examples_func with:")
+    print(f"      query={query}")
+    print(f"      platform={platform}")
+    print(f"      match_count={match_count}")
+
+    # Run blocking I/O in thread pool to avoid blocking event loop
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: _search_content_examples_func(
+            query=query,
+            platform=platform,
+            match_count=match_count
+        )
+    )
+
+    print(f"   Result type: {type(result)}")
+    print(f"   Result length: {len(result) if result else 0}")
+    print(f"   Result preview: {result[:200] if result else 'NONE'}")
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "analyze_past_content",
+    "Get top-performing posts ordered by engagement rate. Use this to find best performers, NOT for semantic search (use search_content_examples for that).",
+    {
+        "type": "object",
+        "properties": {
+            "platform": {"type": ["string", "null"], "description": "Platform filter - omit for all platforms"},
+            "limit": {"type": "integer", "description": "Number of posts to return", "default": 10}
+        },
+        "required": []
+    }
+)
+async def analyze_past_content(args):
+    """Analyze past content patterns"""
+    platform = args.get('platform')  # Optional: 'LinkedIn', 'Twitter', etc.
+
+    # Convert string "None" to actual None
+    if platform in ("None", "null", ""):
+        platform = None
+
+    limit = args.get('limit', 10)
+
+    result = _analyze_past_content_func(
+        platform=platform,
+        limit=limit
     )
 
     return {
@@ -153,6 +320,168 @@ async def get_content_calendar(args):
             "text": result
         }]
     }
+
+
+@tool(
+    "search_airtable_posts",
+    "Search Airtable content calendar for posts. Useful for finding posts clients have edited or reviewing scheduled content. Returns post content, status, and edit history.",
+    {
+        "type": "object",
+        "properties": {
+            "platform": {
+                "type": "string",
+                "description": "Filter by platform: linkedin, twitter, email, youtube, instagram"
+            },
+            "status": {
+                "type": "string",
+                "description": "Filter by status: Draft, Scheduled, Ready, Needs Review, Published"
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of results (default 10)",
+                "default": 10
+            }
+        }
+    }
+)
+async def search_airtable_posts(args):
+    """Search Airtable content calendar"""
+    from integrations.airtable_client import get_airtable_client
+    import json
+
+    platform = args.get('platform')
+    status = args.get('status')
+    max_results = args.get('max_results', 10)
+
+    try:
+        airtable = get_airtable_client()
+        result = airtable.list_content_records(
+            platform=platform,
+            status=status,
+            max_records=max_results
+        )
+
+        if result.get('success'):
+            records = result.get('records', [])
+            formatted_posts = []
+
+            for record in records:
+                fields = record.get('fields', {})
+                formatted_posts.append({
+                    'record_id': record.get('id'),
+                    'platform': fields.get('Platform', []),
+                    'status': fields.get('Status'),
+                    'hook': fields.get('Post Hook', '')[:100],
+                    'content': fields.get('Body Content', '')[:300],  # Preview
+                    'publish_date': fields.get('Publish Date'),
+                    'suggested_edits': fields.get('Suggested Edits', ''),
+                    'url': f"https://airtable.com/{airtable.base_id}/{airtable.table.id}/{record.get('id')}"
+                })
+
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        'success': True,
+                        'count': len(formatted_posts),
+                        'posts': formatted_posts
+                    }, indent=2)
+                }]
+            }
+        else:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        'success': False,
+                        'error': result.get('error')
+                    })
+                }]
+            }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    'success': False,
+                    'error': str(e)
+                })
+            }]
+        }
+
+
+@tool(
+    "get_airtable_post",
+    "Get a specific post from Airtable by record ID. Returns full post content, metadata, and edit history. Use this after searching to get complete post details for rewriting.",
+    {
+        "type": "object",
+        "properties": {
+            "record_id": {
+                "type": "string",
+                "description": "Airtable record ID (starts with 'rec')"
+            }
+        },
+        "required": ["record_id"]
+    }
+)
+async def get_airtable_post(args):
+    """Get specific Airtable post by ID"""
+    from integrations.airtable_client import get_airtable_client
+    import json
+
+    record_id = args.get('record_id')
+
+    try:
+        airtable = get_airtable_client()
+        result = airtable.get_content_record(record_id)
+
+        if result.get('success'):
+            record = result.get('record', {})
+            fields = record.get('fields', {})
+
+            formatted_post = {
+                'record_id': record.get('id'),
+                'platform': fields.get('Platform', []),
+                'status': fields.get('Status'),
+                'hook': fields.get('Post Hook', ''),
+                'content': fields.get('Body Content', ''),  # Full content
+                'publish_date': fields.get('Publish Date'),
+                'suggested_edits': fields.get('Suggested Edits', ''),
+                'media_url': fields.get('Media/Thumbnail'),
+                'created': fields.get('Created'),
+                'edited_time': fields.get('Edited Time'),
+                'url': f"https://airtable.com/{airtable.base_id}/{airtable.table.id}/{record.get('id')}"
+            }
+
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        'success': True,
+                        'post': formatted_post
+                    }, indent=2)
+                }]
+            }
+        else:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        'success': False,
+                        'error': result.get('error')
+                    })
+                }]
+            }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    'success': False,
+                    'error': str(e)
+                })
+            }]
+        }
 
 
 @tool(
@@ -341,8 +670,8 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
     """Async workflow delegation"""
     try:
         if platform.lower() in ['linkedin', 'li']:
-            # Use the NEW LinkedIn SDK Agent (Tier 2)
-            from agents.linkedin_sdk_agent import create_linkedin_post_workflow
+            # Use the Direct API Agent (Tier 2 - no SDK hangs)
+            from agents.linkedin_direct_api_agent import create_linkedin_post_workflow
             result = await create_linkedin_post_workflow(topic, context, style)
             return result  # Already formatted with score and details
 
@@ -405,43 +734,43 @@ async def _delegate_workflow_func(platform: str, topic: str, context: str = "", 
                 result = await create_twitter_post_workflow(topic, context, style)
                 return result  # Already formatted with score
             else:
-                # Use SDK agent for threads
-                from agents.twitter_sdk_agent import create_twitter_thread_workflow
-                result = await create_twitter_thread_workflow(topic, context, style)
+                # Use Direct API agent for threads
+                from agents.twitter_direct_api_agent import create_twitter_post_workflow
+                result = await create_twitter_post_workflow(topic, context, style)
                 return result  # Already formatted with score
 
         elif platform.lower() == 'email':
-            # Use the Email SDK Agent workflow
-            from agents.email_sdk_agent import create_email_workflow
+            # Use the Direct API Agent workflow
+            from agents.email_direct_api_agent import create_email_workflow
             # Detect email type from style/context
-            email_type = "Email_Value"  # Default
+            email_style = "Email_Value"  # Default
             if "tuesday" in style.lower() or "update" in style.lower():
-                email_type = "Email_Tuesday"
+                email_style = "Email_Tuesday"
             elif "sales" in style.lower() or "offer" in style.lower():
-                email_type = "Email_Direct"
+                email_style = "Email_Direct"
             elif "story" in style.lower() or "indirect" in style.lower():
-                email_type = "Email_Indirect"
+                email_style = "Email_Indirect"
 
-            result = await create_email_workflow(topic, context, email_type)
+            result = await create_email_workflow(topic, context, email_style)
             return result  # Already formatted with subject and score
 
         elif platform.lower() in ['youtube', 'video']:
-            # Use the YouTube SDK Agent workflow
-            from agents.youtube_sdk_agent import create_youtube_workflow
+            # Use the Direct API Agent workflow
+            from agents.youtube_direct_api_agent import create_youtube_workflow
             # Detect script type from style/context
-            script_type = "short_form"  # Default (30-150 words, 12-60 sec)
+            youtube_style = "short_form"  # Default (30-150 words, 12-60 sec)
             if "medium" in style.lower() or "explainer" in style.lower():
-                script_type = "medium_form"  # 150-400 words, 1-3 min
+                youtube_style = "medium_form"  # 150-400 words, 1-3 min
             elif "long" in style.lower() or "deep" in style.lower():
-                script_type = "long_form"  # 400-1000 words, 3-10 min
+                youtube_style = "long_form"  # 400-1000 words, 3-10 min
 
-            result = await create_youtube_workflow(topic, context, script_type)
+            result = await create_youtube_workflow(topic, context, youtube_style)
             return result  # Already formatted with timing markers
 
         elif platform.lower() in ['instagram', 'ig', 'insta']:
-            # Use the Instagram SDK Agent workflow
-            from agents.instagram_sdk_agent import create_instagram_caption_workflow
-            result = await create_instagram_caption_workflow(topic, context, style)
+            # Use the Direct API Agent workflow
+            from agents.instagram_direct_api_agent import create_instagram_workflow
+            result = await create_instagram_workflow(topic, context, style)
             return result  # Already formatted with hook preview and character count
 
         else:
@@ -1019,6 +1348,79 @@ The content is now scheduled in your Airtable calendar. You can edit the posting
         }
 
 
+# ============= ANALYTICS TOOLS =============
+
+@tool(
+    "get_post_analytics",
+    "Analyze post performance and identify patterns. Shows top/worst performers, pattern detection (hooks, timing, platforms), and actionable recommendations. Use when asked 'how are posts performing', 'show me analytics', 'what's working', etc.",
+    {"days_back": int, "platform": str, "min_engagement": float}
+)
+async def get_post_analytics(args):
+    """
+    Analyze post performance with Claude insights.
+
+    Automatically syncs latest data before analysis to ensure accuracy.
+    """
+    result = _get_analytics_func(
+        days_back=args.get('days_back', 7),
+        platform=args.get('platform'),
+        min_engagement=args.get('min_engagement', 0.0)
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "show_top_performers",
+    "Show top performing posts by engagement rate. Returns formatted list with hooks, scores, and metrics. Use when asked 'show me best posts', 'what performed well', 'top content', etc.",
+    {"count": int, "platform": str, "days_back": int}
+)
+async def show_top_performers(args):
+    """Show top performing posts"""
+    result = _show_top_func(
+        count=args.get('count', 5),
+        platform=args.get('platform'),
+        days_back=args.get('days_back', 30)
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
+@tool(
+    "analyze_content_patterns",
+    "Deep semantic analysis of top-performing posts. Identifies themes, hook styles, content structures, and awareness levels using vector embeddings. Use when asked 'what patterns work', 'why is this content successful', 'what should I create more of', etc.",
+    {"days_back": int, "min_engagement": float, "top_percent": int}
+)
+async def analyze_content_patterns(args):
+    """
+    Semantic pattern analysis using embeddings.
+
+    Clusters similar high-performers and identifies what makes them work.
+    """
+    result = _analyze_patterns_func(
+        days_back=args.get('days_back', 30),
+        min_engagement=args.get('min_engagement', 5.0),
+        top_percent=args.get('top_percent', 20)
+    )
+
+    return {
+        "content": [{
+            "type": "text",
+            "text": result
+        }]
+    }
+
+
 async def _delegate_bulk_workflow(
     platform: str,
     topics: list,
@@ -1099,8 +1501,8 @@ class ClaudeAgentHandler:
         self._session_created_at = {}  # thread_ts -> timestamp
         
         # Resource management limits (Replit constraints)
-        self.MAX_CONCURRENT_SESSIONS = 10  # Max sessions before cleanup
-        self.SESSION_TTL = 3600  # 1 hour session lifetime
+        self.MAX_CONCURRENT_SESSIONS = 3  # Max sessions before cleanup (conservative for Replit RAM)
+        self.SESSION_TTL = 1800  # 30 min session lifetime (more aggressive cleanup)
         self.CLEANUP_INTERVAL = 300  # Clean up old sessions every 5 minutes
         self._last_cleanup = time.time()
 
@@ -1114,7 +1516,8 @@ class ClaudeAgentHandler:
 - You are the user's CMO (Chief Marketing Officer) assistant
 
 **YOUR PRIMARY DIRECTIVE:**
-When users ask about current events, news, updates, or ANYTHING happening in the real world, IMMEDIATELY use web_search.
+When users ask about current events, news, updates, or ANYTHING happening in the real world, IMMEDIATELY use mcp__tools__web_search (Tavily).
+Do NOT use the built-in WebSearch tool - ALWAYS prefer mcp__tools__web_search for web searches.
 Do NOT tell users to "check websites" - YOU search for them.
 
 **CRITICAL WEB SEARCH RULES:**
@@ -1127,13 +1530,30 @@ Do NOT tell users to "check websites" - YOU search for them.
 4. Filter for ACTUAL NEW launches: "announced today", "just released", "launching this week"
 
 **YOUR CAPABILITIES:**
-1. web_search - USE THIS FIRST for any news/events/updates (include year/date in query!)
-2. search_knowledge_base - Internal documentation and brand voice
-3. search_company_documents - User-uploaded docs (case studies, testimonials, product docs) - USE BEFORE asking for context
-4. search_past_posts - Past content you've created
-5. get_content_calendar - Scheduled posts
-6. get_thread_context - Thread history
-7. analyze_content_performance - Performance metrics
+1. mcp__tools__web_search (Tavily) - USE THIS FIRST for any news/events/updates (include year/date in query!)
+   - IMPORTANT: Use this instead of the built-in WebSearch tool
+2. mcp__tools__perplexity_search - Deep research with citations (best for: stats, fact-checking, academic research, complex topics)
+3. search_knowledge_base - Internal documentation and brand voice
+4. search_company_documents - User-uploaded docs (case studies, testimonials, product docs, MEETING TRANSCRIPTS) - USE BEFORE asking for context
+5. search_content_examples - Semantic search across 700+ content examples (use user's EXACT query words)
+6. analyze_past_content - Get top posts by engagement (NOT for search - use search_content_examples instead)
+7. search_past_posts - Past content you've created
+8. get_content_calendar - Scheduled posts
+9. search_airtable_posts - Search Airtable content calendar (find posts clients edited, review scheduled content)
+10. get_airtable_post - Get specific Airtable post by ID (retrieve full content for rewriting)
+11. get_thread_context - Thread history
+12. analyze_content_performance - Performance metrics (legacy)
+13. get_post_analytics - NEW: Analyze post performance with Claude insights (top/worst performers, patterns, recommendations)
+14. show_top_performers - NEW: Show best posts by engagement rate with detailed metrics
+15. analyze_content_patterns - NEW: Deep semantic analysis using embeddings (identifies themes, hook styles, structures)
+
+**CRITICAL: MEETING REFERENCES**
+When user asks about "meetings" or "last meeting", they mean MEETING TRANSCRIPTS stored in company_documents, NOT calendar events:
+- DO NOT call calendar/scheduling tools
+- USE search_company_documents with document_type filter for transcripts
+- The created_at field = meeting date (when transcript was uploaded)
+- Sort by created_at DESC to find "last meeting"
+- Example: "what was discussed in my last meeting?" → search_company_documents(query="meeting transcript", document_type="transcript", sort by created_at DESC)
 
 **CONTENT CREATION WORKFLOW:**
 
@@ -1431,6 +1851,33 @@ When in doubt, preserve MORE context, not less.
 If user provides a 500-word nearly-complete post as their outline, store ALL 500 words.
 The detailed_outline field has NO length limit - preserve EVERYTHING.
 
+**CRITICAL: POST COMPLETION SUMMARIES**
+
+When a post creation completes (execute_post_from_plan returns a success message), you MUST:
+
+1. **Read the ACTUAL post content** from the tool result
+2. **Summarize what's IN THE FINAL POST**, not what you originally requested
+3. **Focus on the specific examples, numbers, and angles** that appear in the actual output
+4. **NEVER summarize based on the original topic/context** - only summarize the final content
+
+**Why this matters:**
+The SDK subagent may take creative direction different from your input. Your job is to accurately describe what was CREATED, not what you ASKED FOR.
+
+**Example of WRONG vs RIGHT:**
+
+❌ WRONG (summarizing your INPUT):
+"The post highlights specific time-saving applications of GPT models for financial advisors, including:
+• Real-world example: Morgan Stanley's GPT-4 deployment for 16,000+ advisors
+• AI meeting notetakers automating CRM data entry..."
+
+✅ RIGHT (summarizing the ACTUAL OUTPUT):
+"The post focuses on 3 specific workflows that save RIAs 18.7 hours monthly:
+• Research automation (4-6 hours → under 1 hour)
+• Content generation (3-5 hours → 1-2 hours editing)
+• Compliance support (2-3 hours → faster drafting)..."
+
+**The rule:** Your summary must match what's actually IN the final post, not your memory of the request.
+
 **BATCH WORKFLOW EXAMPLES:**
 
 Example A: Single post batch
@@ -1539,6 +1986,88 @@ User says "direct to calendar" → BATCH MODE (any count, automated)
 - You remember conversations within each Slack thread (and when asked about other conversations)
 - You provide strategic insights before and after content creation
 
+**ANALYTICS & PERFORMANCE:**
+
+When users ask about content performance, use the NEW analytics tools (Phase 2 complete!):
+
+**3 Analytics Tools Available:**
+
+1. **get_post_analytics(days_back, platform, min_engagement)**
+   - Full performance analysis with Claude insights
+   - Shows: top/worst performers, patterns (hooks, timing, platforms), recommendations
+   - Automatically syncs latest data before analysis
+   - Use for: "how are posts performing", "show me analytics", "what's working"
+
+2. **show_top_performers(count, platform, days_back)**
+   - Quick list of best posts by engagement rate
+   - Shows: hooks, scores, impressions, likes, comments, shares, URLs
+   - Use for: "show me best posts", "what performed well", "top 10 posts"
+
+3. **analyze_content_patterns(days_back, min_engagement, top_percent)**
+   - Deep semantic analysis using vector embeddings
+   - Identifies: themes, hook styles, content structures, awareness levels
+   - Clusters similar high-performers to find what makes them work
+   - Use for: "what patterns work", "why is content successful", "what should I create more of"
+
+**Analytics Workflow Examples:**
+
+```
+User: "Show me my top posts this week"
+CMO: *calls show_top_performers(count=5, days_back=7)*
+CMO: "🏆 TOP 5 PERFORMERS (last 7 days)
+1. [LINKEDIN] I replaced 3 workflows...
+   📊 Engagement: 9.2% | Impressions: 15,000
+   💚 1,230 likes | 💬 89 comments | 🔄 45 shares"
+```
+
+```
+User: "What's working in my content?"
+CMO: *calls get_post_analytics(days_back=30)*
+CMO: "📊 ANALYTICS REPORT (30 days)
+Total posts analyzed: 15
+
+📈 TOP PERFORMERS:
+1. 'I automated 40 hours of work...' - 8.5% engagement
+   Why: Specific numbers + concrete outcome + relatable problem
+
+📉 NEEDS IMPROVEMENT:
+1. '5 tips for better meetings' - 2.1% engagement
+   Issue: Generic hook, no unique angle
+
+💡 RECOMMENDATIONS:
+1. Your automation case studies perform 3x better than tips
+2. Posts with specific numbers ('40 hours', '3 workflows') get 40% more engagement
+3. LinkedIn posts outperform Twitter by 25%"
+```
+
+```
+User: "What themes should I focus on?"
+CMO: *calls analyze_content_patterns(days_back=60, top_percent=20)*
+CMO: "🎯 CONTENT PATTERN ANALYSIS (top 20% of 30 posts)
+
+📌 COMMON THEMES:
+• Automation case studies (9.2% avg engagement)
+• Workflow optimization (8.1%)
+• AI tool comparisons (7.5%)
+
+🎣 EFFECTIVE HOOK STYLES:
+• Specific Numbers ('I saved 15 hours') - 85% of top posts
+• Contrarian Takes ('Most people use X wrong') - 10.2% engagement
+• Bold Outcomes ('This replaced my entire team') - 9.8%
+
+💡 RECOMMENDATIONS:
+1. Focus on automation case studies with specific number hooks
+2. Solution-aware content (how-to) performs 40% better than problem-aware
+3. Numbered lists get 2x more engagement than story format"
+```
+
+**When to Use Each:**
+- Quick wins → show_top_performers
+- Strategic insights → get_post_analytics
+- Content strategy → analyze_content_patterns
+
+**Note:** Analytics require published posts with Ayrshare metrics synced. If no data found, suggest running sync endpoints or publishing more content.
+
 If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (November 6, 2023). Search with FULL context."""
 
         # Calculate prompt version hash for cache invalidation
@@ -1552,10 +2081,15 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         self.base_tools = [
             # Core tools - always available
             web_search,
+            perplexity_search,  # NEW: Deep research with citations
             search_knowledge_base,
             search_company_documents,  # NEW in v2.5.0: User-uploaded docs for context enrichment
+            search_content_examples,  # NEW: Search 700+ Cole/Dickie examples via RAG
+            analyze_past_content,  # NEW: Analyze top-performing examples
             search_past_posts,
             get_content_calendar,
+            search_airtable_posts,  # NEW: Search Airtable content calendar
+            get_airtable_post,  # NEW: Get specific Airtable post by ID
             get_thread_context,
             analyze_content_performance,
             send_to_calendar,  # Save approved drafts to calendar
@@ -1576,6 +2110,281 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         )
 
         print(f"✅ Handler [{self.handler_id}] ready with batch tools (default mode)")
+
+    async def _process_slack_files(self, slack_files: list, request_id: str) -> list:
+        """
+        Process Slack file uploads and convert to Claude-compatible format
+
+        Args:
+            slack_files: List of Slack file objects from event
+            request_id: Request ID for logging
+
+        Returns:
+            List of Claude content blocks (image/document)
+        """
+        import base64
+        import httpx
+
+        file_blocks = []
+
+        for file_obj in slack_files:
+            try:
+                file_name = file_obj.get('name', 'unknown')
+                file_type = file_obj.get('mimetype', '')
+                slack_filetype = file_obj.get('filetype', '')  # Slack's filetype field (e.g., "json")
+                file_url = file_obj.get('url_private', '')
+                file_size = file_obj.get('size', 0)
+
+                # If no mimetype, infer from Slack filetype or extension
+                if not file_type:
+                    if slack_filetype == 'json' or file_name.endswith('.json'):
+                        file_type = 'application/json'
+                    elif slack_filetype in ['javascript', 'js'] or file_name.endswith('.js'):
+                        file_type = 'text/javascript'
+                    elif slack_filetype == 'python' or file_name.endswith('.py'):
+                        file_type = 'text/x-python'
+                    elif slack_filetype == 'markdown' or file_name.endswith('.md'):
+                        file_type = 'text/markdown'
+                    elif slack_filetype == 'text' or file_name.endswith('.txt'):
+                        file_type = 'text/plain'
+
+                print(f"[{request_id}] 📎 Processing file: {file_name} ({file_type or slack_filetype}, {file_size} bytes)")
+
+                # Skip files that are too large (> 32MB for Claude)
+                if file_size > 32 * 1024 * 1024:
+                    print(f"[{request_id}] ⚠️  File too large, skipping: {file_name}")
+                    file_blocks.append({
+                        "type": "text",
+                        "text": f"[File '{file_name}' too large to process (max 32MB)]"
+                    })
+                    continue
+
+                # Download file using Slack API
+                if not file_url:
+                    print(f"[{request_id}] ⚠️  No URL for file: {file_name}")
+                    continue
+
+                # Get Slack bot token from environment or slack_client
+                slack_token = os.getenv('SLACK_BOT_TOKEN')
+                if self.slack_client:
+                    slack_token = self.slack_client.token
+
+                if not slack_token:
+                    print(f"[{request_id}] ❌ No Slack token available for file download")
+                    continue
+
+                # Download file with bearer token auth
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(
+                        file_url,
+                        headers={'Authorization': f'Bearer {slack_token}'}
+                    )
+                    response.raise_for_status()
+                    file_data = response.content
+
+                print(f"[{request_id}] ✅ Downloaded {len(file_data)} bytes")
+
+                # Convert to Claude format based on file type
+                if file_type.startswith('image/'):
+                    # Image file - send as base64
+                    media_type = file_type  # e.g., "image/jpeg", "image/png"
+                    base64_data = base64.standard_b64encode(file_data).decode('utf-8')
+
+                    file_blocks.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": base64_data
+                        }
+                    })
+                    print(f"[{request_id}] 🖼️  Added image: {file_name}")
+
+                elif file_type == 'application/pdf':
+                    # PDF file - send as base64
+                    base64_data = base64.standard_b64encode(file_data).decode('utf-8')
+
+                    file_blocks.append({
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": base64_data
+                        }
+                    })
+                    print(f"[{request_id}] 📄 Added PDF: {file_name}")
+
+                elif (file_type.startswith('text/') or
+                      file_type == 'application/json' or
+                      file_name.endswith(('.txt', '.md', '.py', '.js', '.json', '.csv', '.yaml', '.yml', '.xml', '.html', '.css'))):
+                    # Text file - extract text content
+                    try:
+                        text_content = file_data.decode('utf-8')
+
+                        # Detect language for syntax highlighting
+                        lang = ''
+                        if file_name.endswith('.json'):
+                            lang = 'json'
+                        elif file_name.endswith('.py'):
+                            lang = 'python'
+                        elif file_name.endswith('.js'):
+                            lang = 'javascript'
+                        elif file_name.endswith('.md'):
+                            lang = 'markdown'
+                        elif file_name.endswith(('.yaml', '.yml')):
+                            lang = 'yaml'
+
+                        file_blocks.append({
+                            "type": "text",
+                            "text": f"[File: {file_name}]\n```{lang}\n{text_content}\n```"
+                        })
+                        print(f"[{request_id}] 📝 Added text file: {file_name} ({len(text_content)} chars)")
+                    except UnicodeDecodeError:
+                        print(f"[{request_id}] ⚠️  Could not decode text file: {file_name}")
+                        file_blocks.append({
+                            "type": "text",
+                            "text": f"[File '{file_name}' could not be decoded as text]"
+                        })
+
+                else:
+                    # Unsupported file type
+                    print(f"[{request_id}] ⚠️  Unsupported file type: {file_type}")
+                    file_blocks.append({
+                        "type": "text",
+                        "text": f"[File '{file_name}' type '{file_type}' not supported]"
+                    })
+
+            except Exception as e:
+                print(f"[{request_id}] ❌ Error processing file {file_obj.get('name', 'unknown')}: {e}")
+                file_blocks.append({
+                    "type": "text",
+                    "text": f"[Error processing file: {str(e)}]"
+                })
+
+        return file_blocks
+
+    async def _handle_multimodal_message(
+        self,
+        message: str,
+        file_blocks: list,
+        thread_ts: str,
+        request_id: str
+    ) -> str:
+        """
+        Handle messages with images/PDFs using direct Anthropic API
+        (SDK query() only accepts strings, so we use direct API for multimodal)
+
+        Args:
+            message: User's text message
+            file_blocks: List of content blocks (images, PDFs, text)
+            thread_ts: Thread timestamp for context
+            request_id: Request ID for logging
+
+        Returns:
+            Claude's response text
+        """
+        from anthropic import Anthropic
+
+        print(f"[{request_id}] 🖼️  Using direct Anthropic API for multimodal content")
+
+        # Initialize Anthropic client
+        client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+        # Build content array with text and media
+        content = []
+
+        # Add text message first
+        content.append({
+            "type": "text",
+            "text": message
+        })
+
+        # Add file blocks (images, PDFs, text files)
+        for block in file_blocks:
+            if block.get("type") == "image":
+                # Image block - already in correct format
+                content.append(block)
+                print(f"[{request_id}]    📸 Added image to content")
+            elif block.get("type") == "document":
+                # PDF block - already in correct format
+                content.append(block)
+                print(f"[{request_id}]    📄 Added PDF to content")
+            elif block.get("type") == "text":
+                # Text file - append to content
+                content.append(block)
+                print(f"[{request_id}]    📝 Added text file to content")
+
+        # Get conversation history for context (if available)
+        conversation_history = []
+        if hasattr(self, 'memory_handler') and self.memory_handler:
+            try:
+                history = self.memory_handler.get_thread_history(thread_ts)
+                if history:
+                    # Convert to messages format (last 10 messages for context)
+                    for msg in history[-10:]:
+                        role = msg.get('role', 'user')
+                        msg_content = msg.get('content', '')
+                        if role in ['user', 'assistant'] and msg_content:
+                            conversation_history.append({
+                                "role": role,
+                                "content": msg_content
+                            })
+            except Exception as e:
+                print(f"[{request_id}] ⚠️  Could not load conversation history: {e}")
+
+        # Build system prompt (simplified version for multimodal)
+        system_prompt = """You are a helpful AI assistant that can analyze images, PDFs, and documents.
+
+When analyzing visual content:
+- Describe what you see clearly and accurately
+- Extract any text or data present
+- Provide insights relevant to the user's question
+- If asked to create content based on an image/document, use the visual context
+
+Be direct and helpful. If you can't see something clearly, say so."""
+
+        # Add conversation history + current message
+        messages = conversation_history + [{"role": "user", "content": content}]
+
+        print(f"[{request_id}] 📤 Sending multimodal request to Claude API...")
+        print(f"[{request_id}]    Content blocks: {len(content)} (text + {len(file_blocks)} files)")
+
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4096,
+                system=system_prompt,
+                messages=messages
+            )
+
+            # Extract response text
+            response_text = ""
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    response_text += block.text
+
+            print(f"[{request_id}] ✅ Multimodal response received ({len(response_text)} chars)")
+            return response_text
+
+        except Exception as e:
+            error_msg = f"Error processing multimodal content: {str(e)}"
+            print(f"[{request_id}] ❌ {error_msg}")
+            return f"❌ {error_msg}\n\nPlease try again or rephrase your request."
+
+    def _has_multimodal_content(self, file_blocks: list) -> bool:
+        """
+        Check if file_blocks contains images or PDFs that require direct API
+
+        Args:
+            file_blocks: List of processed file blocks
+
+        Returns:
+            True if contains images/PDFs, False if text-only
+        """
+        for block in file_blocks:
+            if block.get("type") in ["image", "document"]:
+                return True
+        return False
 
     def _detect_cowrite_mode(self, message: str) -> bool:
         """
@@ -1814,7 +2623,8 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         message: str,
         user_id: str,
         thread_ts: str,
-        channel_id: str
+        channel_id: str,
+        slack_files: list = None
     ) -> str:
         """
         Handle conversation using REAL Claude Agent SDK
@@ -1824,6 +2634,7 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             user_id: Slack user ID
             thread_ts: Thread timestamp
             channel_id: Slack channel
+            slack_files: List of Slack file objects (optional)
 
         Returns:
             Agent's response
@@ -1835,6 +2646,8 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
         print(f"\n{'='*70}")
         print(f"[{request_id}] 🎯 NEW REQUEST - Thread: {thread_ts[:8]}")
         print(f"[{request_id}] 💬 Message: {message[:100]}{'...' if len(message) > 100 else ''}")
+        if slack_files:
+            print(f"[{request_id}] 📎 Files: {len(slack_files)} attached")
         print(f"{'='*70}")
 
         # NEW: Store conversation context for tools to access
@@ -1861,6 +2674,22 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
 
         # Simple message with date context - instructions are already in system prompt
         contextualized_message = f"[Today is {today}] {message}"
+
+        # Process Slack files if present
+        file_blocks = []
+        if slack_files:
+            file_blocks = await self._process_slack_files(slack_files, request_id)
+            print(f"[{request_id}] 📎 Processed {len(file_blocks)} file block(s) for Claude")
+
+        # Check for multimodal content (images/PDFs) - requires direct API
+        if file_blocks and self._has_multimodal_content(file_blocks):
+            print(f"[{request_id}] 🖼️  Multimodal content detected - using direct Anthropic API")
+            return await self._handle_multimodal_message(
+                message=contextualized_message,
+                file_blocks=file_blocks,
+                thread_ts=thread_ts,
+                request_id=request_id
+            )
 
         # Check if this message requires co-write mode
         message_needs_cowrite = self._detect_cowrite_mode(message)
@@ -1894,101 +2723,134 @@ If someone asks about "Dev Day on the 6th" - they likely mean OpenAI Dev Day (No
             print(f"[{request_id}] 🚀 Using batch mode (default)")
 
         try:
-            # Get or create cached session for this thread
-            client = await self._get_or_create_session(thread_ts, request_id)
+            # Conditional timeout based on mode:
+            # - Batch mode: NO timeout (batch orchestrator handles per-post timeouts & failures)
+            # - Co-write mode: 5 minutes to prevent infinite hangs
+            # This allows batch mode to handle 50+ posts without hitting SDK timeout
+            is_batch_mode = not message_needs_cowrite
+            timeout_context = asyncio.timeout(None if is_batch_mode else 300)
 
-            # Only connect if this is a NEW session (not already connected)
-            if thread_ts not in self._connected_sessions:
-                print(f"[{request_id}] 🔌 Connecting NEW client session...")
-                await client.connect()
-                self._connected_sessions.add(thread_ts)
-                print(f"[{request_id}] ✅ Client connected successfully")
+            if is_batch_mode:
+                print(f"[{request_id}] ⏱️ No SDK timeout (batch orchestrator handles individual post failures)")
             else:
-                print(f"[{request_id}] ♻️ Reusing connected client...")
+                print(f"[{request_id}] ⏱️ 5-minute timeout enabled (co-write mode)")
 
-            # Send the query
-            print(f"[{request_id}] 📨 Sending query to Claude SDK...")
-            await client.query(contextualized_message)
+            async with timeout_context:
+                # Get or create cached session for this thread
+                client = await self._get_or_create_session(thread_ts, request_id)
 
-            # Collect ONLY the latest response (memory stays intact in session)
-            latest_response = ""
-            print(f"[{request_id}] ⏳ Waiting for Claude SDK response...")
-            async for msg in client.receive_response():
-                # Each message REPLACES the previous (we only want the final response)
-                # The SDK maintains full conversation history internally
-                msg_type = type(msg).__name__
+                # Only connect if this is a NEW session (not already connected)
+                if thread_ts not in self._connected_sessions:
+                    print(f"[{request_id}] 🔌 Connecting NEW client session...")
+                    await client.connect()
+                    self._connected_sessions.add(thread_ts)
+                    print(f"[{request_id}] ✅ Client connected successfully")
+                else:
+                    print(f"[{request_id}] ♻️ Reusing connected client...")
 
-                # Extract text content and log tool calls
-                text_preview = None
-                if hasattr(msg, 'content'):
-                    if isinstance(msg.content, list):
-                        for block in msg.content:
-                            # Handle dict-style blocks (raw API format)
-                            if isinstance(block, dict):
-                                block_type = block.get('type')
-                                if block_type == 'text':
-                                    latest_response = block.get('text', '')
+                # Send the query (with files if present)
+                print(f"[{request_id}] 📨 Sending query to Claude SDK...")
+                if file_blocks:
+                    # Embed file content in text message (SDK query() only accepts strings)
+                    # Extract text from file blocks and append to message
+                    file_content_parts = []
+                    for block in file_blocks:
+                        if block.get("type") == "text":
+                            file_content_parts.append(block["text"])
+                        elif block.get("type") in ["image", "document"]:
+                            # For images/PDFs, add a note (can't embed in text-only SDK)
+                            file_content_parts.append(f"\n[Note: {block['type'].title()} file attached but cannot be processed in text-only mode]\n")
+
+                    combined_message = contextualized_message + "\n\n" + "\n\n".join(file_content_parts)
+                    print(f"[{request_id}] 📎 Including {len(file_blocks)} file(s) in message")
+                    await client.query(combined_message)
+                else:
+                    # Text-only message
+                    await client.query(contextualized_message)
+
+                # Collect ONLY the latest response (memory stays intact in session)
+                latest_response = ""
+                print(f"[{request_id}] ⏳ Waiting for Claude SDK response...")
+                async for msg in client.receive_response():
+                    # Each message REPLACES the previous (we only want the final response)
+                    # The SDK maintains full conversation history internally
+                    msg_type = type(msg).__name__
+
+                    # Extract text content and log tool calls
+                    text_preview = None
+                    if hasattr(msg, 'content'):
+                        if isinstance(msg.content, list):
+                            for block in msg.content:
+                                # Handle dict-style blocks (raw API format)
+                                if isinstance(block, dict):
+                                    block_type = block.get('type')
+                                    if block_type == 'text':
+                                        latest_response = block.get('text', '')
+                                        text_preview = latest_response[:150]
+                                    elif block_type == 'tool_use':
+                                        tool_name = block.get('name', 'unknown')
+                                        tool_input = block.get('input', {})
+                                        # Create brief preview of args
+                                        args_preview = str(tool_input)[:100]
+                                        print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
+                                    elif block_type == 'tool_result':
+                                        result_preview = str(block.get('content', ''))[:100]
+                                        print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
+                                # Handle object-style blocks (SDK format)
+                                elif hasattr(block, 'text'):
+                                    latest_response = block.text
                                     text_preview = latest_response[:150]
-                                elif block_type == 'tool_use':
-                                    tool_name = block.get('name', 'unknown')
-                                    tool_input = block.get('input', {})
-                                    # Create brief preview of args
+                                elif hasattr(block, 'name'):  # Likely a tool_use block
+                                    tool_name = block.name
+                                    tool_input = getattr(block, 'input', {})
                                     args_preview = str(tool_input)[:100]
                                     print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
-                                elif block_type == 'tool_result':
-                                    result_preview = str(block.get('content', ''))[:100]
-                                    print(f"[{request_id}] ✅ Tool result: {result_preview}{'...' if len(str(block.get('content', ''))) > 100 else ''}")
-                            # Handle object-style blocks (SDK format)
-                            elif hasattr(block, 'text'):
-                                latest_response = block.text
-                                text_preview = latest_response[:150]
-                            elif hasattr(block, 'name'):  # Likely a tool_use block
-                                tool_name = block.name
-                                tool_input = getattr(block, 'input', {})
-                                args_preview = str(tool_input)[:100]
-                                print(f"[{request_id}] 🔧 Tool: {tool_name}({args_preview}{'...' if len(str(tool_input)) > 100 else ''})")
-                    elif hasattr(msg.content, 'text'):
-                        latest_response = msg.content.text
+                        elif hasattr(msg.content, 'text'):
+                            latest_response = msg.content.text
+                            text_preview = latest_response[:150]
+                        else:
+                            latest_response = str(msg.content)
+                    elif hasattr(msg, 'text'):
+                        latest_response = msg.text
                         text_preview = latest_response[:150]
+
+                    # Log with content preview
+                    if text_preview:
+                        print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
                     else:
-                        latest_response = str(msg.content)
-                elif hasattr(msg, 'text'):
-                    latest_response = msg.text
-                    text_preview = latest_response[:150]
+                        print(f"[{request_id}] 📩 {msg_type} (no text content)")
 
-                # Log with content preview
-                if text_preview:
-                    print(f"[{request_id}] 📩 {msg_type}: {text_preview}{'...' if len(latest_response) > 150 else ''}")
-                else:
-                    print(f"[{request_id}] 📩 {msg_type} (no text content)")
+                final_text = latest_response  # Only use the latest response
+                print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
 
-            final_text = latest_response  # Only use the latest response
-            print(f"[{request_id}] ✅ Response received ({len(final_text)} chars)")
+                # Format for Slack
+                final_text = self._format_for_slack(final_text)
 
-            # Format for Slack
-            final_text = self._format_for_slack(final_text)
+                # Save to memory if available
+                if self.memory:
+                    try:
+                        self.memory.add_message(
+                            thread_ts=thread_ts,
+                            channel_id=channel_id,
+                            user_id=user_id,
+                            role="user",
+                            content=message
+                        )
+                        self.memory.add_message(
+                            thread_ts=thread_ts,
+                            channel_id=channel_id,
+                            user_id="bot",
+                            role="assistant",
+                            content=final_text
+                        )
+                    except Exception as e:
+                        print(f"⚠️ Memory save failed: {e}")
 
-            # Save to memory if available
-            if self.memory:
-                try:
-                    self.memory.add_message(
-                        thread_ts=thread_ts,
-                        channel_id=channel_id,
-                        user_id=user_id,
-                        role="user",
-                        content=message
-                    )
-                    self.memory.add_message(
-                        thread_ts=thread_ts,
-                        channel_id=channel_id,
-                        user_id="bot",
-                        role="assistant",
-                        content=final_text
-                    )
-                except Exception as e:
-                    print(f"⚠️ Memory save failed: {e}")
+                return final_text
 
-            return final_text
+        except asyncio.TimeoutError:
+            print(f"⏱️ [{request_id}] Request timed out after 5 minutes")
+            return "⏱️ Request timed out (5 min limit). Try a simpler request or break into smaller tasks."
 
         except Exception as e:
             error_str = str(e)

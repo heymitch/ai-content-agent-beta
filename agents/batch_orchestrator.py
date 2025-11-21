@@ -28,7 +28,7 @@ async def execute_sequential_batch(
 ) -> Dict[str, Any]:
     """
     Orchestrates sequential execution of N-post plan with context building
-    Uses EXISTING SDK agent workflows (NO CHANGES to SDK agents required)
+    Uses direct API agent workflows (eliminates SDK hanging issues)
 
     Args:
         plan: {
@@ -73,8 +73,9 @@ async def execute_sequential_batch(
             channel=channel,
             thread_ts=thread_ts,
             text=f"⏳ Creating post {post_num}/{len(plan['posts'])}...\n"
-                 f"Platform: **{post_spec['platform'].capitalize()}**\n"
-                 f"Topic: {post_spec['topic'][:100]}"
+                 f"Platform: *{post_spec['platform'].capitalize()}*\n"
+                 f"Topic: {post_spec['topic'][:100]}",
+            mrkdwn=True
         )
 
         # Get context from strategic outline (NO learning accumulation)
@@ -84,7 +85,7 @@ async def execute_sequential_batch(
         print(f"   Platform: {post_spec['platform']}")
         print(f"   Strategic context: {len(strategic_context)} chars")
 
-        # Call EXISTING SDK agent workflow (NO learning injection)
+        # Call direct API agent workflow (NO learning injection)
         try:
             result = await _execute_single_post(
                 platform=post_spec['platform'],
@@ -117,7 +118,8 @@ async def execute_sequential_batch(
                 thread_ts=thread_ts,
                 text=f"✅ Post {post_num}/{len(plan['posts'])} complete!\n"
                      f"📊 <{airtable_url}|View in Airtable>\n"
-                     f"🎯 Quality Score: **{score}/25**"
+                     f"🎯 Quality Score: *{score}/25*",
+                mrkdwn=True
             )
 
             completed += 1
@@ -133,7 +135,8 @@ async def execute_sequential_batch(
                 channel=channel,
                 thread_ts=thread_ts,
                 text=f"⚠️ Post {post_num} failed: {str(e)[:200]}\n\n"
-                     f"Continuing with remaining posts..."
+                     f"Continuing with remaining posts...",
+                mrkdwn=True
             )
 
             failed += 1
@@ -144,19 +147,20 @@ async def execute_sequential_batch(
             stats = context_mgr.get_stats()
 
             checkpoint_msg = (
-                f"✅ **Checkpoint: Posts {post_num-9}-{post_num} complete!**\n\n"
+                f"✅ *Checkpoint: Posts {post_num-9}-{post_num} complete!*\n\n"
                 f"📊 Stats:\n"
-                f"- Average score: **{stats['avg_score']:.1f}/25**\n"
-                f"- Quality trend: **{stats['quality_trend']}**\n"
+                f"- Average score: *{stats['avg_score']:.1f}/25*\n"
+                f"- Quality trend: *{stats['quality_trend']}*\n"
                 f"- Score range: {stats['lowest_score']}-{stats['highest_score']}\n"
                 f"- Recent scores: {stats['recent_scores']}\n\n"
-                f"⏳ **{len(plan['posts']) - post_num} posts remaining.** Continuing..."
+                f"⏳ *{len(plan['posts']) - post_num} posts remaining.* Continuing..."
             )
 
             slack_client.chat_postMessage(
                 channel=channel,
                 thread_ts=thread_ts,
-                text=checkpoint_msg
+                text=checkpoint_msg,
+                mrkdwn=True
             )
 
             print(f"\n📊 Checkpoint {post_num}")
@@ -168,22 +172,23 @@ async def execute_sequential_batch(
     final_stats = context_mgr.get_stats()
 
     final_msg = (
-        f"🎉 **Batch complete! All {len(plan['posts'])} posts created.**\n\n"
-        f"📊 **Final Stats:**\n"
-        f"- ✅ Completed: **{completed}/{len(plan['posts'])}**\n"
-        f"- ❌ Failed: **{failed}**\n"
-        f"- ⏱️ Total time: **{elapsed} minutes**\n"
-        f"- 📈 Average score: **{final_stats['avg_score']:.1f}/25**\n"
-        f"- 📊 Quality trend: **{final_stats['quality_trend']}**\n"
+        f"🎉 *Batch complete! All {len(plan['posts'])} posts created.*\n\n"
+        f"📊 *Final Stats:*\n"
+        f"- ✅ Completed: *{completed}/{len(plan['posts'])}*\n"
+        f"- ❌ Failed: *{failed}*\n"
+        f"- ⏱️ Total time: *{elapsed} minutes*\n"
+        f"- 📈 Average score: *{final_stats['avg_score']:.1f}/25*\n"
+        f"- 📊 Quality trend: *{final_stats['quality_trend']}*\n"
         f"- 🎯 Score range: {final_stats['lowest_score']}-{final_stats['highest_score']}\n\n"
-        f"📅 **View all posts in Airtable** (filter by Created Today)\n\n"
+        f"📅 *View all posts in Airtable* (filter by Created Today)\n\n"
         f"🚀 Your content is ready to schedule!"
     )
 
     slack_client.chat_postMessage(
         channel=channel,
         thread_ts=thread_ts,
-        text=final_msg
+        text=final_msg,
+        mrkdwn=True
     )
 
     print(f"\n🎉 Batch execution complete!")
@@ -213,29 +218,36 @@ async def _execute_single_post(
     publish_date: Optional[str] = None
 ) -> str:
     """
-    Execute one post using EXISTING SDK agent workflows
-    Passes learnings via context parameter (SDK agents already accept this)
+    Execute one post using direct API agent workflows
+    Eliminates SDK hanging issues (#288, #294)
 
     Args:
         platform: linkedin, twitter, email, youtube, instagram
         topic: Post topic
         context: Additional context
         style: Content style
-        learnings: Compacted learnings from previous posts
+        learnings: Compacted learnings from previous posts (deprecated)
         target_score: Target quality score
         channel_id: Slack channel ID (for Airtable/Supabase)
         thread_ts: Slack thread timestamp (for Airtable/Supabase)
         user_id: Slack user ID (for Airtable/Supabase)
 
     Returns:
-        Result string from SDK agent (contains post, score, Airtable URL)
+        Result string from direct API agent (contains post, score, Airtable URL)
     """
     # Context already contains strategic outline + optional strategy memory
     # NO learning injection - deprecated parameter ignored
 
-    # Call appropriate SDK agent workflow with Slack metadata
+    # Normalize platform aliases
+    platform_lower = platform.lower()
+    if platform_lower in ['x', 'x/twitter']:
+        platform = 'twitter'
+    else:
+        platform = platform_lower
+
+    # Call appropriate direct API agent workflow with Slack metadata
     if platform == "linkedin":
-        from agents.linkedin_sdk_agent import create_linkedin_post_workflow
+        from agents.linkedin_direct_api_agent import create_linkedin_post_workflow
         result = await create_linkedin_post_workflow(
             topic=topic,
             context=context,  # Strategic outline + optional strategy memory
@@ -252,23 +264,32 @@ async def _execute_single_post(
         content_length = "auto"
         context_lower = context.lower() if context else ""
         topic_lower = topic.lower() if topic else ""
-        
-        # Detect thread keywords (expanded list)
-        thread_keywords = ["thread", "thread of", "twitter thread", "long thread", "short thread", "a thread", "an x thread"]
+
+        # Detect thread keywords (expanded list, includes X/Twitter aliases)
+        thread_keywords = ["thread", "thread of", "twitter thread", "x thread", "long thread", "short thread", "a thread", "an x thread", "an twitter thread"]
         is_thread = any(keyword in context_lower or keyword in topic_lower for keyword in thread_keywords)
-        
-        # Detect single post keywords (expanded list)
-        single_post_keywords = ["single post", "one tweet", "twitter post", "single tweet", "a tweet", "an x post", "an x tweet", "one x post", "a twitter post"]
+
+        # Detect single post keywords (expanded list, includes X/Twitter aliases)
+        single_post_keywords = ["single post", "one tweet", "twitter post", "x post", "single tweet", "a tweet", "an x post", "an x tweet", "one x post", "a twitter post", "standalone post", "one post"]
         is_single_post = any(keyword in context_lower or keyword in topic_lower for keyword in single_post_keywords)
-        
+
         # Check for explicit content_length in context
         if "content_length" in context_lower:
             if "single_post" in context_lower:
                 content_length = "single_post"
             elif "short_thread" in context_lower or "long_thread" in context_lower:
                 content_length = "thread"
-        
-        # Routing decision: Default to Haiku fast path for speed unless thread is explicitly requested
+
+        # IMPROVED ROUTING LOGIC: Use context length and complexity heuristics
+        # Context > 500 chars suggests detailed outline → likely needs thread/complex handling → use Direct API
+        context_length = len(context) if context else 0
+        topic_length = len(topic) if topic else 0
+
+        # Detect narrative/outline indicators (bullet points, numbered lists, multiple paragraphs)
+        has_outline = any(indicator in context for indicator in ['\n-', '\n*', '\n1.', '\n2.', '\n•']) if context else False
+        has_multiple_paragraphs = context.count('\n\n') >= 2 if context else False
+
+        # Routing decision with smarter defaults
         use_haiku = False
         if is_thread:
             use_haiku = False  # Use SDK agent for threads
@@ -278,8 +299,12 @@ async def _execute_single_post(
             use_haiku = True
         elif content_length in ["short_thread", "long_thread"]:
             use_haiku = False
+        elif context_length > 500 or has_outline or has_multiple_paragraphs:
+            # Complex context suggests need for Direct API agent (better research, validation)
+            use_haiku = False
         else:
-            # Default: Use Haiku fast path for speed (single post assumed)
+            # Default: Use Haiku fast path for single posts (speed)
+            # Only use Direct API agent if explicitly a thread or has complex context
             use_haiku = True
         
         if use_haiku:
@@ -295,9 +320,9 @@ async def _execute_single_post(
                 publish_date=publish_date
             )
         else:
-            # Use SDK agent for threads
-            from agents.twitter_sdk_agent import create_twitter_thread_workflow
-            result = await create_twitter_thread_workflow(
+            # Use direct API agent for threads
+            from agents.twitter_direct_api_agent import create_twitter_post_workflow
+            result = await create_twitter_post_workflow(
                 topic=topic,
                 context=context,  # Strategic outline + optional strategy memory
                 style=style or 'tactical',
@@ -308,7 +333,7 @@ async def _execute_single_post(
             )
 
     elif platform == "email":
-        from agents.email_sdk_agent import create_email_workflow
+        from agents.email_direct_api_agent import create_email_workflow
         result = await create_email_workflow(
             topic=topic,
             context=context,  # Strategic outline + optional strategy memory
@@ -320,7 +345,7 @@ async def _execute_single_post(
         )
 
     elif platform == "youtube":
-        from agents.youtube_sdk_agent import create_youtube_workflow
+        from agents.youtube_direct_api_agent import create_youtube_workflow
         result = await create_youtube_workflow(
             topic=topic,
             context=context,  # Strategic outline + optional strategy memory
@@ -332,10 +357,10 @@ async def _execute_single_post(
         )
 
     elif platform == "instagram":
-        from agents.instagram_sdk_agent import create_instagram_post_workflow
-        result = await create_instagram_post_workflow(
+        from agents.instagram_direct_api_agent import create_instagram_workflow
+        result = await create_instagram_workflow(
             topic=topic,
-            context=enhanced_context,
+            context=context,  # Strategic outline + optional strategy memory
             style=style or 'inspirational',
             channel_id=channel_id,
             thread_ts=thread_ts,
@@ -413,13 +438,22 @@ def extract_airtable_url_from_result(result) -> str:
         return result.get('airtable_url')
 
     # Handle string result - try to find Airtable URL
-    url_match = re.search(r'https://airtable\.com/[^\s\)]+', str(result))
+    # Pattern 1: Direct URL (https://airtable.com/...)
+    url_match = re.search(r'https://airtable\.com/[^\s\)\]\*]+', str(result))
 
     if url_match:
-        return url_match.group(0)
+        url = url_match.group(0).rstrip('*')  # Remove trailing asterisks from markdown
+        return url
+
+    # Pattern 2: "Airtable Record:" format (handles markdown like 📊 **Airtable Record:**)
+    airtable_prefix_match = re.search(r'Airtable\s*(?:Record)?:?\*?\*?\s*(https://airtable\.com/[^\s\)\]\*]+)', str(result))
+
+    if airtable_prefix_match:
+        return airtable_prefix_match.group(1).rstrip('*')
 
     # Fallback: Return placeholder
     print(f"⚠️ Could not extract Airtable URL from result")
+    print(f"   Result preview: {str(result)[:300]}")
     return "https://airtable.com/[record_not_found]"
 
 
@@ -623,19 +657,20 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
     print(f"   Strategic context: {len(strategic_context)} chars", flush=True)
     print(f"   Slack context: channel={channel_id}, thread={thread_ts}, user={user_id}", flush=True)
 
-    # Send batch start notification for first post only
-    if post_index == 0 and slack_client and channel_id and thread_ts:
+    # Send batch start notification for first post only (skip for single posts)
+    if post_index == 0 and total_posts > 1 and slack_client and channel_id and thread_ts:
         try:
             batch_start_message = (
-                f"🚀 **Starting batch execution**\n"
+                f"🚀 *Starting batch execution*\n"
                 f"📋 Plan: `{plan_id}`\n"
-                f"📝 {total_posts} post{'s' if total_posts > 1 else ''} queued\n"
+                f"📝 {total_posts} posts queued\n"
                 f"⏳ Creating posts sequentially..."
             )
             slack_client.chat_postMessage(
                 channel=channel_id,
                 thread_ts=thread_ts,
-                text=batch_start_message
+                text=batch_start_message,
+                mrkdwn=True
             )
             print(f"   ✅ Sent batch start notification to Slack", flush=True)
         except Exception as e:
@@ -652,7 +687,8 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
                 slack_client.chat_postMessage(
                     channel=channel_id,
                     thread_ts=thread_ts,
-                    text=message  # NO user tag - silent progress update
+                    text=message,  # NO user tag - silent progress update
+                    mrkdwn=True
                 )
             except Exception as e:
                 # Log but don't crash batch if Slack update fails
@@ -674,7 +710,7 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
                 thread_ts=thread_ts,
                 user_id=user_id
             ),
-            timeout=300  # 5 minutes max per post (normal: 2-4 min, complex: 4-5 min)
+            timeout=360  # 6 minutes max per post (allows for validation-heavy posts with GPTZero)
         )
 
         # CRITICAL: Force cleanup to prevent connection exhaustion
@@ -727,7 +763,7 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
         if total_posts > 1:
             completion_message = (
                 f"✅ Post {post_num}/{total_posts} complete! "
-                f"Score: **{score}/25**"
+                f"Score: *{score}/25*"
             )
             if airtable_url:
                 completion_message += f" | <{airtable_url}|View>"
@@ -743,14 +779,14 @@ async def execute_single_post_from_plan(plan_id: str, post_index: int) -> Dict[s
         }
 
     except asyncio.TimeoutError:
-        # Hard timeout hit - post took >5 minutes (likely connection hang)
-        print(f"   ⏱️ TIMEOUT: Post {post_num} exceeded 5-minute limit")
-        print(f"   This usually means SDK connection hung - check Replit connection limits")
+        # Hard timeout hit - post took >6 minutes (likely connection hang or validation loop)
+        print(f"   ⏱️ TIMEOUT: Post {post_num} exceeded 6-minute limit")
+        print(f"   This usually means validation took too long (GPTZero + multiple iterations)")
 
         # Send timeout progress update (non-blocking, no user tag) - only for batches > 1
         if total_posts > 1:
             timeout_message = (
-                f"⚠️ Post {post_num}/{total_posts} timed out. Continuing..."
+                f"⚠️ Post {post_num}/{total_posts} timed out (6 min limit). Continuing..."
             )
             _send_progress_update(timeout_message)
 

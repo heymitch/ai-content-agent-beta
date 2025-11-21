@@ -25,6 +25,8 @@ class ReactionHandler:
         # Map emoji to handler functions
         self.handlers: Dict[str, Callable] = {
             'calendar': self.handle_schedule,        # 📅
+            'date': self.handle_schedule,            # 📆 (alias for calendar)
+            'spiral_calendar_pad': self.handle_schedule,  # 🗓️ (alias for calendar)
             'pencil2': self.handle_revise,           # ✏️
             'arrows_counterclockwise': self.handle_regenerate,  # 🔄
             'white_check_mark': self.handle_approve, # ✅
@@ -37,7 +39,8 @@ class ReactionHandler:
         reaction_emoji: str,
         thread_ts: str,
         user_id: str,
-        channel_id: str
+        channel_id: str,
+        message_content: str = None
     ) -> Dict[str, Any]:
         """
         Route reaction to appropriate handler
@@ -47,38 +50,49 @@ class ReactionHandler:
             thread_ts: Thread timestamp
             user_id: User who reacted
             channel_id: Channel ID
+            message_content: Optional message content (fallback if thread not in DB)
 
         Returns:
             Result dict with action taken and response message
         """
         # Get thread context
+        print(f"🔍 Looking up thread: {thread_ts}")
         thread = self.memory.get_thread(thread_ts)
         if not thread:
-            return {
-                'success': False,
-                'message': 'Thread not found. This content may be too old.'
-            }
+            print(f"⚠️ Thread not found in slack_threads table: {thread_ts}")
+            # If we have message content, create a synthetic thread object
+            if message_content:
+                print(f"📝 Using message content as fallback ({len(message_content)} chars)")
+                thread = {
+                    'thread_ts': thread_ts,
+                    'channel_id': channel_id,
+                    'user_id': user_id,
+                    'latest_draft': message_content,
+                    'latest_score': 80,  # Default score for external content
+                    'platform': 'linkedin',  # Default platform, could be detected
+                    'status': 'external',
+                    'metadata': {}
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f'Thread not found. This content may be too old or wasn\'t created by the agent.\n\nThread TS: {thread_ts}'
+                }
 
         # Find handler for this emoji
         handler = self.handlers.get(reaction_emoji)
         if not handler:
+            # Silently ignore unknown reactions (like zap, eyes, etc.)
+            print(f"ℹ️ Ignoring unhandled reaction: {reaction_emoji}")
             return {
-                'success': False,
-                'message': f'Unknown reaction: {reaction_emoji}'
+                'success': True,  # Not a failure, just not handled
+                'action': 'ignored',
+                'message': None  # No message to send
             }
 
         # Execute handler
         try:
             result = await handler(thread, user_id, channel_id)
-
-            # Log reaction
-            self.memory.log_reaction(
-                thread_ts=thread_ts,
-                reaction_emoji=reaction_emoji,
-                user_id=user_id,
-                action_taken=result.get('action', 'unknown')
-            )
-
             return result
         except Exception as e:
             print(f"❌ Reaction handler error: {e}")
@@ -94,7 +108,7 @@ class ReactionHandler:
         channel_id: str
     ) -> Dict[str, Any]:
         """
-        Schedule content to Airtable calendar
+        Save content to Airtable calendar as Draft
 
         Args:
             thread: Thread record
@@ -113,35 +127,38 @@ class ReactionHandler:
             return {
                 'success': False,
                 'action': 'schedule_rejected',
-                'message': f'⚠️ Quality score too low ({score}/100). Minimum 70 required for scheduling.\n\nReact with ✏️ to revise first.'
+                'message': f'⚠️ Quality score too low ({score}/100). Minimum 70 required to save as Draft.\n\nReact with ✏️ to revise first.'
             }
 
         try:
-            # Send to Airtable
-            record = self.airtable.create_record({
-                'Content': draft,
-                'Platform': platform.capitalize(),
-                'Quality Score': score,
-                'Status': 'Scheduled',
-                'Source': 'Slack Bot',
-                'User ID': user_id,
-                'Created At': thread.get('created_at', '')
-            })
+            # Send to Airtable as Draft
+            record = self.airtable.create_content_record(
+                content=draft,
+                platform=platform.capitalize(),
+                quality_score=score,
+                status='Draft',
+                metadata={
+                    'source': 'Slack Bot',
+                    'user_id': user_id,
+                    'thread_ts': thread.get('thread_ts', ''),
+                    'created_at': thread.get('created_at', '')
+                }
+            )
 
             # Update thread status
-            self.memory.update_status(thread['thread_ts'], 'scheduled')
+            self.memory.update_status(thread['thread_ts'], 'draft_saved')
 
             return {
                 'success': True,
-                'action': 'scheduled',
-                'message': f'✅ Scheduled to {platform.capitalize()} calendar!\n\n📅 Record ID: {record["id"]}\n📊 Quality Score: {score}/100'
+                'action': 'draft_saved',
+                'message': f'✅ Saved to {platform.capitalize()} calendar as Draft!\n\n📅 Record ID: {record["id"]}\n📊 Quality Score: {score}/100'
             }
         except Exception as e:
-            print(f"❌ Airtable scheduling error: {e}")
+            print(f"❌ Airtable save error: {e}")
             return {
                 'success': False,
-                'action': 'schedule_failed',
-                'message': f'❌ Failed to schedule: {str(e)}\n\nTry again or contact support.'
+                'action': 'save_failed',
+                'message': f'❌ Failed to save draft: {str(e)}\n\nTry again or contact support.'
             }
 
     async def handle_revise(

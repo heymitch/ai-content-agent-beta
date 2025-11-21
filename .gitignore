@@ -34,8 +34,18 @@ env-sample.txt
 clients/*/.env
 clients/*/.env.*
 
-# Client-specific system prompt customization
+# Client-specific customizations (don't commit client overrides)
 .claude/CLAUDE.md
+
+# Client custom prompt overrides (Claude Projects-style)
+.claude/prompts/*.md
+.claude/prompts/linkedin/*.md
+.claude/prompts/twitter/*.md
+.claude/prompts/email/*.md
+.claude/prompts/youtube/*.md
+.claude/prompts/instagram/*.md
+# BUT keep the README (instructions for clients)
+!.claude/prompts/README.md
 
 # IDE
 .vscode/
@@ -89,14 +99,16 @@ REPLIT_BOT_FILTER_FIX.md
 REPLIT_CRASH_FIXES.md
 ANALYTICS_PLAN.md
 ANALYTICS_TESTING.md
+REPLIT_CRASH_FIXES.md
+REPLIT_BOT_FILTER_FIX.md
+
+# Business strategy documents (confidential)
+ENTERPRISE_DEPLOYMENT_STRATEGY.md
 
 # Test files in root (keep tests/ folder)
 /test_*.py
 /*_test.py
 run_tests.sh
-test_multi_platform_*.py
-test_multi_platform_mock.py
-test_multi_platform_quality.py
 
 # Temporary and backup files
 *.backup

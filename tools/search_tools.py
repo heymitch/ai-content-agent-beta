@@ -2,11 +2,14 @@
 Search and research tools
 """
 import json
+import logging
 from typing import Dict, List
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 def web_search(query: str, max_results: int = 5) -> str:
@@ -56,6 +59,102 @@ def web_search(query: str, max_results: int = 5) -> str:
         })
 
 
+def perplexity_search(query: str, search_focus: str = "internet") -> str:
+    """
+    Enhanced research using Perplexity API with citations
+
+    Best for: Deep research questions, fact-checking, finding recent data with sources
+
+    Args:
+        query: Research query (be specific for best results)
+        search_focus: Focus area - "internet" (default), "news", "academic", "writing", "wolfram", "youtube", "reddit"
+
+    Returns:
+        JSON string with researched answer and citations
+    """
+    try:
+        from openai import OpenAI
+
+        # Initialize Perplexity client (OpenAI-compatible API)
+        perplexity = OpenAI(
+            api_key=os.getenv('PERPLEXITY_API_KEY'),
+            base_url="https://api.perplexity.ai"
+        )
+
+        # Map search focus to model
+        # sonar-pro: Most capable, best for complex queries
+        # sonar: Balanced performance and cost
+        model = "sonar-pro" if search_focus in ["academic", "research", "wolfram"] else "sonar"
+
+        # Make request with search domain routing
+        messages = [
+            {
+                "role": "system",
+                "content": f"You are a research assistant. Focus on {search_focus} sources. Provide detailed, well-cited answers with specific data points and dates."
+            },
+            {
+                "role": "user",
+                "content": query
+            }
+        ]
+
+        # Check for API key before making request
+        api_key = os.getenv('PERPLEXITY_API_KEY')
+        if not api_key:
+            logger.error("PERPLEXITY_API_KEY not found in environment")
+            return json.dumps({
+                'error': 'PERPLEXITY_API_KEY not configured',
+                'query': query,
+                'note': 'Add PERPLEXITY_API_KEY to your environment variables'
+            })
+
+        response = perplexity.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=1000,
+            temperature=0.2  # Lower temp for factual accuracy
+            # Note: citations are returned automatically in response
+        )
+
+        # Extract answer and citations (citations come automatically)
+        answer = response.choices[0].message.content
+        citations = getattr(response, 'citations', [])
+        search_results = getattr(response, 'search_results', [])
+
+        # Debug: Log what we're getting back
+        success_msg = f"✅ Perplexity search success: query='{query[:50]}...', model={model}, citations={len(citations)}"
+        logger.info(success_msg)
+        print(success_msg, flush=True)
+
+        # Log citation details for debugging
+        if citations:
+            print(f"   Citations type: {type(citations)}", flush=True)
+            print(f"   First citation: {citations[0] if citations else 'None'}", flush=True)
+        if search_results:
+            print(f"   Search results: {len(search_results)} items", flush=True)
+
+        return json.dumps({
+            'success': True,
+            'query': query,
+            'answer': answer,
+            'citations': citations,
+            'search_results': search_results,
+            'model': model,
+            'search_focus': search_focus
+        }, indent=2)
+
+    except Exception as e:
+        error_msg = f"❌ Perplexity API error: {type(e).__name__}: {e}"
+        logger.error(error_msg)
+        print(error_msg, flush=True)  # Ensure visible in Replit logs
+        return json.dumps({
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'query': query,
+            'note': 'Check PERPLEXITY_API_KEY and API status'
+        })
+
+
 def search_knowledge_base(query: str, match_count: int = 5, document_type: str = None) -> str:
     """
     Search company documents using RAG (vector similarity)
@@ -94,7 +193,7 @@ def search_knowledge_base(query: str, match_count: int = 5, document_type: str =
             {
                 'query_embedding': query_embedding,
                 'filter_type': document_type,
-                'match_threshold': 0.7,
+                'match_threshold': 0.3,
                 'match_count': match_count
             }
         ).execute()
@@ -228,7 +327,7 @@ def search_content_examples(query: str, platform: str = None, match_count: int =
             {
                 'query_embedding': query_embedding,
                 'filter_platform': platform,
-                'match_threshold': 0.7,
+                'match_threshold': 0.3,
                 'match_count': match_count
             }
         ).execute()
@@ -300,7 +399,7 @@ def search_research(query: str, min_credibility: int = 5, match_count: int = 5) 
             'match_research',
             {
                 'query_embedding': query_embedding,
-                'match_threshold': 0.7,
+                'match_threshold': 0.3,
                 'match_count': match_count,
                 'min_credibility': min_credibility
             }

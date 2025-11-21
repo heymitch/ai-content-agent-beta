@@ -361,7 +361,7 @@ Applications close this Friday at midnight.
 
 If you're serious about this, apply here: `{{app_cta}}`
 
-Cole
+{{author_first_name}}
 ```
 
 **Grading**:

@@ -385,6 +385,301 @@ def analyze_content_performance(
         return f"Error analyzing performance: {str(e)}"
 
 
+def search_airtable_posts(
+    platform: str = None,
+    status: str = None,
+    days_back: int = 30,
+    keyword: str = None,
+    max_results: int = 10
+) -> str:
+    """
+    Search the Airtable content calendar for previous posts.
+
+    Use this to find posts to improve, reference, or analyze.
+    Searches published/scheduled content in the content calendar.
+
+    Args:
+        platform: Filter by platform (linkedin, twitter, email, youtube, instagram)
+        status: Filter by status (Draft, Scheduled, Published, Archived)
+        days_back: How far back to search (default 30 days)
+        keyword: Text to search in post hook/body
+        max_results: Maximum number of results
+
+    Returns:
+        Formatted list of matching posts with record IDs for retrieval
+    """
+    from integrations.airtable_client import get_airtable_client
+
+    try:
+        airtable = get_airtable_client()
+        if not airtable:
+            return "Airtable not configured. Set AIRTABLE_ACCESS_TOKEN, AIRTABLE_BASE_ID, and AIRTABLE_TABLE_NAME."
+
+        result = airtable.search_posts(
+            platform=platform,
+            status=status,
+            days_back=days_back,
+            keyword=keyword,
+            max_results=max_results
+        )
+
+        if not result.get('success'):
+            return f"Search failed: {result.get('error', 'Unknown error')}"
+
+        posts = result.get('results', [])
+
+        if not posts:
+            filters = []
+            if platform:
+                filters.append(f"platform={platform}")
+            if status:
+                filters.append(f"status={status}")
+            if keyword:
+                filters.append(f"keyword='{keyword}'")
+            if days_back:
+                filters.append(f"last {days_back} days")
+            filter_str = ", ".join(filters) if filters else "no filters"
+            return f"No posts found matching: {filter_str}"
+
+        # Format results for display
+        output = [f"Found {len(posts)} post(s):\n"]
+
+        for i, post in enumerate(posts, 1):
+            platforms = post.get('platform', [])
+            platform_str = ', '.join(platforms) if isinstance(platforms, list) else platforms
+
+            output.append(f"{i}. **{post.get('hook', 'No hook')[:100]}**")
+            output.append(f"   Platform: {platform_str} | Status: {post.get('status', 'Unknown')}")
+            if post.get('publish_date'):
+                output.append(f"   Publish Date: {post.get('publish_date')}")
+            if post.get('score'):
+                output.append(f"   Score: {post.get('score')}/100")
+            output.append(f"   Record ID: `{post.get('record_id')}`")
+            output.append(f"   [View in Airtable]({post.get('url')})")
+            output.append("")
+
+        output.append("\nTo get full content for editing, use get_airtable_post_content with the record_id.")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error searching Airtable: {str(e)}"
+
+
+def get_airtable_post_content(record_id: str) -> str:
+    """
+    Retrieve full post content from Airtable by record ID.
+
+    Use after search_airtable_posts to get complete post text for editing/improving.
+
+    Args:
+        record_id: Airtable record ID (e.g., 'rec123abc')
+
+    Returns:
+        Full post content with metadata
+    """
+    from integrations.airtable_client import get_airtable_client
+
+    try:
+        airtable = get_airtable_client()
+        if not airtable:
+            return "Airtable not configured."
+
+        result = airtable.get_content_record(record_id)
+
+        if not result.get('success'):
+            return f"Failed to retrieve record: {result.get('error', 'Unknown error')}"
+
+        record = result.get('record', {})
+        fields = record.get('fields', {})
+
+        # Format output
+        output = [
+            f"**Post Content (Record: {record_id})**\n",
+            f"**Platform:** {', '.join(fields.get('Platform', []))}",
+            f"**Status:** {fields.get('Status', 'Unknown')}",
+            f"**Publish Date:** {fields.get('Publish Date', 'Not set')}",
+            f"**Score:** {fields.get('% Score', 'N/A')}/100\n",
+            f"**Hook:**\n{fields.get('Post Hook', 'No hook')}\n",
+            f"**Body Content:**\n{fields.get('Body Content', 'No content')}\n"
+        ]
+
+        if fields.get('Suggested Edits'):
+            output.append(f"**Suggested Edits:**\n{fields.get('Suggested Edits')}\n")
+
+        output.append(f"\n[Edit in Airtable](https://airtable.com/{airtable.base_id}/{airtable.table_name}/{record_id})")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error retrieving post: {str(e)}"
+
+
+def validate_content(text: str, platform: str = "linkedin") -> str:
+    """
+    Run quality check on content. Returns score (0-25), issues, and feedback.
+
+    Use this to:
+    - Validate pasted content
+    - Check drafts in co-write mode
+    - Score posts retrieved from Airtable
+
+    Args:
+        text: Content to validate
+        platform: Target platform for scoring criteria (linkedin, twitter, email, youtube, instagram)
+
+    Returns:
+        JSON with total_score, issues array, recommendations
+    """
+    import asyncio
+    import json
+
+    try:
+        # Import the appropriate native tool based on platform
+        if platform.lower() == 'linkedin':
+            from tools.linkedin_native_tools import quality_check_native
+        elif platform.lower() == 'twitter':
+            from tools.twitter_native_tools import quality_check_native
+        elif platform.lower() == 'email':
+            from tools.email_native_tools import quality_check_native
+        elif platform.lower() == 'youtube':
+            from tools.youtube_native_tools import quality_check_native
+        elif platform.lower() == 'instagram':
+            from tools.instagram_native_tools import quality_check_native
+        else:
+            from tools.linkedin_native_tools import quality_check_native  # Default
+
+        # Run async function
+        result = asyncio.run(quality_check_native(text))
+
+        return f"**Quality Check Results ({platform.capitalize()})**\n\n{result}"
+
+    except Exception as e:
+        return f"Error validating content: {str(e)}"
+
+
+def detect_ai_patterns(text: str) -> str:
+    """
+    Run GPTZero AI detection on content.
+
+    Returns AI probability percentage and flagged sentences.
+    Use this to check if content sounds robotic or AI-generated.
+
+    Args:
+        text: Content to analyze
+
+    Returns:
+        AI detection results with flagged sentences
+    """
+    import os
+    import requests
+
+    try:
+        gptzero_key = os.getenv('GPTZERO_API_KEY')
+        if not gptzero_key:
+            return "GPTZero API key not configured. Set GPTZERO_API_KEY in environment."
+
+        # Call GPTZero API
+        response = requests.post(
+            'https://api.gptzero.me/v2/predict/text',
+            headers={
+                'x-api-key': gptzero_key,
+                'Content-Type': 'application/json'
+            },
+            json={'document': text},
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return f"GPTZero API error: {response.status_code} - {response.text}"
+
+        result = response.json()
+
+        # Extract key metrics
+        ai_prob = result.get('documents', [{}])[0].get('completely_generated_prob', 0) * 100
+        sentences = result.get('documents', [{}])[0].get('sentences', [])
+
+        # Find flagged sentences (high AI probability)
+        flagged = []
+        for sent in sentences:
+            if sent.get('generated_prob', 0) > 0.8:
+                flagged.append(sent.get('sentence', '')[:100])
+
+        # Format output
+        output = [
+            f"**GPTZero AI Detection Results**\n",
+            f"**AI Probability:** {ai_prob:.1f}%",
+            f"**Verdict:** {'🟢 Human-like' if ai_prob < 50 else '🟡 Mixed signals' if ai_prob < 80 else '🔴 AI-detected'}",
+            f"\n**Flagged Sentences ({len(flagged)}):**"
+        ]
+
+        if flagged:
+            for i, sent in enumerate(flagged[:5], 1):  # Show top 5
+                output.append(f"  {i}. \"{sent}...\"")
+        else:
+            output.append("  None - content appears human-written!")
+
+        output.append(f"\n💡 Tip: Rewrite flagged sentences with specific details, varied rhythm, and personal voice.")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        return f"Error detecting AI patterns: {str(e)}"
+
+
+def apply_content_fixes(text: str, issues: str, platform: str = "linkedin") -> str:
+    """
+    Apply fixes to content based on validation issues.
+
+    Use after validate_content to automatically fix identified issues.
+
+    Args:
+        text: Content to fix
+        issues: JSON array of issues from validate_content (or plain text description)
+        platform: Target platform
+
+    Returns:
+        Revised content with fixes applied
+    """
+    import asyncio
+    import json
+
+    try:
+        # Import the appropriate native tool based on platform
+        if platform.lower() == 'linkedin':
+            from tools.linkedin_native_tools import apply_fixes_native
+        elif platform.lower() == 'twitter':
+            from tools.twitter_native_tools import apply_fixes_native
+        elif platform.lower() == 'email':
+            from tools.email_native_tools import apply_fixes_native
+        elif platform.lower() == 'youtube':
+            from tools.youtube_native_tools import apply_fixes_native
+        elif platform.lower() == 'instagram':
+            from tools.instagram_native_tools import apply_fixes_native
+        else:
+            from tools.linkedin_native_tools import apply_fixes_native  # Default
+
+        # Parse issues if JSON, otherwise use as-is
+        try:
+            issues_list = json.loads(issues) if issues.startswith('[') else issues
+        except:
+            issues_list = issues
+
+        # Run async function with default parameters
+        result = asyncio.run(apply_fixes_native(
+            post=text,
+            issues_json=json.dumps(issues_list) if isinstance(issues_list, list) else issues_list,
+            current_score=15,  # Default mid-score
+            gptzero_ai_pct=None,
+            gptzero_flagged_sentences=None
+        ))
+
+        return f"**Fixed Content ({platform.capitalize()})**\n\n{result}"
+
+    except Exception as e:
+        return f"Error applying fixes: {str(e)}"
+
+
 # Tool definitions for Claude Agent SDK
 CONTENT_TOOLS = [
     {
@@ -438,6 +733,68 @@ CONTENT_TOOLS = [
             },
             "required": ["user_id"]
         }
+    },
+    {
+        "name": "search_airtable_posts",
+        "description": "Search the Airtable content calendar for published/scheduled posts. Use when users ask to 'find my last LinkedIn post', 'show me posts about AI', 'what did I post yesterday', or want to improve existing content.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {"type": "string", "description": "Filter by platform", "enum": ["linkedin", "twitter", "email", "youtube", "instagram"]},
+                "status": {"type": "string", "description": "Filter by status", "enum": ["Draft", "Scheduled", "Published", "Archived"]},
+                "days_back": {"type": "integer", "description": "How far back to search", "default": 30},
+                "keyword": {"type": "string", "description": "Text to search in post content"},
+                "max_results": {"type": "integer", "description": "Maximum results", "default": 10}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_airtable_post_content",
+        "description": "Get full post content from Airtable by record ID. Use after search_airtable_posts to retrieve complete text for editing or improving.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "record_id": {"type": "string", "description": "Airtable record ID from search results"}
+            },
+            "required": ["record_id"]
+        }
+    },
+    {
+        "name": "validate_content",
+        "description": "Run quality check on content. Returns score, issues, and recommendations. Use to validate pasted content, check drafts in co-write mode, or score posts retrieved from Airtable.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Content to validate"},
+                "platform": {"type": "string", "description": "Target platform for scoring criteria", "enum": ["linkedin", "twitter", "email", "youtube", "instagram"], "default": "linkedin"}
+            },
+            "required": ["text"]
+        }
+    },
+    {
+        "name": "detect_ai_patterns",
+        "description": "Run GPTZero AI detection on content. Returns AI probability and flagged sentences. Use to check if content sounds robotic or AI-generated.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Content to analyze for AI patterns"}
+            },
+            "required": ["text"]
+        }
+    },
+    {
+        "name": "apply_content_fixes",
+        "description": "Apply fixes to content based on validation issues. Use after validate_content to automatically fix identified issues and improve the post.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Content to fix"},
+                "issues": {"type": "string", "description": "JSON array of issues from validate_content, or plain text description of problems to fix"},
+                "platform": {"type": "string", "description": "Target platform", "enum": ["linkedin", "twitter", "email", "youtube", "instagram"], "default": "linkedin"}
+            },
+            "required": ["text", "issues"]
+        }
     }
 ]
 
@@ -446,5 +803,10 @@ TOOL_FUNCTIONS = {
     "search_past_posts": search_past_posts,
     "get_content_calendar": get_content_calendar,
     "get_thread_context": get_thread_context,
-    "analyze_content_performance": analyze_content_performance
+    "analyze_content_performance": analyze_content_performance,
+    "search_airtable_posts": search_airtable_posts,
+    "get_airtable_post_content": get_airtable_post_content,
+    "validate_content": validate_content,
+    "detect_ai_patterns": detect_ai_patterns,
+    "apply_content_fixes": apply_content_fixes
 }

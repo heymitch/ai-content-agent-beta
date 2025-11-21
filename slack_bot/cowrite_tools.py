@@ -286,7 +286,7 @@ Return ONLY the caption text with hashtags. No markdown formatting. No metadata.
 )
 async def quality_check_linkedin(args):
     """Quality check tool for LinkedIn posts"""
-    from agents.linkedin_sdk_agent import quality_check as linkedin_quality_check
+    from tools.linkedin_native_tools import quality_check_native as linkedin_quality_check
     return await linkedin_quality_check(args)
 
 
@@ -297,7 +297,7 @@ async def quality_check_linkedin(args):
 )
 async def quality_check_twitter(args):
     """Quality check tool for Twitter threads"""
-    from agents.twitter_sdk_agent import quality_check as twitter_quality_check
+    from tools.twitter_native_tools import quality_check_native as twitter_quality_check
     return await twitter_quality_check(args)
 
 
@@ -308,7 +308,7 @@ async def quality_check_twitter(args):
 )
 async def quality_check_email(args):
     """Quality check tool for email newsletters"""
-    from agents.email_sdk_agent import quality_check as email_quality_check
+    from tools.email_native_tools import quality_check_native as email_quality_check
     return await email_quality_check(args)
 
 
@@ -319,7 +319,7 @@ async def quality_check_email(args):
 )
 async def quality_check_youtube(args):
     """Quality check tool for YouTube scripts"""
-    from agents.youtube_sdk_agent import quality_check as youtube_quality_check
+    from tools.youtube_native_tools import quality_check_native as youtube_quality_check
     return await youtube_quality_check(args)
 
 
@@ -330,7 +330,7 @@ async def quality_check_youtube(args):
 )
 async def quality_check_instagram(args):
     """Quality check tool for Instagram captions"""
-    from agents.instagram_sdk_agent import quality_check as instagram_quality_check
+    from tools.instagram_native_tools import quality_check_native as instagram_quality_check
     return await instagram_quality_check(args)
 
 
@@ -344,7 +344,7 @@ async def quality_check_instagram(args):
 async def apply_fixes_linkedin(args):
     """Apply fixes tool for LinkedIn posts"""
     print(f"🔧 apply_fixes_linkedin CALLED with args: {list(args.keys())}")
-    from agents.linkedin_sdk_agent import apply_fixes as linkedin_apply_fixes
+    from tools.linkedin_native_tools import apply_fixes_native as linkedin_apply_fixes
     result = await linkedin_apply_fixes(args)
     print(f"✅ apply_fixes_linkedin COMPLETED")
     return result
@@ -357,7 +357,7 @@ async def apply_fixes_linkedin(args):
 )
 async def apply_fixes_twitter(args):
     """Apply fixes tool for Twitter threads"""
-    from agents.twitter_sdk_agent import apply_fixes as twitter_apply_fixes
+    from tools.twitter_native_tools import apply_fixes_native as twitter_apply_fixes
     return await twitter_apply_fixes(args)
 
 
@@ -368,7 +368,7 @@ async def apply_fixes_twitter(args):
 )
 async def apply_fixes_email(args):
     """Apply fixes tool for email newsletters"""
-    from agents.email_sdk_agent import apply_fixes as email_apply_fixes
+    from tools.email_native_tools import apply_fixes_native as email_apply_fixes
     return await email_apply_fixes(args)
 
 
@@ -379,7 +379,7 @@ async def apply_fixes_email(args):
 )
 async def apply_fixes_youtube(args):
     """Apply fixes tool for YouTube scripts"""
-    from agents.youtube_sdk_agent import apply_fixes as youtube_apply_fixes
+    from tools.youtube_native_tools import apply_fixes_native as youtube_apply_fixes
     return await youtube_apply_fixes(args)
 
 
@@ -390,7 +390,7 @@ async def apply_fixes_youtube(args):
 )
 async def apply_fixes_instagram(args):
     """Apply fixes tool for Instagram captions"""
-    from agents.instagram_sdk_agent import apply_fixes as instagram_apply_fixes
+    from tools.instagram_native_tools import apply_fixes_native as instagram_apply_fixes
     return await instagram_apply_fixes(args)
 
 

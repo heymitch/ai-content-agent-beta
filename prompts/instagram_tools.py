@@ -13,72 +13,20 @@ Instagram-specific adaptations:
 
 from textwrap import dedent
 
-# ==================== LOAD EDITOR-IN-CHIEF STANDARDS ====================
-# Load comprehensive Editor-in-Chief standards for quality_check
-from pathlib import Path
-EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
-try:
-    with open(EDITOR_FILE_PATH, "r", encoding="utf-8") as f:
-        EDITOR_IN_CHIEF_RULES = f.read()
-except FileNotFoundError:
-    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
-    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
+# ==================== LOAD WRITING RULES AND EDITOR STANDARDS ====================
+# NEW: Load from external .md files with client override support
+# Clients can customize these by creating .claude/prompts/writing_rules.md or editor_standards.md
+# Fallback to versioned defaults in prompts/styles/default_writing_rules.md
+from integrations.prompt_loader import load_editor_standards, load_writing_rules, load_prompt
 
-# ==================== GLOBAL WRITING RULES (REUSED FROM LINKEDIN) ====================
-# Import the same WRITE_LIKE_HUMAN_RULES to maintain consistency across platforms
-from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+EDITOR_IN_CHIEF_RULES = load_editor_standards()
+WRITE_LIKE_HUMAN_RULES = load_writing_rules()
 
 # ==================== GENERATE 5 HOOKS (INSTAGRAM-OPTIMIZED) ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/instagram/generate_hooks.md
 
-GENERATE_HOOKS_PROMPT = dedent("""Generate EXACTLY 5 Instagram hooks for this topic, one for each type:
-
-Topic: {topic}
-Context: {context}
-Target Audience: {audience}
-
-CRITICAL INSTAGRAM CONSTRAINT: First 125 characters appear above "...more" button.
-The hook MUST work standalone within this preview.
-
-HOOK TYPES (one of each):
-
-1. QUESTION HOOK (under 125 chars)
-   - Specific question that makes them tap "...more"
-   - Include number or specific detail
-   Example: "What if I told you 12 hours/week disappear doing tasks that take 12 minutes?" (82 chars)
-
-2. BOLD STATEMENT HOOK (under 125 chars)
-   - Contrarian or surprising claim
-   - No setup needed, direct impact
-   Example: "Nobody talks about this productivity hack." (49 chars)
-
-3. STAT HOOK (under 125 chars)
-   - Lead with specific number
-   - Create curiosity gap
-   Example: "95% of founders don't know this about fundraising" (56 chars)
-
-4. STORY HOOK (under 125 chars)
-   - Personal experience with specific detail
-   - Tease the lesson
-   Example: "I spent $50K learning this the hard way:" (48 chars)
-
-5. MISTAKE HOOK (under 125 chars)
-   - Common error + why it matters
-   - Create urgency
-   Example: "Stop optimizing your funnel. Here's why:" (48 chars)
-
-RULES:
-✗ NO contrast framing ("It's not X, it's Y")
-✗ NO generic statements ("This is important")
-✗ NO cringe questions ("The truth?" / "Sound familiar?")
-✗ NO buzzwords (game-changer, revolutionary, unlock)
-
-Return JSON array: {json_example}
-
-For Instagram, prioritize hooks that:
-- Create visual curiosity (references image without describing it)
-- Use emojis strategically (1 emoji max in hook)
-- Work in 125-char preview window
-""")
+GENERATE_HOOKS_PROMPT = load_prompt("generate_hooks", platform="instagram")
 
 # ==================== CREATE CAPTION DRAFT ====================
 
@@ -153,323 +101,33 @@ Use line breaks for readability.
 """)
 
 # ==================== CONDENSE TO LIMIT ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/instagram/condense_to_limit.md
 
-CONDENSE_TO_LIMIT_PROMPT = dedent("""You are condensing an Instagram caption to fit the 2,200 character limit.
-
-CURRENT CAPTION ({current_length} chars):
-{caption}
-
-TARGET: {target_length} characters (2,200 max, leaving buffer)
-
-CONDENSING STRATEGY (Nicolas Cole's "Caption Condenser"):
-1. KEEP:
-   - Hook (first 125 chars)
-   - Key numbers/proof points
-   - Call-to-action
-   - Hashtags
-
-2. REMOVE:
-   - Redundant phrasing
-   - Extra examples (keep best 1-2)
-   - Transition words
-   - Setup that hook already covered
-
-3. TIGHTEN:
-   - "in order to" → "to"
-   - "the reason why" → "why"
-   - "in the event that" → "if"
-   - Multiple clauses → Short sentences
-
-RULES:
-✓ Preserve voice and emotional impact
-✓ Keep specific numbers and names
-✓ Maintain line breaks for readability
-✗ Don't change hook (first 125 chars)
-✗ Don't remove CTA or hashtags
-
-Return the condensed caption only (no explanations).
-Target: {target_length} characters or less.
-""")
+CONDENSE_TO_LIMIT_PROMPT = load_prompt("condense_to_limit", platform="instagram")
 
 # ==================== QUALITY CHECK ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/instagram/quality_check.md
 
-QUALITY_CHECK_PROMPT = """You are evaluating an Instagram caption using Editor-in-Chief standards.
-
-═══════════════════════════════════════════════════════════════
-EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
-═══════════════════════════════════════════════════════════════
-
-""" + EDITOR_IN_CHIEF_RULES + """
-
-═══════════════════════════════════════════════════════════════
-END OF EDITOR-IN-CHIEF STANDARDS
-═══════════════════════════════════════════════════════════════
-
-YOUR TASK:
-1. Read the caption below
-2. Scan sentence-by-sentence for EVERY violation listed in Editor-in-Chief standards above
-3. Create ONE surgical issue per violation found
-4. Use EXACT replacement strategies from the standards (don't make up your own)
-
-CAPTION TO EVALUATE:
-{post}
-
-WORKFLOW:
-
-STEP 1: SCAN FOR VIOLATIONS
-Go through the caption sentence-by-sentence and find Editor-in-Chief violations:
-- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y")
-- Masked contrast patterns ("Instead of X", "but rather")
-- Section summaries ("In summary", "In conclusion")
-- Promotional puffery ("stands as", "testament")
-- Overused conjunctions ("moreover", "furthermore")
-- Vague attributions without sources
-- Em-dash overuse
-- Words needing substitution ("leverages", "encompasses", "facilitates")
-- Buzzwords ("game-changer", "unlock", "revolutionary")
-
-STEP 2: CREATE SURGICAL ISSUES
-For EACH violation found, create ONE issue with EXACT text and EXACT fix from Editor-in-Chief examples.
-
-STEP 3: SCORE THE CAPTION - Evaluation criteria (5 axes, 0-5 points each):
-
-1. HOOK STRENGTH (First 125 chars before "...more")
-   5 points: Specific number/question/story + curiosity gap + under 125 chars
-   4 points: Good hook but over 125 chars (gets cut off)
-   3 points: Generic hook ("Check this out")
-   2 points: Weak or boring
-   0 points: No hook or wasted preview
-
-2. VISUAL PAIRING (Assumes image/Reel context)
-   5 points: Adds backstory/data/lesson visual can't show + natural references ("swipe", "above")
-   4 points: Complements visual well
-   3 points: Generic (works without visual)
-   2 points: Describes what's obvious in image
-   0 points: Contradicts or ignores visual context
-
-3. READABILITY (Mobile formatting)
-   5 points: Line breaks every 2-3 sentences + strategic emojis + bullets/numbers + short paragraphs
-   4 points: Good formatting, minor issues
-   3 points: Some line breaks but has walls of text
-   2 points: Minimal formatting
-   0 points: Dense paragraph, no breaks
-
-4. PROOF & SPECIFICITY
-   5 points: Multiple specific numbers/dates/names (verifiable)
-   4 points: 2 specific data points
-   3 points: 1 data point
-   2 points: Vague claims
-   0 points: No proof, all generic
-
-5. CTA + HASHTAGS
-   5 points: Specific engagement trigger ("Comment START for template") + 3-5 strategic hashtags
-   4 points: Good CTA + hashtags
-   3 points: Weak CTA ("thoughts?") OR missing hashtags
-   2 points: Generic CTA ("DM me")
-   0 points: No CTA or hashtag spam (10+)
-
-STEP 4: VERIFY FACTS (use web_search)
-Search for any specific claims (names, companies, stats, news stories).
-Examples: "Rick Beato YouTube AI filters" or "James Chen Clearbit"
-
-If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
-Only use "FABRICATED" if provably false.
-
-STEP 5: CHECK INSTAGRAM-SPECIFIC
-- First 125 chars hook (before "...more")
-- Character count vs 2200 limit
-- Visual pairing context
-
-CRITICAL RULES:
-✅ Create ONE issue per Editor-in-Chief violation
-✅ Quote EXACT text in "original"
-✅ Use EXACT fixes from Editor-in-Chief standards (don't improvise)
-✅ Be comprehensive - find EVERY violation
-✅ Deduct 2 points per major AI tell
-
-Output JSON:
-{{
-  "scores": {{
-    "hook": 4,
-    "visual_pairing": 5,
-    "readability": 4,
-    "proof": 5,
-    "cta_hashtags": 4,
-    "ai_deductions": -4,
-    "total": 18
-  }},
-  "decision": "revise",
-  "searches_performed": ["query 1", "query 2"],
-  "issues": [
-    {{
-      "axis": "ai_tells",
-      "severity": "high",
-      "pattern": "contrast_direct",
-      "original": "[exact quote from caption]",
-      "fix": "[exact fix from Editor-in-Chief examples]",
-      "impact": "[specific improvement]"
-    }}
-  ],
-  "character_count": 1847,
-  "character_limit": 2200,
-  "preview_length": 124,
-  "surgical_summary": "Found [number] violations. Applying all fixes would raise score from [current] to [projected]."
-}}
-
-Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
-"""
+_quality_check_template = load_prompt("quality_check", platform="instagram")
+QUALITY_CHECK_PROMPT = _quality_check_template.replace(
+    "{{EDITOR_IN_CHIEF_RULES}}",
+    EDITOR_IN_CHIEF_RULES
+)
 
 # ==================== APPLY FIXES ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/instagram/apply_fixes.md
 
-APPLY_FIXES_PROMPT = dedent("""You are fixing an Instagram caption based on quality feedback.
-
-**CRITICAL PHILOSOPHY: PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
-
-This caption contains strategic thinking and intentional language choices.
-
-ORIGINAL CAPTION:
-{post}
-
-QUALITY ISSUES (from quality_check):
-{issues_json}
-
-Current Score: {current_score}/25
-GPTZero AI Detection: {gptzero_ai_pct}% AI (Target: <100%)
-Fix Strategy: {fix_strategy}
-
-GPTZero Flagged Sentences (rewrite these like a human):
-{gptzero_flagged_sentences}
-
-{write_like_human_rules}
-
-FIXING STRATEGY:
-
-1. **FIX STRATEGY:**
-
-   **COMPREHENSIVE MODE - Fix ALL issues:**
-   - No limit on number of fixes - address EVERY problem in issues list
-   - Rewrite entire sections if needed to eliminate AI patterns
-   - Rewrite GPTZero flagged sentences to sound more human
-   - Still preserve: specific numbers, names, dates, strategic narrative, hashtags
-   - But eliminate: ALL cringe questions, ALL contrast framing, ALL buzzwords, ALL formulaic headers
-   - Goal: Fix every single flagged issue
-
-   **If GPTZero shows high AI %:**
-   - Add more human signals to flagged sentences:
-     * Sentence fragments for emphasis
-     * Contractions (I'm, that's, here's)
-     * Varied sentence length (5-25 words, not uniform 12-15)
-     * Natural transitions (And, So, But at sentence starts)
-
-2. **INSTAGRAM-SPECIFIC CRITICAL PRESERVATIONS:**
-   - **125-CHAR PREVIEW (CRITICAL):** First 125 chars MUST work standalone before "...more"
-   - **2,200 CHAR HARD LIMIT:** Caption must stay under 2,200 chars total (including hashtags)
-   - **Hashtags at END:** 3-5 hashtags always at the very end
-   - **Line breaks:** Every 2-3 sentences for mobile readability
-   - **Visual pairing:** Add "swipe"/"above"/"tap" references if missing
-
-3. **WHAT TO PRESERVE:**
-   - Specific numbers, metrics, dates (8.6%, 30 days, Q2 2024)
-   - Personal anecdotes and stories
-   - Strategic narrative arc
-   - Author's unique voice
-   - Hashtags (just ensure they're at end)
-   - Strategic emoji placement (1-2 max)
-
-4. **WHAT TO FIX:**
-   - ALL issues in issues_json list above
-   - ALL GPTZero flagged sentences (rewrite to add human signals)
-   - Contrast framing ("It's not X, it's Y" → "Y matters")
-   - Rule of three sentence fragments
-   - Cringe questions ("For me?" → DELETE)
-   - Buzzwords and AI clichés
-   - Hook over 125 chars (CRITICAL - Instagram cuts this off)
-
-5. **INSTAGRAM-SPECIFIC FIXES:
-   - Ensure first 125 chars work standalone
-   - Add "swipe"/"above" if missing visual reference
-   - Line breaks every 2-3 sentences
-   - Strategic emoji placement (not spam)
-   - 3-5 hashtags if missing
-
-EXAMPLES:
-
-Issue: "Hook over 125 chars (gets cut off)"
-Original: "I spent three months analyzing 2,847 cold emails to find the pattern that gets meetings. Here's what nobody tells you:" (124 chars)
-Fix: "2,847 cold emails analyzed. The pattern nobody tells you:" (59 chars)
-Impact: "+2 pts (concise, under limit, creates gap)"
-
-Issue: "Contrast framing AI tell"
-Original: "This isn't about sending more emails. It's about sending better ones."
-Fix: "Send better emails, not more."
-Impact: "+2 pts (removes AI tell, still makes point)"
-
-Issue: "Missing visual reference"
-Original: "The template I used gets 23% response rate."
-Fix: "Swipe to see the template. 23% response rate."
-Impact: "+1 pt (pairs with visual, maintains specificity)"
-
-RETURN FORMAT (JSON):
-{{
-  "revised_post": "[full revised caption]",
-  "changes_made": [
-    {{
-      "issue_addressed": "Hook over 125 chars",
-      "original": "...",
-      "revised": "...",
-      "impact": "+2 pts"
-    }}
-  ],
-  "estimated_new_score": 23,
-  "character_count": 1654,
-  "notes": "All AI tells removed, hook optimized for preview"
-}}
-
-Return JSON only.
-Apply fixes that maximize score improvement with minimal changes.
-""")
+_apply_fixes_template = load_prompt("apply_fixes", platform="instagram")
+APPLY_FIXES_PROMPT = _apply_fixes_template.replace(
+    "{write_like_human_rules}",
+    WRITE_LIKE_HUMAN_RULES
+)
 
 # ==================== VALIDATE FORMAT ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/instagram/validate_format.md
 
-VALIDATE_FORMAT_PROMPT = dedent("""Check this Instagram caption against ALL Instagram format rules.
-
-CAPTION:
-{post}
-
-INSTAGRAM FORMAT CHECKLIST:
-
-1. CHARACTER LIMIT:
-   ✓ Under 2,200 characters (hard limit)
-   ✗ Over 2,200 (gets truncated)
-
-2. PREVIEW OPTIMIZATION:
-   ✓ First 125 chars work as standalone hook
-   ✓ Ends mid-sentence or with :... to create gap
-   ✗ Preview wastes space or gives everything away
-
-3. MOBILE READABILITY:
-   ✓ Line breaks every 2-3 sentences
-   ✓ Short paragraphs (2-3 lines)
-   ✓ Bullets or numbers for lists
-   ✗ Walls of text (hard to scan)
-
-4. EMOJI USAGE:
-   ✓ 1-2 strategic emojis (section breaks, emphasis)
-   ✗ Emoji spam (every line, decorative only)
-   ✗ No emojis (misses engagement opportunity)
-
-5. HASHTAG PLACEMENT:
-   ✓ 3-5 relevant hashtags at END
-   ✓ Mix of popular and niche tags
-   ✗ Hashtag spam (10+ tags)
-   ✗ Hashtags mid-caption (breaks flow)
-   ✗ Missing hashtags (loses discoverability)
-
-6. CTA PLACEMENT:
-   ✓ Clear engagement trigger before hashtags
-   ✓ Specific action ("Comment START", "Tag someone who...")
-   ✗ Passive CTA ("Link in bio", "DM me")
-   ✗ Missing CTA
-
-Return structured feedback with violations and recommendations.
-""")
+VALIDATE_FORMAT_PROMPT = load_prompt("validate_format", platform="instagram")

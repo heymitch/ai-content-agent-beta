@@ -25,7 +25,21 @@ async def run_quality_check(content: str, platform: str) -> Dict[str, Any]:
     Uses the same quality_check logic that runs in SDK agents
     Returns structured scores + AI pattern issues
     """
-    from prompts.linkedin_tools import QUALITY_CHECK_PROMPT
+    # Import platform-specific quality check prompt
+    if platform == 'linkedin':
+        from prompts.linkedin_tools import QUALITY_CHECK_PROMPT
+    elif platform == 'twitter':
+        from prompts.twitter_tools import QUALITY_CHECK_PROMPT
+    elif platform == 'email':
+        from prompts.email_tools import QUALITY_CHECK_PROMPT
+    elif platform == 'youtube':
+        from prompts.youtube_tools import QUALITY_CHECK_PROMPT
+    elif platform == 'instagram':
+        from prompts.instagram_tools import QUALITY_CHECK_PROMPT
+    else:
+        # Fallback to LinkedIn for unknown platforms
+        from prompts.linkedin_tools import QUALITY_CHECK_PROMPT
+        logger.warning(f"⚠️ Unknown platform '{platform}', using LinkedIn quality check prompt")
 
     # Validate API key
     api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -38,7 +52,8 @@ async def run_quality_check(content: str, platform: str) -> Dict[str, Any]:
     client = get_anthropic_client()
 
     # Format prompt for the specific platform
-    prompt = QUALITY_CHECK_PROMPT.format(post=content)
+    # Use replace() instead of .format() to avoid KeyError on unescaped JSON in prompt
+    prompt = QUALITY_CHECK_PROMPT.replace("{post}", content)
 
     try:
         # Call Claude with web_search tool for fact checking
@@ -153,7 +168,8 @@ async def run_gptzero_check(content: str) -> Optional[Dict[str, Any]]:
         }
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # GPTZero can be slow for long content - use 40s timeout (wrapped in 45s asyncio.wait_for)
+        async with httpx.AsyncClient(timeout=40.0) as client:
             response = await client.post(
                 'https://api.gptzero.me/v2/predict/text',
                 headers={
@@ -232,12 +248,30 @@ async def run_all_validators(content: str, platform: str) -> str:
     logger.info("🔍 RUNNING VALIDATORS")
     logger.info("=" * 60)
 
-    # Run validators in parallel for better performance (30-50% faster)
-    logger.info("📊 Running quality check and GPTZero in parallel...")
-    quality_task = run_quality_check(content, platform)
-    gptzero_task = run_gptzero_check(content)
+    # Run validators sequentially to avoid timeout issues (GPTZero can be slow)
+    logger.info("📊 Running quality check first...")
+    try:
+        quality_result = await asyncio.wait_for(run_quality_check(content, platform), timeout=60.0)
+        logger.info(f"📊 Quality check raw result keys: {quality_result.keys() if isinstance(quality_result, dict) else 'not a dict'}")
+        logger.info(f"📊 Quality check scores: {quality_result.get('scores', 'missing')}")
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ Quality check timed out after 60s - using fallback")
+        quality_result = {
+            "scores": {"total": 18},
+            "decision": "timeout",
+            "issues": [],
+            "surgical_summary": "Quality check timed out"
+        }
 
-    quality_result, gptzero_result = await asyncio.gather(quality_task, gptzero_task)
+    logger.info("📊 Running GPTZero check...")
+    try:
+        gptzero_result = await asyncio.wait_for(run_gptzero_check(content), timeout=45.0)
+    except asyncio.TimeoutError:
+        logger.warning("⚠️ GPTZero check timed out after 45s - skipping")
+        gptzero_result = {
+            "status": "TIMEOUT",
+            "reason": "GPTZero API timed out after 45 seconds"
+        }
 
     logger.info(f"✅ Quality check complete: {quality_result.get('scores', {}).get('total', 0)}/25")
     if gptzero_result:
@@ -260,6 +294,7 @@ async def run_all_validators(content: str, platform: str) -> str:
     # Convert to JSON string for Airtable
     json_str = json.dumps(validation_data, indent=2, ensure_ascii=False)
 
+    logger.info(f"📋 Returning validation JSON ({len(json_str)} chars)")
     logger.info("📋 Validation summary:")
     logger.info(f"   Quality Score: {quality_result.get('scores', {}).get('total', 0)}/25")
     logger.info(f"   AI Patterns Found: {len(quality_result.get('issues', []))}")

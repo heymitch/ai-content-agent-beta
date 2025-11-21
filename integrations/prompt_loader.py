@@ -1,11 +1,36 @@
 """
 System Prompt Loader
-Composes base prompt (your instructions) + client context (their brand/audience)
+====================
+
+Two purposes:
+1. Load writing style/rules prompts with client override support (Claude Projects-style)
+2. Compose system prompts with client business context from CLAUDE.md
+
+Priority hierarchy for style prompts:
+1. .claude/prompts/{platform}/{prompt_name}.md (client platform-specific)
+2. .claude/prompts/{prompt_name}.md (client global override)
+3. prompts/styles/{platform}/default_{prompt_name}.md (default platform-specific)
+4. prompts/styles/default_{prompt_name}.md (global default)
+5. Hardcoded emergency fallback
 """
 from pathlib import Path
+from typing import Optional, Dict
 import logging
 
 logger = logging.getLogger(__name__)
+
+# In-memory cache for loaded prompts
+_PROMPT_CACHE: Dict[str, str] = {}
+
+# Base directories for style prompts
+_CLAUDE_PROMPTS_DIR = Path(__file__).parent.parent / ".claude" / "prompts"
+_DEFAULTS_DIR = Path(__file__).parent.parent / "prompts" / "styles"
+
+# Emergency fallback prompts (minimal)
+_EMERGENCY_FALLBACKS = {
+    "writing_rules": "Write like a human. Be clear, specific, and conversational. Avoid jargon and AI clichés.",
+    "editor_standards": "Check for promotional language, overused phrases, and generic claims. Be specific and concrete.",
+}
 
 
 def load_system_prompt(base_prompt: str) -> str:
@@ -111,3 +136,330 @@ def client_context_exists() -> bool:
         return len(content) > 0
     except:
         return False
+
+
+# ============================================================================
+# STYLE PROMPT LOADING (NEW - Claude Projects-style overrides)
+# ============================================================================
+
+def load_prompt(
+    prompt_name: str,
+    platform: Optional[str] = None,
+    use_cache: bool = True,
+    emergency_fallback: Optional[str] = None
+) -> str:
+    """
+    Load writing style/rules prompt with fallback hierarchy and caching.
+
+    Args:
+        prompt_name: Name of prompt file (without .md extension)
+        platform: Optional platform (linkedin, twitter, email, etc.)
+        use_cache: Whether to use in-memory cache (default: True)
+        emergency_fallback: Custom fallback if all files missing
+
+    Returns:
+        Prompt content as string
+
+    Examples:
+        >>> load_prompt("writing_rules")  # Global rules
+        >>> load_prompt("system_prompt", platform="linkedin")  # LinkedIn-specific
+        >>> load_prompt("hooks", platform="twitter", use_cache=False)  # Bypass cache
+    """
+    # Create cache key
+    cache_key = f"{platform}:{prompt_name}" if platform else prompt_name
+
+    # Check cache first
+    if use_cache and cache_key in _PROMPT_CACHE:
+        logger.debug(f"Prompt cache hit: {cache_key}")
+        return _PROMPT_CACHE[cache_key]
+
+    # Try loading from files in priority order
+    content = None
+
+    # Priority 1: Client platform-specific override
+    if platform:
+        client_platform_path = _CLAUDE_PROMPTS_DIR / platform / f"{prompt_name}.md"
+        content = _try_load_file(client_platform_path, f"client {platform}")
+
+    # Priority 2: Client global override
+    if not content:
+        client_global_path = _CLAUDE_PROMPTS_DIR / f"{prompt_name}.md"
+        content = _try_load_file(client_global_path, "client global")
+
+    # Priority 3: Default platform-specific
+    if not content and platform:
+        default_platform_path = _DEFAULTS_DIR / platform / f"default_{prompt_name}.md"
+        content = _try_load_file(default_platform_path, f"default {platform}")
+
+    # Priority 4: Global default
+    if not content:
+        global_default_path = _DEFAULTS_DIR / f"default_{prompt_name}.md"
+        content = _try_load_file(global_default_path, "global default")
+
+    # Priority 5: Emergency fallback
+    if not content:
+        content = emergency_fallback or _EMERGENCY_FALLBACKS.get(prompt_name)
+        if content:
+            logger.warning(
+                f"Using emergency fallback for {cache_key} "
+                f"(no files found in any location)"
+            )
+        else:
+            raise FileNotFoundError(
+                f"Prompt '{prompt_name}' not found in any location:\n"
+                f"  - .claude/prompts/{platform or ''}\n"
+                f"  - .claude/prompts/\n"
+                f"  - prompts/styles/{platform or ''}\n"
+                f"  - prompts/styles/\n"
+                f"  - Emergency fallbacks\n"
+                f"Please create the file or provide an emergency_fallback parameter."
+            )
+
+    # Cache the result
+    if use_cache:
+        _PROMPT_CACHE[cache_key] = content
+        logger.debug(f"Cached prompt: {cache_key}")
+
+    return content
+
+
+def _try_load_file(path: Path, source_description: str) -> Optional[str]:
+    """
+    Try to load a file, return None if it doesn't exist.
+
+    Args:
+        path: Path to file
+        source_description: Human-readable description for logging
+
+    Returns:
+        File content or None if file doesn't exist
+    """
+    if not path.exists():
+        return None
+
+    try:
+        content = path.read_text(encoding='utf-8')
+        logger.info(f"Loaded prompt from {source_description}: {path.name}")
+        return content
+    except Exception as e:
+        logger.error(f"Failed to read {path}: {e}")
+        return None
+
+
+def reload_prompts(prompt_name: Optional[str] = None):
+    """
+    Clear cache to force reload from disk.
+
+    Useful when:
+    - Client updates their custom prompts while app is running
+    - Testing different prompt versions
+    - Debugging prompt loading
+
+    Args:
+        prompt_name: Specific prompt to reload, or None to clear entire cache
+
+    Examples:
+        >>> reload_prompts()  # Clear all cached prompts
+        >>> reload_prompts("writing_rules")  # Reload just writing rules
+    """
+    if prompt_name:
+        # Clear specific prompt (all platform variations)
+        keys_to_remove = [k for k in _PROMPT_CACHE if prompt_name in k]
+        for key in keys_to_remove:
+            del _PROMPT_CACHE[key]
+        logger.info(f"Reloaded prompt: {prompt_name}")
+    else:
+        _PROMPT_CACHE.clear()
+        logger.info("Cleared all cached prompts")
+
+
+def get_cache_stats() -> Dict[str, any]:
+    """
+    Get cache statistics for debugging.
+
+    Returns:
+        Dictionary with cache size and keys
+    """
+    return {
+        "cache_size": len(_PROMPT_CACHE),
+        "cached_prompts": list(_PROMPT_CACHE.keys())
+    }
+
+
+# Convenience functions for common prompts
+def load_writing_rules() -> str:
+    """Load global writing rules (WRITE_LIKE_HUMAN_RULES)."""
+    return load_prompt("writing_rules")
+
+
+def load_editor_standards() -> str:
+    """Load editor-in-chief standards."""
+    return load_prompt("editor_standards")
+
+
+def stack_prompts(platform: str, include_create_draft: bool = True) -> str:
+    """
+    Stack multiple prompts into a single system message - Claude Projects style.
+
+    This creates a comprehensive context that gets cached, allowing the model
+    to produce excellent content in a single pass without needing validation loops.
+
+    Stack order:
+    1. CLAUDE.md (client business context)
+    2. Writing Rules (anti-AI-tells, human signals)
+    3. Editor Standards (Editor-in-Chief rules)
+    4. Platform Create Draft (format-specific instructions)
+
+    Args:
+        platform: Target platform (linkedin, twitter, email, youtube, instagram)
+        include_create_draft: Whether to include the create_draft prompt (default True)
+
+    Returns:
+        Combined system prompt with all rules stacked
+
+    Example:
+        >>> stacked = stack_prompts("linkedin")
+        >>> # Use stacked as system message in Direct API call
+        >>> # All rules cached, only user content varies
+    """
+    sections = []
+
+    # Section 1: Client Business Context (from CLAUDE.md)
+    client_context = _load_client_context()
+    if client_context:
+        sections.append(f"""# CLIENT BUSINESS CONTEXT
+
+{client_context}
+
+---
+""")
+
+    # Section 2: Writing Rules (anti-AI-tells, human signals)
+    writing_rules = load_writing_rules()
+    sections.append(f"""# WRITING RULES
+
+{writing_rules}
+
+---
+""")
+
+    # Section 3: Editor-in-Chief Standards
+    editor_standards = load_editor_standards()
+    sections.append(f"""# EDITOR-IN-CHIEF STANDARDS
+
+{editor_standards}
+
+---
+""")
+
+    # Section 4: Platform-specific Create Draft (if requested)
+    if include_create_draft:
+        create_draft = load_prompt("create_draft", platform=platform)
+        sections.append(f"""# {platform.upper()} CONTENT CREATION
+
+{create_draft}
+""")
+
+    # Combine all sections
+    stacked = "\n".join(sections)
+
+    # Add final instruction to use all rules
+    stacked += """
+---
+
+## CRITICAL INSTRUCTIONS
+
+You have been given comprehensive rules above. When creating content:
+
+1. **Follow ALL rules** from Writing Rules AND Editor-in-Chief Standards
+2. **Avoid all forbidden patterns** - do not use contrast framing, cringe questions, puffery
+3. **Inject human signals** - use contractions, varied sentence lengths, natural transitions
+4. **Self-validate before returning** - mentally check your output against the rules above
+5. **Report potential issues** - if anything might still need work, note it in self_assessment
+
+Your goal: Produce 18+/25 content on the first pass by following all stacked rules.
+"""
+
+    logger.info(f"📚 Stacked prompts for {platform}: {len(stacked)} chars ({len(sections)} sections)")
+
+    return stacked
+
+
+def _load_client_context() -> Optional[str]:
+    """
+    Load client context from CLAUDE.md if it exists.
+
+    Returns:
+        Client context content or None
+    """
+    claude_md = Path(__file__).parent.parent / '.claude' / 'CLAUDE.md'
+
+    if not claude_md.exists():
+        return None
+
+    try:
+        content = claude_md.read_text().strip()
+        return content if content else None
+    except Exception as e:
+        logger.error(f"Error reading CLAUDE.md: {e}")
+        return None
+
+
+def get_stacked_prompt_info(platform: str) -> Dict[str, any]:
+    """
+    Get information about what would be stacked for a platform.
+    Useful for debugging and understanding the final context size.
+
+    Args:
+        platform: Target platform
+
+    Returns:
+        Dictionary with section info and total size
+    """
+    info = {
+        "platform": platform,
+        "sections": [],
+        "total_chars": 0
+    }
+
+    # Check client context
+    client_context = _load_client_context()
+    if client_context:
+        info["sections"].append({
+            "name": "CLIENT_CONTEXT",
+            "chars": len(client_context)
+        })
+
+    # Writing rules
+    try:
+        writing = load_writing_rules()
+        info["sections"].append({
+            "name": "WRITING_RULES",
+            "chars": len(writing)
+        })
+    except:
+        pass
+
+    # Editor standards
+    try:
+        editor = load_editor_standards()
+        info["sections"].append({
+            "name": "EDITOR_STANDARDS",
+            "chars": len(editor)
+        })
+    except:
+        pass
+
+    # Platform create_draft
+    try:
+        create = load_prompt("create_draft", platform=platform)
+        info["sections"].append({
+            "name": f"{platform.upper()}_CREATE_DRAFT",
+            "chars": len(create)
+        })
+    except:
+        pass
+
+    info["total_chars"] = sum(s["chars"] for s in info["sections"])
+
+    return info

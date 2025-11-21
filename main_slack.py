@@ -357,10 +357,17 @@ def format_for_slack(text: str) -> str:
 @app.get('/healthz')
 def health_check():
     """Basic health check - returns 200 if server is up"""
+    handler = get_slack_handler()
+    active_sessions = len(handler._thread_sessions) if handler else 0
+    max_sessions = handler.MAX_CONCURRENT_SESSIONS if handler else 3
+
     return {
         'status': 'ok',
         'timestamp': datetime.now().isoformat(),
-        'service': 'slack-content-agent'
+        'service': 'slack-content-agent',
+        'active_sessions': active_sessions,
+        'max_sessions': max_sessions,
+        'session_utilization': f'{active_sessions}/{max_sessions}'
     }
 
 
@@ -813,10 +820,25 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
             print("✏️ Skipping message edit")
             return {'status': 'skipped_edit'}
 
-        # Skip empty messages (reactions, file uploads, etc.)
-        if not message_text or not message_text.strip():
-            print("⏭️ Skipping empty message")
+        # Check for file uploads
+        files = event.get('files', [])
+        has_files = len(files) > 0
+
+        # Debug: Log file detection
+        if has_files:
+            print(f"📎 Detected {len(files)} file(s):")
+            for f in files:
+                print(f"   - {f.get('name', 'unknown')} ({f.get('mimetype', 'unknown type')}, {f.get('size', 0)} bytes)")
+
+        # Skip empty messages UNLESS there are files attached
+        if (not message_text or not message_text.strip()) and not has_files:
+            print("⏭️ Skipping empty message with no files")
             return {'status': 'skipped_empty_message'}
+
+        # If there are files but no message text, use placeholder
+        if has_files and (not message_text or not message_text.strip()):
+            message_text = "[User uploaded file(s)]"
+            print(f"📎 {len(files)} file(s) attached to message")
 
         # bot_user_id already retrieved above
         is_bot_mentioned = bot_user_id and f'<@{bot_user_id}>' in message_text
@@ -962,7 +984,8 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                         message=message_text,
                         user_id=user_id,
                         thread_ts=thread_ts,  # Use thread_ts for session continuity
-                        channel_id=channel
+                        channel_id=channel,
+                        slack_files=files if has_files else None  # Pass Slack file objects
                     )
                 except RuntimeError as e:
                     # SDK client creation failure - provide helpful error
@@ -1041,8 +1064,12 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
 
         print(f"👍 Reaction {reaction} added to message {message_ts}")
 
-        # Handle ✅ (white_check_mark) reaction for Haiku-generated Twitter posts
-        if reaction == 'white_check_mark':
+        # Initialize message_response for later use
+        message_response = None
+
+        # Handle ✅ (white_check_mark) reaction for saving as Draft
+        # Handle 📅 🗓️ 📆 (calendar emojis) for scheduling to calendar
+        if reaction in ['white_check_mark', 'calendar', 'spiral_calendar_pad', 'date']:
             try:
                 # Get the message that was reacted to
                 message_response = slack_client.conversations_history(
@@ -1105,14 +1132,21 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                                 try:
                                     airtable = get_airtable_client()
 
-                                    # Try to extract publish_date from context if available
-                                    # (This would need to be stored in message metadata, but for now we'll skip it)
+                                    # Determine status based on reaction emoji
+                                    # ✅ = Draft (save for review)
+                                    # 📅 🗓️ = Scheduled (ready to go)
+                                    if reaction in ['calendar', 'spiral_calendar_pad']:
+                                        status = 'Scheduled'
+                                        confirmation_emoji = '📅'
+                                    else:  # white_check_mark
+                                        status = 'Draft'
+                                        confirmation_emoji = '📅'
 
                                     result = airtable.create_content_record(
                                         content=post_content,
                                         platform='twitter',
                                         post_hook=hook_preview if hook_preview else post_content[:100],
-                                        status='Draft',
+                                        status=status,
                                         publish_date=publish_date
                                     )
 
@@ -1131,15 +1165,22 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                                         result = {'success': False, 'error': str(e)}
 
                             if result and result.get('success'):
-                                # Send confirmation with 📅 emoji
+                                # Send confirmation message based on status
                                 # Use original thread if the message was in a thread
                                 thread_ts = message.get('thread_ts', message_ts)
+
+                                if status == 'Scheduled':
+                                    confirmation_text = f"{confirmation_emoji} Scheduled to calendar!\n\n📊 <{result.get('url')}|View in Airtable>"
+                                else:
+                                    confirmation_text = f"{confirmation_emoji} Saved to Airtable as Draft\n\n📊 <{result.get('url')}|View>"
+
                                 slack_client.chat_postMessage(
                                     channel=channel,
                                     thread_ts=thread_ts,
-                                    text="📅 Saved to Airtable"
+                                    text=confirmation_text,
+                                    mrkdwn=True
                                 )
-                                print(f"✅ Saved Haiku Twitter post to Airtable")
+                                print(f"✅ Saved Haiku Twitter post to Airtable (status: {status})")
                             else:
                                 print(f"❌ Failed to save to Airtable: {result.get('error')}")
                                 # Use original thread if the message was in a thread
@@ -1157,17 +1198,56 @@ async def handle_slack_event(request: Request, background_tasks: BackgroundTasks
                 import traceback
                 traceback.print_exc()
 
+        # Call ReactionHandler for all reactions (not just Haiku Twitter posts)
         handler = get_slack_handler()
         if handler and handler.reaction_handler:
             try:
-                await handler.reaction_handler.handle_reaction(
+                # Get the message to find the actual thread_ts
+                if not message_response:
+                    message_response = slack_client.conversations_history(
+                        channel=channel,
+                        latest=message_ts,
+                        limit=1,
+                        inclusive=True
+                    )
+
+                # Get actual thread_ts and message content
+                actual_thread_ts = message_ts
+                message_content = None
+                if message_response.get('ok') and message_response.get('messages'):
+                    message = message_response['messages'][0]
+                    actual_thread_ts = message.get('thread_ts', message_ts)
+                    message_content = message.get('text', '')
+
+                result = await handler.reaction_handler.handle_reaction(
                     reaction_emoji=reaction,
-                    thread_ts=message_ts,
+                    thread_ts=actual_thread_ts,
                     user_id=user_id,
-                    channel_id=channel
+                    channel_id=channel,
+                    message_content=message_content
                 )
+
+                print(f"📋 Reaction handler result: success={result.get('success')}, has_message={bool(result.get('message'))}")
+
+                # Send feedback to user if handler returned a message
+                if result and result.get('message'):
+                    slack_client.chat_postMessage(
+                        channel=channel,
+                        thread_ts=actual_thread_ts,
+                        text=result['message'],
+                        mrkdwn=True
+                    )
+                    if result.get('success'):
+                        print(f"✅ Reaction handled: {result.get('action', 'unknown')}")
+                    else:
+                        print(f"⚠️ Reaction failed but sent message: {result.get('action', 'unknown')}")
+                elif result and not result.get('success'):
+                    print(f"⚠️ Reaction handler returned failure (no message): {result}")
+
             except Exception as e:
                 print(f"⚠️ Reaction handler error (non-fatal): {e}")
+                import traceback
+                traceback.print_exc()
                 # Don't crash - reaction handling is non-critical
 
         return {'status': 'reaction_handled'}
@@ -1266,6 +1346,37 @@ async def slack_command_batch(request: Request):
         'response_type': 'in_channel',
         'text': f'🚀 Creating {count} {platform} posts about "{topic}"...'
     }
+
+@app.post('/slack/commands/cowrite')
+async def slack_command_cowrite(request: Request):
+    """Handle /cowrite [platform] [topic] slash command"""
+    form_data = await request.form()
+    command_text = form_data.get('text', '')
+    user_id = form_data.get('user_id')
+    channel_id = form_data.get('channel_id')
+
+    # Create thread for this co-write session
+    slack_client = get_slack_client()
+    response = slack_client.chat_postMessage(
+        channel=channel_id,
+        text=f"🎨 Starting co-write session...\n`/cowrite {command_text}`"
+    )
+    thread_ts = response['ts']
+
+    # Import handler
+    from slack_bot.commands import handle_cowrite_command
+
+    # Handle command (this starts async session)
+    result = await handle_cowrite_command(
+        command_text=command_text,
+        user_id=user_id,
+        channel_id=channel_id,
+        thread_ts=thread_ts,
+        slack_client=slack_client
+    )
+
+    return result
+
 
 @app.post('/slack/commands/plan')
 async def slack_command_plan(request: Request):
@@ -1534,6 +1645,373 @@ async def n8n_weekly_briefing(request: Request):
             "error": str(e),
             "message": "Failed to generate briefing"
         }
+
+
+# ============= ANALYTICS SYNC ENDPOINTS =============
+
+@app.post('/api/sync/airtable-content')
+async def sync_airtable_content_endpoint(request: Request):
+    """
+    Sync edited content from Airtable back to generated_posts.
+
+    Updates body_content and regenerates embeddings for posts that were edited in Airtable.
+    Run before analytics analysis to ensure data accuracy.
+
+    Request body (optional):
+    {
+        "limit": 50,  # Max posts to sync (default: all)
+        "only_recent": true,  # Only sync last 30 days (default: true)
+        "post_ids": ["uuid1", "uuid2"]  # Sync specific posts (optional)
+    }
+
+    Returns:
+    {
+        "success": true,
+        "total": 25,
+        "synced": 12,
+        "skipped": 10,
+        "errors": 3,
+        "results": [...]
+    }
+    """
+    try:
+        data = await request.json() if request.headers.get('content-type') == 'application/json' else {}
+
+        from integrations.airtable_sync import sync_airtable_to_generated_posts, sync_specific_posts
+
+        # If specific post IDs provided, sync those
+        if data.get('post_ids'):
+            logger.info(f"Syncing {len(data['post_ids'])} specific posts from Airtable")
+            result = await sync_specific_posts(data['post_ids'])
+        else:
+            # Sync all or recent posts
+            limit = data.get('limit')
+            only_recent = data.get('only_recent', True)
+
+            logger.info(f"Syncing Airtable content (limit={limit}, only_recent={only_recent})")
+            result = await sync_airtable_to_generated_posts(limit=limit, only_recent=only_recent)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/sync/airtable-content: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/api/sync/ayrshare-metrics')
+async def sync_ayrshare_metrics_endpoint(request: Request):
+    """
+    Sync engagement metrics from Ayrshare to generated_posts.
+
+    Updates impressions, likes, shares, engagement_rate for published posts.
+    Run daily or before analytics analysis.
+
+    Request body (optional):
+    {
+        "days_back": 7,  # Sync posts from last N days (default: 7)
+        "limit": 50,  # Max posts to sync (default: all)
+        "force_resync": false  # Resync recently synced posts (default: false)
+    }
+
+    Returns:
+    {
+        "success": true,
+        "total": 15,
+        "synced": 15,
+        "errors": 0,
+        "total_impressions": 45000,
+        "total_engagements": 3200
+    }
+    """
+    try:
+        data = await request.json() if request.headers.get('content-type') == 'application/json' else {}
+
+        from integrations.ayrshare_sync import sync_ayrshare_metrics
+
+        days_back = data.get('days_back', 7)
+        limit = data.get('limit')
+        force_resync = data.get('force_resync', False)
+
+        logger.info(f"Syncing Ayrshare metrics (days_back={days_back}, force_resync={force_resync})")
+
+        result = await sync_ayrshare_metrics(
+            days_back=days_back,
+            limit=limit,
+            force_resync=force_resync
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/sync/ayrshare-metrics: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.get('/api/sync/status')
+async def get_sync_status_endpoint():
+    """
+    Get status of metrics sync.
+
+    Returns:
+    {
+        "success": true,
+        "total_posts": 50,
+        "synced_posts": 45,
+        "unsynced_posts": 5,
+        "needs_sync": 3,
+        "last_sync": "2025-01-20T10:30:00",
+        "avg_engagement_rate": 7.5
+    }
+    """
+    try:
+        from integrations.ayrshare_sync import get_sync_status
+
+        status = await get_sync_status()
+        return status
+
+    except Exception as e:
+        logger.error(f"Error in /api/sync/status: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/api/sync/analytics-to-airtable')
+async def sync_analytics_to_airtable_endpoint(request: Request):
+    """
+    Trigger Supabase → Airtable analytics sync.
+
+    Syncs engagement metrics from Supabase generated_posts table
+    back to Airtable content calendar records.
+
+    Request body:
+    {
+        "days_back": 7,  # Number of days to look back (default: 7)
+        "force_resync": false  # If true, resync even if recently synced
+    }
+
+    Returns:
+    {
+        "success": true,
+        "synced": 45,
+        "errors": 2,
+        "total_posts": 47,
+        "total_impressions": 150000,
+        "total_engagements": 12500
+    }
+    """
+    try:
+        from integrations.supabase_to_airtable_sync import bulk_sync_analytics_to_airtable
+
+        body = await request.json()
+        days_back = body.get('days_back', 7)
+        force_resync = body.get('force_resync', False)
+
+        logger.info(f"📊 Starting analytics sync: days_back={days_back}, force_resync={force_resync}")
+
+        result = await bulk_sync_analytics_to_airtable(
+            days_back=days_back,
+            force_resync=force_resync
+        )
+
+        if result.get("success"):
+            logger.info(f"✅ Sync complete: {result.get('synced')} posts synced")
+        else:
+            logger.error(f"❌ Sync failed: {result.get('error')}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/sync/analytics-to-airtable: {e}", exc_info=True)
+        return {
+            "success": False,
+            "synced": 0,
+            "errors": 0,
+            "total_posts": 0,
+            "error": str(e)
+        }
+
+
+# ============= PUBLISHING STATE TRACKING =============
+
+@app.post('/api/publishing/mark-published')
+async def mark_published_endpoint(request: Request):
+    """
+    Mark a post as published (called by n8n after publishing to Ayrshare).
+
+    Request body:
+    {
+        "airtable_record_id": "recABC123",  # OR post_id
+        "ayrshare_post_id": "xyz789",
+        "published_url": "https://linkedin.com/posts/...",
+        "published_at": "2025-01-20T14:30:00Z",  # Optional, defaults to now
+        "platform_ids": {  # Optional platform-specific IDs
+            "linkedin": "urn:123",
+            "twitter": "1234567890"
+        }
+    }
+
+    Returns:
+    {
+        "success": true,
+        "post_id": "uuid",
+        "ayrshare_post_id": "xyz789",
+        "published_url": "...",
+        "message": "Post successfully marked as published"
+    }
+    """
+    try:
+        data = await request.json()
+
+        from api.publishing_endpoints import mark_post_published
+
+        result = await mark_post_published(
+            airtable_record_id=data.get('airtable_record_id'),
+            post_id=data.get('post_id'),
+            ayrshare_post_id=data.get('ayrshare_post_id'),
+            published_url=data.get('published_url'),
+            published_at=data.get('published_at'),
+            platform_ids=data.get('platform_ids')
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/publishing/mark-published: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/api/publishing/mark-scheduled')
+async def mark_scheduled_endpoint(request: Request):
+    """
+    Mark a post as scheduled (called by n8n after scheduling in Ayrshare).
+
+    Request body:
+    {
+        "airtable_record_id": "recABC123",  # OR post_id
+        "scheduled_for": "2025-01-22T09:00:00Z",
+        "ayrshare_post_id": "xyz789"  # Optional
+    }
+
+    Returns:
+    {
+        "success": true,
+        "post_id": "uuid",
+        "scheduled_for": "2025-01-22T09:00:00Z",
+        "message": "Post successfully marked as scheduled"
+    }
+    """
+    try:
+        data = await request.json()
+
+        from api.publishing_endpoints import mark_post_scheduled
+
+        result = await mark_post_scheduled(
+            airtable_record_id=data.get('airtable_record_id'),
+            post_id=data.get('post_id'),
+            scheduled_for=data.get('scheduled_for'),
+            ayrshare_post_id=data.get('ayrshare_post_id')
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/publishing/mark-scheduled: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.get('/api/publishing/status')
+async def get_publishing_status_endpoint(request: Request):
+    """
+    Get publishing status for a post.
+
+    Query params:
+    - airtable_record_id: Airtable record ID
+    - OR post_id: UUID of generated_posts record
+
+    Returns:
+    {
+        "success": true,
+        "post_id": "uuid",
+        "status": "published",
+        "ayrshare_post_id": "xyz789",
+        "published_at": "2025-01-20T14:30:00Z",
+        "impressions": 1500,
+        "engagement_rate": 8.5
+    }
+    """
+    try:
+        from api.publishing_endpoints import get_publishing_status
+
+        airtable_record_id = request.query_params.get('airtable_record_id')
+        post_id = request.query_params.get('post_id')
+
+        result = await get_publishing_status(
+            airtable_record_id=airtable_record_id,
+            post_id=post_id
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/publishing/status: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@app.post('/api/publishing/mark-failed')
+async def mark_failed_endpoint(request: Request):
+    """
+    Mark a post publish as failed (called by n8n if Ayrshare publishing fails).
+
+    Request body:
+    {
+        "airtable_record_id": "recABC123",  # OR post_id
+        "error_message": "API rate limit exceeded"
+    }
+
+    Returns:
+    {
+        "success": true,
+        "post_id": "uuid",
+        "message": "Post marked as failed"
+    }
+    """
+    try:
+        data = await request.json()
+
+        from api.publishing_endpoints import mark_publish_failed
+
+        result = await mark_publish_failed(
+            airtable_record_id=data.get('airtable_record_id'),
+            post_id=data.get('post_id'),
+            error_message=data.get('error_message')
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in /api/publishing/mark-failed: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 # ============= MAIN STARTUP =============
 

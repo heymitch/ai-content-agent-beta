@@ -12,17 +12,11 @@ from anthropic import Anthropic, RateLimitError
 from utils.anthropic_client import get_anthropic_client
 from utils.retry_decorator import async_retry_with_backoff
 
-# Load WRITE_LIKE_HUMAN_RULES and editor-in-chief rules
-from prompts.linkedin_tools import WRITE_LIKE_HUMAN_RULES
+# Load writing rules using new PromptLoader (supports client overrides)
+from integrations.prompt_loader import load_writing_rules, load_editor_standards
 
-# Load editor-in-chief rules
-EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
-try:
-    with open(EDITOR_FILE_PATH, 'r', encoding='utf-8') as f:
-        EDITOR_IN_CHIEF_RULES = f.read()
-except FileNotFoundError:
-    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
-    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
+WRITE_LIKE_HUMAN_RULES = load_writing_rules()
+EDITOR_IN_CHIEF_RULES = load_editor_standards()
 
 # Import search functions
 from tools.template_search import search_templates_agentic, get_template_by_name
@@ -307,9 +301,87 @@ Just the clean post content."""
             score += 1
         if char_count < 150:
             score -= 1
-        
+
         print(f"   ✅ Generated post ({len(post_content)} chars, score: {score}/5)")
-        
+
+        # Save to Airtable
+        airtable_url = None
+        airtable_record_id = None
+        try:
+            print(f"   🔄 Attempting Airtable save...")
+            print(f"   📝 Post length: {len(post_content)} chars")
+            print(f"   🏷️  Platform: twitter")
+            print(f"   📅 Publish date: {publish_date}")
+
+            from integrations.airtable_client import get_airtable_client
+            airtable = get_airtable_client()
+
+            # Determine status based on score
+            if score >= 4:
+                airtable_status = "Ready"
+            elif score >= 3:
+                airtable_status = "Draft"
+            else:
+                airtable_status = "Needs Review"
+
+            print(f"   ✏️  Status: {airtable_status} (score: {score}/5)")
+
+            airtable_result = airtable.create_content_record(
+                content=post_content,
+                platform='twitter',
+                post_hook=hook_preview,
+                status=airtable_status,
+                suggested_edits=f"Score: {score}/5 (Haiku fast path)",
+                publish_date=publish_date
+            )
+
+            print(f"   📊 Airtable result: success={airtable_result.get('success')}, keys={list(airtable_result.keys())}")
+
+            if airtable_result.get('success'):
+                airtable_url = airtable_result.get('url')
+                airtable_record_id = airtable_result.get('record_id')  # Fixed: was 'id', should be 'record_id'
+                print(f"   ✅ Saved to Airtable: {airtable_url}")
+                print(f"   📋 Airtable record ID: {airtable_record_id}")
+            else:
+                print(f"   ⚠️ Airtable save failed: {airtable_result.get('error', 'Unknown error')}")
+                print(f"   🔍 Full Airtable result: {airtable_result}")
+        except Exception as e:
+            print(f"   ⚠️ Airtable save failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Save to Supabase
+        supabase_id = None
+        try:
+            from integrations.supabase_client import get_supabase_client
+            from tools.research_tools import generate_embedding
+
+            supabase = get_supabase_client()
+            embedding = generate_embedding(post_content)
+
+            supabase_result = supabase.table('generated_posts').insert({
+                'platform': 'twitter',
+                'post_hook': hook_preview,
+                'body_content': post_content,
+                'content_type': 'twitter_single',
+                'airtable_record_id': airtable_record_id,
+                'airtable_url': airtable_url,
+                'status': 'draft',
+                'quality_score': int((score / 5) * 25),  # Convert 0-5 scale to 0-25 scale (integer)
+                'iterations': 1,
+                'slack_thread_ts': thread_ts,
+                'slack_channel_id': channel_id,
+                'user_id': user_id,
+                'created_by_agent': 'twitter_haiku_agent',
+                'embedding': embedding
+            }).execute()
+
+            if supabase_result.data:
+                supabase_id = supabase_result.data[0]['id']
+                print(f"   ✅ Saved to Supabase: {supabase_id}")
+        except Exception as e:
+            print(f"   ⚠️ Supabase save failed: {e}")
+
         return {
             'success': True,
             'post': post_content,
@@ -319,7 +391,9 @@ Just the clean post content."""
             'publish_date': publish_date,
             'channel_id': channel_id,
             'thread_ts': thread_ts,
-            'user_id': user_id
+            'user_id': user_id,
+            'airtable_url': airtable_url,
+            'supabase_id': supabase_id
         }
         
     except Exception as e:
@@ -362,12 +436,15 @@ async def create_twitter_post_workflow(
     
     if result['success']:
         # Return clean format for Slack (no emoji indicators in post)
+        airtable_url = result.get('airtable_url', '[Not Available]')
         return f"""✅ Twitter Post Generated
 
 {result['post']}
 
 Hook: {result['hook']}
-Score: {result['score']}/5 (Haiku fast path)"""
+Score: {result['score']}/5 (Haiku fast path)
+
+📊 Airtable: {airtable_url}"""
     else:
         return f"❌ Creation failed: {result.get('error', 'Unknown error')}"
 

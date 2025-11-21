@@ -1,0 +1,206 @@
+{
+  "name": "Ayrshare → Airtable Analytics Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Daily at 6am UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "id": "schedule-trigger-6am"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.API_BASE_URL }}/api/sync-ayrshare-metrics",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "days_back",
+              "value": "30"
+            },
+            {
+              "name": "force_resync",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "Step 1: Ayrshare → Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [470, 300],
+      "id": "ayrshare-to-supabase",
+      "notes": "Sync engagement metrics from Ayrshare API to Supabase generated_posts table"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.API_BASE_URL }}/api/sync/analytics-to-airtable",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "days_back",
+              "value": "7"
+            },
+            {
+              "name": "force_resync",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "name": "Step 2: Supabase → Airtable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [690, 300],
+      "id": "supabase-to-airtable",
+      "notes": "Sync analytics from Supabase to Airtable content calendar"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Check if Sync Succeeded",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [910, 300],
+      "id": "check-success"
+    },
+    {
+      "parameters": {
+        "channel": "={{ $env.SLACK_ANALYTICS_CHANNEL }}",
+        "text": "=:white_check_mark: **Daily Analytics Sync Complete**\n\n*Ayrshare → Supabase:* {{ $node['Step 1: Ayrshare → Supabase'].json.synced }} posts synced\n*Supabase → Airtable:* {{ $json.synced }} posts updated\n\n*Total Impressions:* {{ $json.total_impressions }}\n*Total Engagements:* {{ $json.total_engagements }}\n*Errors:* {{ $json.errors }}",
+        "otherOptions": {}
+      },
+      "name": "Success Notification (Slack)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1130, 200],
+      "id": "slack-success",
+      "notes": "Send success notification to Slack (optional)",
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credentials",
+          "name": "Slack Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "={{ $env.SLACK_ALERTS_CHANNEL }}",
+        "text": "=:x: **Analytics Sync Failed**\n\n*Error:* {{ $json.error }}\n\nPlease check the logs at {{ $env.API_BASE_URL }}/api/sync/status",
+        "otherOptions": {}
+      },
+      "name": "Error Notification (Slack)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1130, 400],
+      "id": "slack-error",
+      "notes": "Send error notification to Slack (optional)",
+      "credentials": {
+        "slackApi": {
+          "id": "slack-credentials",
+          "name": "Slack Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily at 6am UTC": {
+      "main": [
+        [
+          {
+            "node": "Step 1: Ayrshare → Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 1: Ayrshare → Supabase": {
+      "main": [
+        [
+          {
+            "node": "Step 2: Supabase → Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 2: Supabase → Airtable": {
+      "main": [
+        [
+          {
+            "node": "Check if Sync Succeeded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Sync Succeeded": {
+      "main": [
+        [
+          {
+            "node": "Success Notification (Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Notification (Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "analytics",
+      "id": "tag-analytics"
+    },
+    {
+      "name": "sync",
+      "id": "tag-sync"
+    }
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "your-instance-id-here"
+  },
+  "pinData": {},
+  "versionId": "1.0.0"
+}

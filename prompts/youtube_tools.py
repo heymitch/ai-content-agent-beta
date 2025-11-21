@@ -6,140 +6,28 @@ Adapted from Email SDK Agent for YouTube video scripts.
 """
 
 from textwrap import dedent
-
-# ==================== LOAD EDITOR-IN-CHIEF STANDARDS ====================
-# Load comprehensive Editor-in-Chief standards for quality_check
-from pathlib import Path
-EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
-try:
-    with open(EDITOR_FILE_PATH, "r", encoding="utf-8") as f:
-        EDITOR_IN_CHIEF_RULES = f.read()
-except FileNotFoundError:
-    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
-    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
 from tools.pattern_matching import format_youtube_examples_for_prompt
 
-# ==================== GLOBAL WRITING RULES (CACHED) ====================
-# Source: write-like-a-human.md - SAME AS EMAIL/LINKEDIN
-# Reusing for consistency across all platforms
+# ==================== LOAD WRITING RULES AND EDITOR STANDARDS ====================
+# NEW: Load from external .md files with client override support
+# Clients can customize these by creating .claude/prompts/writing_rules.md or editor_standards.md
+# Fallback to versioned defaults in prompts/styles/default_writing_rules.md
+from integrations.prompt_loader import load_editor_standards, load_writing_rules, load_prompt
 
-WRITE_LIKE_HUMAN_RULES = """You are a human writer. These are your comprehensive writing guidelines. Anything that you output will adhere to these guidelines exactly.
-POSITIVE DIRECTIVES (How you SHOULD write)
-Clarity and brevity
-• Craft sentences that average 10–20 words and focus on a single idea, with the occasional longer sentence.
-Active voice and direct verbs
-• Use active voice 90 % of the time.
-Everyday vocabulary
-• Substitute common, concrete words for abstraction.
-Straightforward punctuation
-• Rely primarily on periods, commas, question marks, and occasional colons for lists.
-Varied sentence length, minimal complexity
-• Mix short and medium sentences; avoid stacking clauses.
-Logical flow without buzzwords
-• Build arguments with plain connectors: 'and', 'but', 'so', 'then'.
-Concrete detail over abstraction
-• Provide numbers, dates, names, and measurable facts whenever possible.
-Human cadence
-• Vary paragraph length; ask a genuine question no more than once per 300 words, and answer it immediately.
-NEGATIVE DIRECTIVES (What you MUST AVOID)
-A. Punctuation to avoid
-Semicolons (;)
-✗ Example to avoid: 'We researched extensively; the results were clear.'
-✓ Rewrite: 'We researched extensively, and the results were clear.'
-Em dashes ( — )
-✗ Example to avoid: 'The idea — though interesting — was rejected.'
-✓ Rewrite: 'The idea was interesting but was rejected.'
-
-**CONTRAST STRUCTURES - THE BIGGEST AI TELL (NEVER USE THESE):**
-These are the #1 indicator of AI writing. NEVER use contrast framing:
-
-✗ "It's not X, it's Y" → ✓ State Y directly
-✗ "This isn't about X. It's about Y." → ✓ "Focus on Y."
-✗ "Not just X, but Y" → ✓ "X and Y" or just "Y"
-
-**RULE OF THREE - ANOTHER MASSIVE AI TELL:**
-AI loves parallel structure with exactly three items IN SENTENCE STRUCTURE. Humans vary their rhythm.
-
-**IMPORTANT: This rule applies to SENTENCE STRUCTURE within paragraphs, NOT to formatted lists (bullets or numbers).**
-
-✗ "Same complexity. Same output. Over 95% less time." (three parallel sentence fragments)
-✓ "Same complexity and output, but 95% less time."
-
-**HOWEVER: Formatted lists with bullets or numbers are FINE and do not trigger this rule.**
-✓ Bulleted or numbered lists of 3+ items are perfectly acceptable for readability
-✓ "Here are 3 steps: 1/ Do X  2/ Do Y  3/ Do Z" is NOT an AI tell - this is a list
-✗ "Step one. Step two. Step three." written as separate sentences IS an AI tell
-
-**STACCATO FRAGMENTS - ANOTHER AI TELL:**
-AI loves short dramatic fragments at the start. Humans write complete sentences.
-
-✗ "50 nodes. 6 hours of my time. An AI agent rebuilt it."
-✓ "I spent 6 hours building a 50-node workflow."
-"""
+EDITOR_IN_CHIEF_RULES = load_editor_standards()
+WRITE_LIKE_HUMAN_RULES = load_writing_rules()
 
 # ==================== GENERATE 5 HOOKS ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/youtube/generate_hooks.md
 
-GENERATE_HOOKS_PROMPT = dedent("""Generate EXACTLY 5 video hooks for this topic, one for each type:
-
-Topic: {topic}
-Context: {context}
-Target Audience: {audience}
-
-MANDATORY FORMATS (adapted for video):
-1. Question (direct, provocative)
-2. Bold claim (with number)
-3. Pattern interrupt (surprising fact)
-4. Story opener (specific example)
-5. "You" statement (direct address)
-
-Each hook must:
-- Be 8-15 words (3-6 seconds when spoken at 2.5 words/sec)
-- Grab attention in first 3 seconds
-- Create curiosity to keep watching
-- Work WITHOUT visuals (audio-first)
-
-Return as JSON array with format:
-{json_example}
-""")
+GENERATE_HOOKS_PROMPT = load_prompt("generate_hooks", platform="youtube")
 
 # ==================== INJECT PROOF POINTS ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/youtube/inject_proof.md
 
-INJECT_PROOF_PROMPT = dedent("""{write_like_human_rules}
-
-=== INJECT PROOF POINTS ===
-
-Review this script and ONLY add proof from verified sources.
-
-Draft: {draft}
-Topic: {topic}
-Industry: {industry}
-
-**COMPANY DOCUMENTS SEARCH RESULTS:**
-{proof_context}
-
-**WHERE PROOF CAN COME FROM:**
-1. **TOPIC/CONTEXT** - User explicitly provided: "Alex 500→5k subs", "workshop with 50+ creators"
-2. **WEB SEARCH RESULTS** - Verified via web_search tool (future): industry benchmarks
-3. **COMPANY DOCUMENTS** - Retrieved from user-uploaded docs (case studies, testimonials, product docs) - SEE ABOVE
-
-**CRITICAL: DO NOT FABRICATE**
-- ❌ Making up creator names: "Sarah grew her channel"
-- ❌ Inventing growth numbers: "10k subscribers in 2 months"
-- ❌ Fabricating case studies: "tested with 100 channels"
-- ❌ Creating fake metrics: "234% engagement", "4.5M views"
-
-**WHAT YOU CAN DO:**
-- ✅ Use names from TOPIC: "Alex" → "Alex went from 500 to 5k"
-- ✅ Use numbers from TOPIC: "50+ creators" → "workshop with 50+ creators"
-- ✅ Add context from TOPIC: "3 months" → "in just 3 months"
-- ✅ Add verified web search results (when tool provides them)
-
-**DEFAULT BEHAVIOR:**
-- If NO additional proof available → Return draft with MINIMAL changes
-- Better to have NO proof than FAKE proof
-
-Return the enhanced script only (plain text, line breaks for pauses allowed).
-""")
+INJECT_PROOF_PROMPT = load_prompt("inject_proof", platform="youtube")
 
 # ==================== CREATE HUMAN SCRIPT ====================
 
@@ -321,251 +209,21 @@ Output JSON:
 """)
 
 # ==================== QUALITY CHECK ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/youtube/quality_check.md
 
-QUALITY_CHECK_PROMPT = """You are evaluating a YouTube video script using Editor-in-Chief standards.
-
-═══════════════════════════════════════════════════════════════
-EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
-═══════════════════════════════════════════════════════════════
-
-""" + EDITOR_IN_CHIEF_RULES + """
-
-═══════════════════════════════════════════════════════════════
-END OF EDITOR-IN-CHIEF STANDARDS
-═══════════════════════════════════════════════════════════════
-
-YOUR TASK:
-1. Read the script below
-2. Scan sentence-by-sentence for EVERY violation listed in Editor-in-Chief standards above
-3. Create ONE surgical issue per violation found
-4. Use EXACT replacement strategies from the standards (don't make up your own)
-
-Script to evaluate:
-{post}
-
-WORKFLOW:
-
-STEP 1: SCAN FOR VIOLATIONS
-Go through the script sentence-by-sentence and find Editor-in-Chief violations:
-- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y")
-- Masked contrast patterns ("Instead of X", "but rather")
-- Section summaries ("In summary", "In conclusion")
-- Promotional puffery ("stands as", "testament")
-- Overused conjunctions ("moreover", "furthermore")
-- Vague attributions without sources
-- Em-dash overuse
-- Words needing substitution ("leverages", "encompasses", "facilitates")
-
-STEP 2: CREATE SURGICAL ISSUES
-For EACH violation found, create ONE issue with EXACT text and EXACT fix from Editor-in-Chief examples.
-
-STEP 3: SCORE THE SCRIPT - Evaluate on these axes (0-5):
-
-1. VIDEO HOOK POWER
-   - Does it grab attention in first 3 seconds?
-   - Is it specific?
-   - Is it audio-first?
-
-   Score 5: Specific + attention-grabbing + <15 words
-   Score 3: Generic but clear
-   Score 0: Vague
-
-2. PATTERN INTERRUPT
-   - Does it break scroll in first line?
-   - Is there a number/stat upfront?
-   - Does it create curiosity gap?
-
-   Score 5: Surprising fact + number + curiosity
-   Score 3: Mild interest
-   Score 0: Expected statement
-
-3. SCRIPT FLOW (Spoken Cadence)
-   - Are sentences short for breath control?
-   - Are line breaks used for natural pauses?
-   - Does it sound natural when read aloud?
-
-   Score 5: Conversational + natural pauses + readable aloud
-   Score 3: Readable but stiff
-   Score 0: Dense paragraphs, no rhythm
-
-4. PROOF DENSITY
-   - Are there 2+ specific numbers/names from user context?
-   - Are they called out clearly?
-   - Do they feel real (not fabricated)?
-
-   Score 5: Multiple specific numbers/names from user context (2+)
-   Score 3: One vague number
-   Score 0: No specifics
-
-5. CTA/PAYOFF
-   - Is it video-specific?
-   - Is it clear what to do?
-   - Is there a payoff?
-
-   Score 5: Specific video action + clear payoff
-   Score 3: Generic
-   Score 0: Missing or passive
-
-MINIMUM THRESHOLD: 18/25
-
-STEP 4: VERIFY FACTS (use web_search)
-Search for:
-- Creator names + growth numbers (e.g., "Alex 500→5k")
-- Workshop/event details (e.g., "50+ creators")
-- News stories, events (e.g., "Rick Beato YouTube AI filters")
-- Industry data/timeframes (e.g., "3 months to 5k subs")
-
-If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
-Only use "FABRICATED" if provably false.
-
-STEP 5: CHECK TIMING ACCURACY (YouTube-specific)
-- Verify timing markers are present
-- Check if timing adds up (sum of sections = total duration)
-- Verify word count matches estimated duration (2.5 words/sec)
-
-CRITICAL RULES:
-✅ Create ONE issue per Editor-in-Chief violation
-✅ Quote EXACT text in "original"
-✅ Use EXACT fixes from Editor-in-Chief standards (don't improvise)
-✅ Be comprehensive - find EVERY violation
-✅ Deduct 2 points per major AI tell
-
-Output JSON:
-{{
-  "scores": {{
-    "hook_power": 4,
-    "pattern_interrupt": 3,
-    "script_flow": 5,
-    "proof_density": 2,
-    "cta_payoff": 4,
-    "total": 18,
-    "ai_deductions": -4
-  }},
-  "timing_accuracy": {{
-    "has_markers": true,
-    "sections_add_up": true,
-    "word_count_matches": true
-  }},
-  "decision": "revise",
-  "searches_performed": ["query 1", "query 2"],
-  "issues": [
-    {{
-      "axis": "ai_tells",
-      "severity": "high",
-      "pattern": "contrast_direct",
-      "original": "[exact quote from script]",
-      "fix": "[exact fix from Editor-in-Chief examples]",
-      "impact": "[specific improvement]"
-    }}
-  ],
-  "surgical_summary": "Found [number] violations. Applying all fixes would raise score from [current] to [projected]."
-}}
-
-Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
-"""
+_quality_check_template = load_prompt("quality_check", platform="youtube")
+QUALITY_CHECK_PROMPT = _quality_check_template.replace(
+    "{{EDITOR_IN_CHIEF_RULES}}",
+    EDITOR_IN_CHIEF_RULES
+)
 
 # ==================== APPLY FIXES ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/youtube/apply_fixes.md
 
-APPLY_FIXES_PROMPT = dedent("""You are fixing a YouTube script based on quality feedback.
-
-**CRITICAL PHILOSOPHY: PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
-
-This script contains strategic thinking and intentional language choices.
-
-Original Script:
-{post}
-
-Issues from quality_check:
-{issues_json}
-
-Current Score: {current_score}/25
-GPTZero AI Detection: {gptzero_ai_pct}% AI (Target: <100%)
-Fix Strategy: {fix_strategy}
-
-GPTZero Flagged Sentences (rewrite these like a human):
-{gptzero_flagged_sentences}
-
-CRITICAL RULES:
-
-0. **WRITE LIKE A HUMAN** - You must follow these rules when applying fixes:
-
-{write_like_human_rules}
-
-1. **FIX STRATEGY:**
-
-   **COMPREHENSIVE MODE - Fix ALL issues:**
-   - No limit on number of fixes - address EVERY problem in issues list
-   - Rewrite entire sections if needed to eliminate AI patterns
-   - Rewrite GPTZero flagged sentences to sound more human
-   - Still preserve: specific numbers, names, dates, strategic narrative
-   - But eliminate: ALL cringe questions, ALL contrast framing, ALL buzzwords, ALL formulaic headers
-   - Goal: Fix every single flagged issue
-
-   **If GPTZero shows high AI %:**
-   - Add more human signals to flagged sentences:
-     * Sentence fragments for emphasis
-     * Contractions (I'm, that's, here's)
-     * Varied sentence length (5-25 words, not uniform 12-15)
-     * Natural transitions (And, So, But at sentence starts)
-
-2. **WHAT TO PRESERVE**:
-   - ✅ KEEP specific names/numbers from original (from user context)
-   - ✅ KEEP conversational tone and spoken cadence
-   - ✅ KEEP short sentences for breath control
-   - ✅ KEEP line breaks for natural pauses
-   - ✅ KEEP timing markers (adjust if word count changes)
-   - ❌ DO NOT water down to vague language
-   - ❌ DO NOT make it more formal or written
-
-3. **WHAT TO FIX**:
-   - ALL issues in issues_json list above
-   - ALL GPTZero flagged sentences (rewrite to add human signals)
-   - Contrast framing ("It's not X, it's Y" → "Y matters")
-   - Rule of three sentence fragments
-   - Staccato fragments ("500 subs. 3 months. One change." → "I went from 500 to 5k subs in 3 months")
-   - Robotic transitions ("Moving on to" → "And here's what changed")
-   - Forced CTAs ("Don't forget to like" → "Comment 'VOICE' for the framework")
-   - Buzzwords and AI clichés
-
-4. **EXAMPLES OF FIXES**:
-   - Issue: Hook too long (18 words, >6 sec)
-     Fix: Trim to core: "Alex went from 500 to 5k subscribers in 3 months" → "500 to 5k subscribers in 3 months"
-
-   - Issue: No pattern interrupt
-     Fix: Add surprising stat upfront: "Here's what changed..." → "One thing changed. 500 became 5k."
-
-   - Issue: No specific proof points
-     Fix: Add from user context: "Growth takes work" → "Alex: 500→5k. Workshop: 50+ creators. Timeline: 3 months."
-
-   - Issue: Generic CTA
-     Fix: Make specific: "Let me know what you think" → "Comment 'VOICE' for the framework"
-
-5. **UPDATE TIMING MARKERS**:
-   - If you add/remove words, recalculate timing (2.5 words/sec)
-   - Ensure sections still add up to total duration
-   - Maintain natural pauses between sections
-
-Output JSON:
-{{
-  "revised_script": "...",
-  "timing_markers": {{
-    "hook": "0:00-0:03",
-    "pattern_interrupt": "0:03-0:07",
-    "body": "0:07-0:45",
-    "payoff": "0:45-0:55",
-    "end": "0:55-1:00"
-  }},
-  "estimated_duration_seconds": 60,
-  "word_count": 145,
-  "changes_made": [
-    {{
-      "issue_addressed": "proof_density",
-      "original": "Growth takes work and consistency",
-      "revised": "Alex: 500→5k. Workshop: 50+ creators. Timeline: 3 months.",
-      "impact": "Added 3 specific proof points from user context"
-    }}
-  ],
-  "estimated_new_score": 21,
-  "confidence": "high"  // "high" | "medium" | "low"
-}}
-""")
+_apply_fixes_template = load_prompt("apply_fixes", platform="youtube")
+APPLY_FIXES_PROMPT = _apply_fixes_template.replace(
+    "{write_like_human_rules}",
+    WRITE_LIKE_HUMAN_RULES
+)

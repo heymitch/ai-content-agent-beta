@@ -29,11 +29,12 @@ ai-content-agent-template/
 ├── package.json                # NPM scripts and dependencies
 ├── requirements.txt            # Python dependencies
 │
-├── agents/                     # Claude Agent SDK implementations
-│   ├── email_sdk_agent.py      # Email content generation
-│   ├── linkedin_sdk_agent.py   # LinkedIn content generation
-│   ├── twitter_sdk_agent.py    # Twitter/X content generation
-│   └── youtube_sdk_agent.py    # YouTube script generation
+├── agents/                     # Direct API agent implementations
+│   ├── email_direct_api_agent.py      # Email content generation
+│   ├── linkedin_direct_api_agent.py   # LinkedIn content generation
+│   ├── twitter_direct_api_agent.py    # Twitter/X content generation
+│   ├── youtube_direct_api_agent.py    # YouTube script generation
+│   └── instagram_direct_api_agent.py  # Instagram content generation
 │
 ├── workflows/                  # Content creation workflows
 │   ├── base_workflow.py        # Core workflow orchestration
@@ -329,22 +330,22 @@ npm start
 
 ## 🔧 Architecture
 
-### Claude Agent SDK Integration
-The agent uses Anthropic's Claude Agent SDK for autonomous operation:
+### Direct API Architecture
+The agents use Anthropic's Direct API for autonomous operation:
 
 ```python
-# agents/linkedin_sdk_agent.py
-from claude_agent_sdk import Agent, tool
+# agents/linkedin_direct_api_agent.py
+from anthropic import Anthropic
 
-agent = Agent(
-    name="LinkedIn Content Creator",
-    tools=[
-        web_search_tool,
-        search_templates_tool,
-        search_knowledge_base_tool,
-        quality_check_tool
-    ]
-)
+client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+async def create_linkedin_post_workflow(
+    topic: str,
+    context: str = "",
+    post_type: str = 'standard',
+    target_score: int = 85,
+    supabase_client = None
+) -> Dict[str, Any]:
 
 # Agent autonomously:
 # 1. Researches topic via web search

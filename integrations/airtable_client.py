@@ -133,24 +133,47 @@ class AirtableContentCalendar:
             fields['Suggested Edits'] = json.dumps(metadata, ensure_ascii=False)
 
         try:
+            print(f"📝 Airtable: Creating record with platform={platform}, content_len={len(clean_content)}")
             record = self.table.create(fields)
+            url = f"https://airtable.com/{self.base_id}/{self.table_name}/{record['id']}"
+            print(f"✅ Airtable record created: {record['id']}")
             return {
                 'success': True,
                 'record_id': record['id'],
                 'fields': record['fields'],
-                'url': f"https://airtable.com/{self.base_id}/{self.table_name}/{record['id']}"
+                'url': url
             }
         except Exception as e:
-            error_str = str(e).lower()
+            error_str = str(e)
+            print(f"❌ Airtable API error: {e}")
+
+            # If platform select option doesn't exist, retry without platform
+            if 'INVALID_MULTIPLE_CHOICE_OPTIONS' in error_str and 'Platform' in fields:
+                print(f"⚠️ Platform '{airtable_platform}' not in Airtable options, retrying without platform...")
+                del fields['Platform']
+                try:
+                    record = self.table.create(fields)
+                    url = f"https://airtable.com/{self.base_id}/{self.table_name}/{record['id']}"
+                    print(f"✅ Airtable record created (without platform): {record['id']}")
+                    return {
+                        'success': True,
+                        'record_id': record['id'],
+                        'fields': record['fields'],
+                        'url': url,
+                        'warning': f"Platform '{platform}' not set - add '{airtable_platform}' to Airtable Platform field options"
+                    }
+                except Exception as retry_e:
+                    print(f"❌ Airtable retry failed: {retry_e}")
+                    error_str = str(retry_e)
 
             # Detect quota/rate limit errors
-            is_quota_error = any(keyword in error_str for keyword in [
+            is_quota_error = any(keyword in error_str.lower() for keyword in [
                 'quota', 'rate limit', 'too many requests', '429', 'limit exceeded'
             ])
 
             return {
                 'success': False,
-                'error': str(e),
+                'error': error_str,
                 'is_quota_error': is_quota_error,
                 'fallback_message': 'Airtable quota exceeded. Saved to Supabase only.' if is_quota_error else None
             }
@@ -196,6 +219,105 @@ class AirtableContentCalendar:
             return {
                 'success': False,
                 'error': str(e)
+            }
+
+    def search_posts(
+        self,
+        platform: Optional[str] = None,
+        status: Optional[str] = None,
+        days_back: int = 30,
+        keyword: Optional[str] = None,
+        max_results: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Search content calendar for posts matching criteria.
+
+        Args:
+            platform: linkedin, twitter, email, youtube, instagram
+            status: Draft, Scheduled, Published, Archived
+            days_back: How far back to search (default 30 days)
+            keyword: Text to search in Post Hook and Body Content
+            max_results: Maximum number of results to return
+
+        Returns:
+            Dict with results array containing record_id, hook, body_preview, platform, status, dates
+        """
+        from datetime import datetime, timedelta
+
+        try:
+            formula_parts = []
+
+            # Platform filter (handle mapping)
+            if platform:
+                platform_mapping = {
+                    'linkedin': 'Linkedin',
+                    'twitter': 'X/Twitter',
+                    'email': 'Email',
+                    'youtube': 'Youtube',
+                    'instagram': 'Instagram'
+                }
+                airtable_platform = platform_mapping.get(platform.lower(), platform.capitalize())
+                formula_parts.append(f"FIND('{airtable_platform}', ARRAYJOIN({{Platform}}, ','))")
+
+            # Status filter
+            if status:
+                formula_parts.append(f"{{Status}} = '{status}'")
+
+            # Date range filter
+            if days_back:
+                cutoff = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                formula_parts.append(f"IS_AFTER({{Created}}, '{cutoff}')")
+
+            # Keyword search in Post Hook and Body Content
+            if keyword:
+                # Case-insensitive search using FIND with LOWER
+                keyword_escaped = keyword.replace("'", "\\'")
+                formula_parts.append(
+                    f"OR(FIND(LOWER('{keyword_escaped}'), LOWER({{Post Hook}})), "
+                    f"FIND(LOWER('{keyword_escaped}'), LOWER({{Body Content}})))"
+                )
+
+            # Combine filters
+            formula = None
+            if formula_parts:
+                formula = f"AND({', '.join(formula_parts)})"
+
+            # Fetch records
+            records = self.table.all(
+                formula=formula,
+                max_records=max_results,
+                sort=['-Created']  # Most recent first
+            )
+
+            # Format results for agent consumption
+            results = []
+            for record in records:
+                fields = record.get('fields', {})
+                body = fields.get('Body Content', '')
+
+                results.append({
+                    'record_id': record.get('id'),
+                    'hook': fields.get('Post Hook', '')[:200],
+                    'body_preview': body[:300] + '...' if len(body) > 300 else body,
+                    'platform': fields.get('Platform', []),
+                    'status': fields.get('Status', ''),
+                    'publish_date': fields.get('Publish Date', ''),
+                    'created': fields.get('Created', ''),
+                    'score': fields.get('% Score', 0),
+                    'url': f"https://airtable.com/{self.base_id}/{self.table_name}/{record.get('id')}"
+                })
+
+            return {
+                'success': True,
+                'total_found': len(results),
+                'results': results
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'results': []
             }
 
     def get_posts_in_range(self, start_date, end_date):
@@ -449,6 +571,88 @@ class AirtableContentCalendar:
             non_empty_lines = [l.strip() for l in text.split('\n') if l.strip()]
             first_content = '\n'.join(non_empty_lines) if non_empty_lines else text
             return first_content[:200].strip()
+
+    def update_analytics(
+        self,
+        record_id: str,
+        metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Update analytics fields for an Airtable record.
+
+        Args:
+            record_id: Airtable record ID
+            metrics: Dictionary with analytics data:
+                - impressions (int)
+                - engagements (int)
+                - clicks (int)
+                - likes (int)
+                - comments (int)
+                - shares (int)
+                - engagement_rate (float)
+                - last_analytics_sync (datetime or ISO string)
+
+        Returns:
+            {
+                "success": bool,
+                "record_id": str,
+                "fields": {...}  (if success)
+                "error": str  (if failure)
+            }
+        """
+        try:
+            # Build Airtable fields for analytics
+            fields = {}
+
+            # Add numeric metrics if present
+            if 'impressions' in metrics:
+                fields['Impressions'] = int(metrics['impressions'] or 0)
+
+            if 'engagements' in metrics:
+                fields['Engagements'] = int(metrics['engagements'] or 0)
+
+            if 'clicks' in metrics:
+                fields['Clicks'] = int(metrics['clicks'] or 0)
+
+            if 'likes' in metrics:
+                fields['Likes'] = int(metrics['likes'] or 0)
+
+            if 'comments' in metrics:
+                fields['Comments'] = int(metrics['comments'] or 0)
+
+            if 'shares' in metrics:
+                fields['Shares'] = int(metrics['shares'] or 0)
+
+            # Engagement rate as percentage (Airtable percent field expects 0-1, we store as 0-100)
+            if 'engagement_rate' in metrics:
+                rate = float(metrics['engagement_rate'] or 0)
+                # If rate > 1, assume it's already in percentage (0-100), convert to 0-1
+                fields['Engagement Rate'] = rate / 100 if rate > 1 else rate
+
+            # Last synced timestamp
+            if 'last_analytics_sync' in metrics:
+                sync_time = metrics['last_analytics_sync']
+                # Convert to ISO string if datetime object
+                if hasattr(sync_time, 'isoformat'):
+                    fields['Last Synced'] = sync_time.isoformat()
+                else:
+                    fields['Last Synced'] = sync_time
+
+            # Update the record
+            record = self.table.update(record_id, fields)
+
+            return {
+                'success': True,
+                'record_id': record['id'],
+                'fields': record['fields']
+            }
+
+        except Exception as e:
+            return {
+                'success': False,
+                'record_id': record_id,
+                'error': str(e)
+            }
 
 
 def get_airtable_client() -> AirtableContentCalendar:

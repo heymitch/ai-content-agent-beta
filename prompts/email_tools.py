@@ -6,287 +6,28 @@ Adapted from LinkedIn SDK Agent for email newsletters.
 """
 
 from textwrap import dedent
-
-# ==================== LOAD EDITOR-IN-CHIEF STANDARDS ====================
-# Load comprehensive Editor-in-Chief standards for quality_check
-from pathlib import Path
-EDITOR_FILE_PATH = Path(__file__).parent.parent / "editor-in-chief.md"
-try:
-    with open(EDITOR_FILE_PATH, "r", encoding="utf-8") as f:
-        EDITOR_IN_CHIEF_RULES = f.read()
-except FileNotFoundError:
-    print(f"⚠️ Warning: Could not load {EDITOR_FILE_PATH}")
-    EDITOR_IN_CHIEF_RULES = "# Editor-in-Chief standards not available"
 from tools.pattern_matching import format_email_examples_for_prompt
 
-# ==================== GLOBAL WRITING RULES (CACHED) ====================
-# Source: write-like-a-human.md - COMPLETE VERSION (not summarized)
-# These rules are injected into EVERY content generation prompt for consistency
-# Anthropic's prompt caching will recognize this exact constant and reuse it (~80% token savings)
+# ==================== LOAD WRITING RULES AND EDITOR STANDARDS ====================
+# NEW: Load from external .md files with client override support
+# Clients can customize these by creating .claude/prompts/writing_rules.md or editor_standards.md
+# Fallback to versioned defaults in prompts/styles/default_writing_rules.md
+from integrations.prompt_loader import load_editor_standards, load_writing_rules, load_prompt
 
-WRITE_LIKE_HUMAN_RULES = """You are a human writer. These are your comprehensive writing guidelines. Anything that you output will adhere to these guidelines exactly.
-POSITIVE DIRECTIVES (How you SHOULD write)
-Clarity and brevity
-• Craft sentences that average 10–20 words and focus on a single idea, with the occasional longer sentence.
-Active voice and direct verbs
-• Use active voice 90 % of the time.
-Everyday vocabulary
-• Substitute common, concrete words for abstraction.
-Straightforward punctuation
-• Rely primarily on periods, commas, question marks, and occasional colons for lists.
-Varied sentence length, minimal complexity
-• Mix short and medium sentences; avoid stacking clauses.
-Logical flow without buzzwords
-• Build arguments with plain connectors: 'and', 'but', 'so', 'then'.
-Concrete detail over abstraction
-• Provide numbers, dates, names, and measurable facts whenever possible.
-Human cadence
-• Vary paragraph length; ask a genuine question no more than once per 300 words, and answer it immediately.
-NEGATIVE DIRECTIVES (What you MUST AVOID)
-A. Punctuation to avoid
-Semicolons (;)
-✗ Example to avoid: 'We researched extensively; the results were clear.'
-✓ Rewrite: 'We researched extensively, and the results were clear.'
-Em dashes ( — )
-✗ Example to avoid: 'The idea — though interesting — was rejected.'
-✓ Rewrite: 'The idea was interesting but was rejected.'
-B. Overused words & phrases
-• Never use any of the following, in any form or capitalization:
-At the end of the day,With that being said,It goes without saying,In a nutshell,Needless to say,When it comes to,A significant number of,It's worth mentioning,Last but not least,Cutting‑edge,Leveraging,Moving forward,Going forward,On the other hand,Notwithstanding,Takeaway,As a matter of fact,In the realm of,Seamless integration,Robust framework,Holistic approach,Paradigm shift,Synergy,Scale‑up,Optimize,Game‑changer,Unleash,Uncover,In a world,In a sea of,Digital landscape,Elevate,Embark,Delve,Game Changer,In the midst,In addition,It's important to note,Delve into,Tapestry,Bustling,In summary,In conclusion,Remember that …,Take a dive into,Navigating (e.g., 'Navigating the landscape'),Landscape (metaphorical),Testament (e.g., 'a testament to …'),In the world of,Realm,Virtuoso,Symphony,bustinling,vibrant,Firstly, Moreover,Furthermore,However,Therefore,Additionally,Specifically, Generally,Consequently,Importantly,Similarly,Nonetheless,As a result,Indeed,Thus,Alternatively,Notably,As well as,Despite, Essentially,While,Unless,Also,Even though,Because (as subordinate conjunction),In contrast,Although,In order to,Due to,Even if,Given that,Arguably,To consider,Ensure,Essential,Vital,Out of the box,Underscores,Soul,Crucible,It depends on,You may want to,This is not an exhaustive list,You could consider,As previously mentioned,It's worth noting that,To summarize,Ultimately,To put it simply,Pesky,Promptly,Dive into,In today's digital era,Reverberate,Enhance,Emphasise,Enable,Hustle and bustle,Revolutionize,Folks,Foster,Sure,Labyrinthine,Moist,Remnant,As a professional,Subsequently,Nestled,Labyrinth,Gossamer,Enigma,Whispering,Sights unseen,Sounds unheard,A testament to …,Dance,Metamorphosis,Indelible,Governance,Infrastructure
-✗ Example to avoid: 'Cutting‑edge analytics will revolutionize your workflow.'
-✓ Rewrite: 'The software measures performance faster.'
-C. Overused single words to ban
-however, moreover, furthermore, additionally, consequently, therefore, ultimately, generally, essentially, arguably, significant, innovative, efficient, dynamic, ensure, foster, leverage, utilize, governance, infrastructure
-✗ Example to avoid: 'We must leverage dynamic, innovative approaches.'
-✓ Rewrite: 'We must try new approaches.'
-D. Overused multi‑word phrases to ban
-'I apologize for any confusion …'
-'I hope this helps.'
-'Please let me know if you need further clarification.'
-'One might argue that …'
-'Both sides have merit.'
-'Ultimately, the answer depends on …'
-'In other words, …'
-'This is not an exhaustive list, but …'
-'Dive into the world of …'
-'Unlock the secrets of …'
-'I hope this email finds you well.'
-'Thank you for reaching out.'
-'If you have any other questions, feel free to ask.'
-✗ Example to avoid: 'In other words, both sides have merit.'
-✓ Rewrite: 'Each option has advantages.'
-E. Parts of speech to minimize
-• Adverbs / conjunctive adverbs: however, moreover, furthermore, additionally, consequently, ultimately, generally, essentially
-• Modals & hedging: might, could, would, may, tends to
-• Verbs: ensure, foster, leverage, utilize
-• Adjectives: significant, innovative, efficient, dynamic
-• Nouns: insight(s), perspective, solution(s), approach(es)
-✗ Example to avoid: 'We might leverage efficient solutions.'
-✓ Rewrite: 'We will use faster tools.'
-F. Sentence‑structure patterns to eliminate
-Complex, multi‑clause sentences.
-✗ Example: 'Because the data were incomplete and the timeline was short, we postponed the launch, although we had secured funding.'
-✓ Preferred: 'The data were incomplete. We had little time. We postponed the launch. Funding was ready.'
-•Overuse of subordinating conjunctions (because, although, since, if, unless, when, while, as, before).
-•Sentences containing more than one verb phrase.
-•Chains of prepositional phrases.
-•Multiple dependent clauses strung together.
-• Artificial parallelism used solely for rhythm.
-
-**CONTRAST STRUCTURES - THE BIGGEST AI TELL (NEVER USE THESE):**
-These are the #1 indicator of AI writing. NEVER use contrast framing:
-
-✗ "It's not X, it's Y" → ✓ State Y directly: "Speed matters most."
-✗ "This isn't about X. It's about Y." → ✓ "Focus on Y."
-✗ "Not just X, but Y" → ✓ "X and Y" or just "Y"
-✗ "The difference isn't X" → ✓ State what it IS
-✗ "We're not replacing X. We're giving Y." → ✓ "We're giving Y."
-✗ "The real X is..." → ✓ "X is..."
-✗ "What really matters..." → ✓ "What matters..."
-✗ "X isn't the answer" → ✓ "Y works better"
-✗ "Rather than X" / "Instead of X" → ✓ Use "and" or state separately
-
-**Why these are bad:** Humans state things positively. AI uses contrasts to sound profound.
-
-✗ WRONG: "This isn't about replacing humans. It's about giving them superpowers."
-✓ RIGHT: "This gives humans superpowers."
-
-✗ WRONG: "The AI didn't just speed up the process. It optimized everything."
-✓ RIGHT: "The AI optimized everything."
-
-**RULE OF THREE - ANOTHER MASSIVE AI TELL:**
-AI loves parallel structure with exactly three items IN SENTENCE STRUCTURE. Humans vary their rhythm.
-
-**IMPORTANT: This rule applies to SENTENCE STRUCTURE within paragraphs, NOT to formatted lists (bullets or numbers).**
-
-✗ "Same complexity. Same output. Over 95% less time." (three parallel sentence fragments)
-✓ "Same complexity and output, but 95% less time."
-
-✗ "Dragged nodes. Connected logic. Tested connections." (three parallel verb fragments)
-✓ "I dragged nodes and connected the logic, then tested each connection."
-
-✗ "Faster. Cheaper. Better." (three adjective fragments)
-✓ "Faster and cheaper."
-
-**If you find yourself writing three parallel sentence fragments in a row → STOP. Combine two or vary the structure.**
-
-**HOWEVER: Formatted lists with bullets or numbers are FINE and do not trigger this rule.**
-✓ Bulleted or numbered lists of 3+ items are perfectly acceptable for readability
-✓ "Here are 3 steps: 1/ Do X  2/ Do Y  3/ Do Z" is NOT an AI tell - this is a list
-✗ "Step one. Step two. Step three." written as separate sentences IS an AI tell
-
-**SPECIFIC RULE OF THREE PATTERNS TO AVOID:**
-✗ "Same sales team. Same market conditions. Same product offering." (three parallel "Same X" sentence fragments)
-✓ "It was the same sales team under the same market conditions, and they offered the same product."
-
-✗ "Bold. Daring. Transformative." (three adjective fragments in a row)
-✓ "Bold and daring. Even transformative."
-
-✗ "No fluff. No wasted time. Just real results." (three parallel negative/statement fragments)
-✓ "I hate wasting time."
-
-✗ "Cut the bottom 20%. Bring in new blood. Hope it works." (three imperative command fragments)
-✓ "Cut the bottom 20% and bring in new blood."
-
-**The pattern**: Three parallel grammatical structures in a row as SENTENCE FRAGMENTS (noun phrases, fragments, imperatives)
-**The fix**: Combine two with "and" or rewrite as complete sentence
-**Note**: This does NOT apply to properly formatted bullet or numbered lists
-
-**STACCATO FRAGMENTS - ANOTHER AI TELL:**
-AI loves short dramatic fragments at the start. Humans write complete sentences.
-
-✗ "50 nodes. 6 hours of my time. An AI agent rebuilt it."
-✓ "I spent 6 hours building a 50-node workflow."
-
-✗ "One problem. Multiple solutions. No clear winner."
-✓ "One problem had multiple solutions."
-
-**Start with complete sentences. Save fragments for emphasis later, not at the top.**
-
-**HUMAN VOICE PATTERNS - CRITICAL FOR GPTZero BYPASS:**
-These patterns increase "burstiness" and "perplexity" - the 2 metrics GPTZero uses.
-
-**SENTENCE LENGTH VARIATION** (increases burstiness):
-- Mix short (5-10 words), medium (10-20 words), and long (20-30 words) sentences
-- ✓ "I saw a CEO brag about AI. He cut his whole dev team. Six months later? Product velocity tanked."
-  (6 words → 6 words → 3 words = HIGH burstiness)
-- ✗ "The CEO replaced developers with AI agents. His investors approved the decision. Product quality declined significantly."
-  (7 words → 6 words → 5 words = LOW burstiness, uniform)
-
-**UNPREDICTABLE WORD CHOICES** (increases perplexity):
-- Use contractions heavily: "I'm", "I've", "here're", "that's", "'Cause", "won't"
-- Use hedging language: "pretty well", "definitely", "a bunch of", "I'm looking to"
-- Use informal verbs: "tanked", "jumped", "slammed", "grabbed"
-- Avoid: "significantly", "substantially", "considerably" (AI loves these)
-
-**INFORMAL CONNECTORS** (human speech pattern):
-- Start sentences with: "So", "And", "But", "Now", "Here's the thing"
-- ✓ "So before you replace anyone..."
-- ✓ "And that's the play."
-- ✗ "Therefore, prior to replacement..." (AI formal pattern)
-
-**CONVERSATIONAL FRAGMENTS** (spontaneous human voice):
-- Use: "Boom!", "That's it!", "Here's why:", "The result?", "Six months later?"
-- Use trailing thoughts: "at the end of the day…", "So..."
-- ✓ "Revenue jumped 34%. Boom."
-- ✗ "Revenue increased by 34 percent." (AI precision)
-
-**INTENTIONAL REPETITION** (humans repeat for emphasis):
-- Repeat words/phrases for emphasis (AI tries to vary)
-- ✓ "definitely" 2-3 times in email
-- ✓ "really" multiple times
-- ✗ Perfect synonym variation (AI pattern: "significant", "substantial", "considerable")
-
-**PERSONAL VOICE MARKERS** (impossible for AI):
-- Use: "I think", "I feel", "in my experience", "I've seen"
-- Add: Questions to self: "What happened next?", "The result?"
-- Use: Rhetorical asides: "(spoiler: it didn't work)", "(trust me on this)"
-
-**CRITICAL: These patterns are NOT errors. They're how humans actually write emails.**
-GPTZero measures burstiness + perplexity. This section maximizes both.
-
-G. Formatting
-• Bullets and numbered lists ARE ALLOWED and encouraged for readability - lists make emails skimmable
-• For numbered lists, use "1/" format instead of "1." (e.g., "1/ First step  2/ Second step  3/ Third step")
-  - Reason: "1." format displays incorrectly in some rich text viewers (shows as all "1."s)
-• Do not begin list items with transition words like 'Firstly', 'Moreover', etc.
-• Avoid numbered outline-style headings like "1. Introduction  2. Body  3. Conclusion" unless the user asks for an outline.
-• Do not use ALL‑CAPS for emphasis.
-H. Tone and style
-• Never mention or reference your own limitations (e.g., 'As an AI …').
-• Do not apologize.
-• Do not hedge; state facts directly.
-• Avoid clichés, metaphors about journeys, music, or landscapes.
-• Maintain a formal yet approachable tone that is free of corporate jargon.
-FAILURE TO COMPLY WITH ANY NEGATIVE DIRECTIVE INVALIDATES THE OUTPUT.
-When you are writing, please think very deply about each sentence that you write, and ensure that it complies with these directions before moving on to the next sentence.
-— — — — — — — — — — END OF WRITING INSTRUCTIONS — — — — — — — — — — —"""
+EDITOR_IN_CHIEF_RULES = load_editor_standards()
+WRITE_LIKE_HUMAN_RULES = load_writing_rules()
 
 # ==================== GENERATE 5 HOOKS ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/email/generate_hooks.md
 
-GENERATE_HOOKS_PROMPT = dedent("""Generate EXACTLY 5 email subject lines for this topic, one for each type:
-
-Topic: {topic}
-Context: {context}
-Target Audience: {audience}
-
-MANDATORY FORMATS (adapted from proven patterns):
-1. Curiosity hook (question or teaser)
-2. Specific number/stat (concrete metric)
-3. Student/client win (specific name + result)
-4. Counter-intuitive take (challenges assumption)
-5. Personal story opener (I/we did X...)
-
-Each subject line must:
-- Be 40-60 characters (mobile preview)
-- Create curiosity without clickbait
-- Target the specific audience
-- Feel personal (not marketing)
-
-Return as JSON array with format:
-{json_example}
-""")
+GENERATE_HOOKS_PROMPT = load_prompt("generate_hooks", platform="email")
 
 # ==================== INJECT PROOF POINTS ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/email/inject_proof.md
 
-INJECT_PROOF_PROMPT = dedent("""{write_like_human_rules}
-
-=== INJECT PROOF POINTS ===
-
-Review this draft and ONLY add proof from verified sources.
-
-Draft: {draft}
-Topic: {topic}
-Industry: {industry}
-
-**COMPANY DOCUMENTS SEARCH RESULTS:**
-{proof_context}
-
-**WHERE PROOF CAN COME FROM:**
-1. **TOPIC/CONTEXT** - User explicitly provided: "Matthew Brown collab", "450+ subscribers", "Sujoy made $5k"
-2. **WEB SEARCH RESULTS** - Verified via web_search tool (future): industry benchmarks
-3. **COMPANY DOCUMENTS** - Retrieved from user-uploaded docs (case studies, testimonials, product docs) - SEE ABOVE
-
-
-**CRITICAL: DO NOT FABRICATE**
-- ❌ Making up student names: "Sarah got her first client"
-- ❌ Inventing results: "97% open rate", "$10k in sales"
-- ❌ Fabricating case studies: "tested with 50 clients"
-- ❌ Creating fake metrics: "234% increase", "12.5 hour time save"
-- ❌ Citing stats you don't have: "industry average of 23%"
-
-**WHAT YOU CAN DO:**
-- ✅ Use metrics from TOPIC: "450+ subscribers" → "over 450 new subscribers"
-- ✅ Add context from TOPIC: "Matthew Brown collab" → "collaboration with Matthew Brown"
-- ✅ Use names from TOPIC: "Sujoy" → "Sujoy just made his first $5k"
-- ✅ Add verified web search results (when tool provides them)
-
-**DEFAULT BEHAVIOR:**
-- If NO additional proof available → Return draft with MINIMAL changes
-- Better to have NO proof than FAKE proof
-
-Return the enhanced draft only (plain text with **bold** and *italic* allowed for email formatting).
-""")
+INJECT_PROOF_PROMPT = load_prompt("inject_proof", platform="email")
 
 # ==================== CREATE HUMAN DRAFT ====================
 
@@ -451,6 +192,10 @@ His investors approved because costs decreased significantly. (7 words)
 Six months later the product quality declined considerably. (8 words)"
 (All 7-8 words = uniform = 100% AI detection)
 
+**SIGNATURE:**
+End the email with ONLY the author's first name: "Mitch"
+DO NOT use any other signature like "Cole", "Colin", or full names.
+
 Output JSON:
 {{
   "subject_line": "...",
@@ -468,246 +213,21 @@ Output JSON:
 """)
 
 # ==================== QUALITY CHECK ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/email/quality_check.md
 
-QUALITY_CHECK_PROMPT = """You are evaluating an email newsletter using Editor-in-Chief standards.
-
-═══════════════════════════════════════════════════════════════
-EDITOR-IN-CHIEF STANDARDS (READ THESE COMPLETELY):
-═══════════════════════════════════════════════════════════════
-
-""" + EDITOR_IN_CHIEF_RULES + """
-
-═══════════════════════════════════════════════════════════════
-END OF EDITOR-IN-CHIEF STANDARDS
-═══════════════════════════════════════════════════════════════
-
-YOUR TASK:
-1. Read the email below
-2. Scan sentence-by-sentence for EVERY violation listed in Editor-in-Chief standards above
-3. Create ONE surgical issue per violation found
-4. Use EXACT replacement strategies from the standards (don't make up your own)
-
-Email to evaluate:
-{post}
-
-WORKFLOW:
-
-STEP 1: SCAN FOR VIOLATIONS
-Go through the email sentence-by-sentence and find:
-- Direct contrast formulations ("This isn't about X—it's about Y", "It's not X, it's Y", "Rather than X")
-- Masked contrast patterns ("Instead of X", "but rather")
-- Formulaic headers (ANY case):
-  * "The X:" pattern → "The promise:", "The reality:", "The result:", "The truth:", "The catch:"
-  * "HERE'S HOW:", "HERE'S WHAT:", Title Case In Headings
-  * These are AI tells - convert to natural language or delete
-- Short questions (<8 words ending in "?"):
-  * "For me?" → Delete or expand to statement: "For me, the ability to..."
-  * "The truth?" → Delete entirely
-  * "What happened?" → Expand: "What did the data show after 30 days?"
-  * Count words - if <8 words AND ends with "?", it's a violation
-- Subject line AI tells:
-  * "You won't believe..." (clickbait)
-  * "The secret to..." (puffery)
-  * Title case in subject lines
-- Preview text issues:
-  * Repeats subject line (should extend/add context)
-  * Generic ("Read more", "Click here", "View in browser")
-- Formal greetings/closings:
-  * "I hope this email finds you well"
-  * "Thank you for reaching out"
-  * "Looking forward to hearing from you"
-  * "Best regards," at end (use "Thanks," or just name)
-- Section summaries ("In summary", "In conclusion")
-- Promotional puffery ("stands as", "testament", "rich heritage")
-- Overused conjunctions ("moreover", "furthermore")
-- Vague attributions without sources
-- Em-dash overuse (multiple — in formulaic patterns)
-- Words needing substitution ("leverages", "encompasses", "facilitates")
-
-STEP 2: CREATE SURGICAL ISSUES
-For EACH violation found, create ONE issue:
-{{
-  "axis": "ai_tells",
-  "severity": "high" | "medium" | "low",
-  "pattern": "contrast_direct" | "puffery" | "word_substitution" | etc,
-  "original": "[EXACT text - word-for-word quote]",
-  "fix": "[EXACT replacement using Editor-in-Chief examples]",
-  "impact": "[How this improves the email]"
-}}
-
-STEP 3: USE REPLACEMENT STRATEGIES FROM STANDARDS
-Use EXACT patterns from Editor-in-Chief:
-
-For contrast framing:
-❌ "Success isn't about working harder but working smarter."
-✅ "Success comes from working smarter and more strategically."
-
-For word substitutions:
-leverages → uses | encompasses → includes | facilitates → enables
-
-STEP 4: SCORE THE EMAIL
-Subject Line (0-5): Specific + curiosity + <60 chars?
-Preview Hook (0-5): Extends subject + adds context?
-Structure (0-5): Hook intro + clear sections + white space?
-Proof Points (0-5): Specific names/numbers (2+)?
-CTA Clarity (0-5): Specific action + clear next step?
-
-Deduct 2 points per major AI tell.
-
-STEP 5: VERIFY FACTS (use web_search)
-Search for student names, collaboration details, news claims, stats.
-If NOT verified: flag as "NEEDS VERIFICATION" or "ADD SOURCE CITATION"
-Only use "FABRICATED" if provably false.
-
-CRITICAL RULES:
-✅ Create ONE issue per violation
-✅ Quote EXACT text in "original"
-✅ Use EXACT fixes from Editor-in-Chief standards
-✅ Be comprehensive - find EVERY violation
-
-Output JSON:
-{{
-  "scores": {{
-    "subject_power": 4,
-    "preview_hook": 3,
-    "structure": 5,
-    "proof_points": 2,
-    "cta_clarity": 4,
-    "total": 18,
-    "ai_deductions": -4
-  }},
-  "decision": "revise",
-  "searches_performed": ["query 1", "query 2"],
-  "issues": [
-    {{
-      "axis": "ai_tells",
-      "severity": "high",
-      "pattern": "contrast_direct",
-      "original": "[exact quote from email]",
-      "fix": "[exact fix from Editor-in-Chief examples]",
-      "impact": "[specific improvement]"
-    }}
-  ],
-  "surgical_summary": "Found [number] violations. Applying all fixes would raise score from [current] to [projected]."
-}}
-
-Be thorough. Find EVERY violation. Use Editor-in-Chief examples EXACTLY as written.
-"""
+_quality_check_template = load_prompt("quality_check", platform="email")
+QUALITY_CHECK_PROMPT = _quality_check_template.replace(
+    "{{EDITOR_IN_CHIEF_RULES}}",
+    EDITOR_IN_CHIEF_RULES
+)
 
 # ==================== APPLY FIXES ====================
+# Now loaded via PromptLoader with client override support
+# Clients can override by creating .claude/prompts/email/apply_fixes.md
 
-APPLY_FIXES_PROMPT = dedent("""You are fixing an email newsletter based on quality feedback.
-
-**CRITICAL PHILOSOPHY: PRESERVE WHAT'S GREAT. FIX WHAT'S BROKEN.**
-
-This email contains the author's strategic thinking and intentional language choices.
-
-Original Email:
-{post}
-
-Issues from quality_check:
-{issues_json}
-
-Current Score: {current_score}/25
-GPTZero AI Detection: {gptzero_ai_pct}% AI (Target: <100%)
-Fix Strategy: {fix_strategy}
-
-GPTZero Flagged Sentences (rewrite these like a human):
-{gptzero_flagged_sentences}
-
-1. **FIX STRATEGY:**
-
-   **COMPREHENSIVE MODE - Fix ALL issues:**
-   - No limit on number of fixes - address EVERY problem in issues list
-   - Rewrite entire sections if needed to eliminate AI patterns
-   - Rewrite GPTZero flagged sentences to sound more human
-   - Still preserve: specific numbers, names, dates, strategic narrative
-   - But eliminate: ALL cringe questions, ALL contrast framing, ALL buzzwords, ALL formulaic headers
-   - Goal: Fix every single flagged issue
-
-   **If GPTZero shows high AI %:**
-   - Add more human signals to flagged sentences:
-     * Sentence fragments for emphasis
-     * Contractions (I'm, that's, here's)
-     * Varied sentence length (5-25 words, not uniform 12-15)
-     * Natural transitions (And, So, But at sentence starts)
-
-2. **WHAT TO PRESERVE:**
-   - Specific numbers, metrics, dates (8.6%, 30 days, Q2 2024)
-   - Personal anecdotes and stories ("I spent 3 months...", "The CEO told me...")
-   - Strategic narrative arc (problem → insight → action)
-   - Author's unique voice and perspective
-   - Conversational tone and contractions
-
-3. **WHAT TO FIX:**
-   - ALL issues in issues_json list above
-   - ALL GPTZero flagged sentences (rewrite to add human signals)
-   - Contrast framing ("It's not X, it's Y" → "Y matters")
-   - Formulaic headers ("The truth:" → "Here's what I found:")
-   - Cringe questions ("For me?" → DELETE or expand to full sentence)
-   - Subject line AI tells ("You won't believe" → specific value)
-   - Formal greetings ("I hope this finds you well" → DELETE)
-   - Preview text that repeats subject (should extend with new context)
-   - Buzzwords and AI clichés
-
-{write_like_human_rules}
-
-3. **DETECT & DESTROY RULE OF THREE (sentence fragments only, NOT lists)**:
-   - Look for three parallel SENTENCE FRAGMENTS (not formatted lists):
-     - "Same X. Same Y. Same Z." (as separate sentences)
-     - "Adjective. Adjective. Adjective." (as separate sentences)
-     - "No X. No Y. Just Z." (as separate sentences)
-   - DO NOT flag properly formatted bullet or numbered lists
-   - Fix by combining two or rewriting:
-     ✗ "Same sales team. Same headcount. 34% revenue jump."
-     ✓ "Same sales team and headcount, but 34% revenue jump."
-
-     ✗ "Bold. Daring. Transformative."
-     ✓ "Bold and daring. Even transformative."
-
-4. **FIX BURSTINESS (if flagged)**:
-   - Look for paragraphs with uniform sentence length
-   - Break long sentences into fragments + medium
-   - Combine short sentences into longer ones
-
-   Example fix:
-   ✗ "The CEO replaced the team. Investors approved it. Quality declined later."
-     (6w, 4w, 4w = low burstiness)
-
-   ✓ "I saw a CEO brag about replacing his dev team. (10w)
-      Investors loved it. (3w - fragment)
-      Six months later? Product velocity tanked because the AI couldn't handle edge cases. (13w)"
-     (10w, 3w, 13w = HIGH burstiness)
-
-4. **EXAMPLES OF EMAIL-SPECIFIC FIXES**:
-   - Issue: Subject too long (68 chars)
-     Fix: Shorten while keeping specificity: "Sujoy made $5k - here's the exact email he sent" → "Sujoy made $5k - the exact email"
-
-   - Issue: Preview repeats subject
-     Fix: Extend with new info: "Sujoy made his first $5k" → "The cold email template he used"
-
-   - Issue: No specific proof points
-     Fix: Add from user's context: "Some students had success" → "Sujoy made $5k, Matthew drove 450+ subs"
-
-   - Issue: Vague CTA
-     Fix: Make specific: "Let me know what you think" → "Reply with your biggest cold email question"
-
-Output JSON:
-{{
-  "revised_post": "...",
-  "changes_made": [
-    {{
-      "issue_addressed": "subject_too_long",
-      "original": "Sujoy made $5k - here's the exact email he sent",
-      "revised": "Sujoy made $5k - the exact email",
-      "impact": "Reduced from 48 to 32 chars, more mobile-friendly"
-    }}
-  ],
-  "estimated_new_score": 21,
-  "confidence": "high"  // "high" | "medium" | "low"
-}}
-
-**OUTPUT:**
-Return ONLY the revised email - no explanations, no meta-commentary.
-Fix ALL issues - no limit. Every flagged pattern and GPTZero sentence must be addressed.
-""")
+_apply_fixes_template = load_prompt("apply_fixes", platform="email")
+APPLY_FIXES_PROMPT = _apply_fixes_template.replace(
+    "{write_like_human_rules}",
+    WRITE_LIKE_HUMAN_RULES
+)
