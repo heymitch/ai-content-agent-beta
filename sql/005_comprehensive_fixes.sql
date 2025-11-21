@@ -107,6 +107,26 @@ BEGIN
     RAISE NOTICE '➕ Added status column to company_documents';
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'embedding') THEN
+    ALTER TABLE company_documents ADD COLUMN embedding VECTOR(1536);
+    RAISE NOTICE '➕ Added embedding column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'metadata') THEN
+    ALTER TABLE company_documents ADD COLUMN metadata JSONB;
+    RAISE NOTICE '➕ Added metadata column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'created_at') THEN
+    ALTER TABLE company_documents ADD COLUMN created_at TIMESTAMP DEFAULT NOW();
+    RAISE NOTICE '➕ Added created_at column to company_documents';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_documents' AND column_name = 'updated_at') THEN
+    ALTER TABLE company_documents ADD COLUMN updated_at TIMESTAMP DEFAULT NOW();
+    RAISE NOTICE '➕ Added updated_at column to company_documents';
+  END IF;
+
   RAISE NOTICE '✅ company_documents columns verified';
 END $$;
 
